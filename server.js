@@ -41,6 +41,7 @@ app.get('/', (req, res) => {
         <!DOCTYPE html>
         <html>
         <head>
+            <meta charset="UTF-8">
             <title>UN POS Cloud API Server</title>
             <style>
                 body { font-family: sans-serif; background: #f4f6f9; padding: 40px; text-align: center; }
@@ -64,9 +65,10 @@ app.get('/', (req, res) => {
     `);
 });
 
-// 2. Check Status Endpoint
-app.post('/api/check-status', (req, res) => {
-    const { phoneNo, deviceId } = req.body;
+// 2. Check Status Endpoint (Supports POST & GET)
+const handleCheckStatus = (req, res) => {
+    const phoneNo = req.body?.phoneNo || req.query?.phoneNo || '';
+    const deviceId = req.body?.deviceId || req.query?.deviceId || '';
     const db = loadDB();
     if (!phoneNo) {
         return res.json({ status: 'on', message: 'UN POS Cloud Server Online', timestamp: Date.now() });
@@ -112,11 +114,23 @@ app.post('/api/check-status', (req, res) => {
             endDate: user.endDate
         }
     });
-});
+};
+app.post('/api/check-status', handleCheckStatus);
+app.get('/api/check-status', handleCheckStatus);
 
-// 3. Login Endpoint
-app.post('/api/login', (req, res) => {
-    const { phoneNo, password, deviceId } = req.body;
+// 3. Login Endpoint (Supports POST & GET)
+const handleLogin = (req, res) => {
+    const phoneNo = req.body?.phoneNo || req.query?.phoneNo || '';
+    const password = req.body?.password || req.query?.password || '';
+    const deviceId = req.body?.deviceId || req.query?.deviceId || '';
+    
+    if (!phoneNo || !password) {
+        return res.status(400).json({
+            status: 'error',
+            message: 'ဖုန်းနံပါတ် နှင့် Password ထည့်သွင်းပါ (Please provide phoneNo and password)'
+        });
+    }
+
     const db = loadDB();
     const user = db.users.find(u => u.phoneNo === phoneNo);
 
@@ -184,12 +198,35 @@ app.post('/api/login', (req, res) => {
             status: 'on'
         }
     });
-});
+};
+app.post('/api/login', handleLogin);
+app.get('/api/login', handleLogin);
 
-// 4. Register Endpoint
-app.post('/api/register', (req, res) => {
-    const { phoneNo, password, username, businessName, businessType, address, role, deviceId, deviceLimit, startDate, endDate, shopBranchCode } = req.body;
+// 4. Register Endpoint (Supports POST & GET)
+const handleRegister = (req, res) => {
+    const data = req.method === 'POST' ? req.body : req.query;
+    const { phoneNo, password, username, businessName, businessType, address, role, deviceId, deviceLimit, startDate, endDate, shopBranchCode } = data;
+
     const db = loadDB();
+
+    if (!phoneNo || !password) {
+        // If GET without params, return existing registered users list
+        return res.json({
+            status: 'online',
+            message: 'UN POS Register API is Ready (POST or GET with phoneNo & password to register)',
+            totalUsers: db.users.length,
+            users: db.users.map(u => ({
+                phoneNo: u.phoneNo,
+                username: u.username,
+                businessName: u.businessName,
+                startDate: u.startDate,
+                endDate: u.endDate,
+                deviceLimit: u.deviceLimit,
+                devicesCount: u.devices?.length || 0,
+                createdAt: u.createdAt
+            }))
+        });
+    }
 
     const existingUser = db.users.find(u => u.phoneNo === phoneNo);
     if (existingUser) {
@@ -199,10 +236,12 @@ app.post('/api/register', (req, res) => {
         });
     }
 
-    const todayStr = new Date().toISOString().split('T')[0];
-    const nextYear = new Date();
-    nextYear.setFullYear(nextYear.getFullYear() + 1);
-    const nextYearStr = nextYear.toISOString().split('T')[0];
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+    
+    // Default 7 days trial period upon registration
+    const sevenDaysLater = new Date(today.getTime() + (7 * 24 * 60 * 60 * 1000));
+    const sevenDaysStr = sevenDaysLater.toISOString().split('T')[0];
 
     const newUser = {
         phoneNo,
@@ -214,9 +253,9 @@ app.post('/api/register', (req, res) => {
         role: role || 'ADMIN',
         shopBranchCode: shopBranchCode || 'MAIN-01',
         devices: deviceId ? [deviceId] : [],
-        deviceLimit: Number(deviceLimit) || 5,
+        deviceLimit: parseInt(deviceLimit) || 5,
         startDate: startDate || todayStr,
-        endDate: endDate || nextYearStr,
+        endDate: endDate || sevenDaysStr, // Default 7 days
         status: 'on', // Activated immediately upon register
         createdAt: new Date().toISOString()
     };
@@ -224,12 +263,16 @@ app.post('/api/register', (req, res) => {
     db.users.push(newUser);
     saveDB(db);
 
+    console.log(`[Register] Registered user ${phoneNo} (${newUser.username}) valid until ${newUser.endDate}`);
+
     res.json({
         status: 'success',
-        message: 'အကောင့်သစ် အောင်မြင်စွာ ဖန်တီးပြီးပါပြီ။',
+        message: 'အကောင့်သစ် (၇ ရက်စာ) အောင်မြင်စွာ ဖန်တီးပြီးပါပြီ။',
         user: newUser
     });
-});
+};
+app.post('/api/register', handleRegister);
+app.get('/api/register', handleRegister);
 
 // 5. Cloud Sync Upload Endpoint
 app.post('/api/sync-upload', (req, res) => {
