@@ -35,7 +35,9 @@ function saveDB(dbData) {
     fs.writeFileSync(DB_FILE, JSON.stringify(dbData, null, 2));
 }
 
-// 1. Health Check Endpoint
+// -------------------------------------------------------------
+// 1. Health Check Endpoint (Public Status Page)
+// -------------------------------------------------------------
 app.get('/', (req, res) => {
     res.send(`
         <!DOCTYPE html>
@@ -47,6 +49,8 @@ app.get('/', (req, res) => {
                 .card { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); max-width: 500px; margin: auto; }
                 h2 { color: #4D5EED; }
                 .status { background: #e8f5e9; color: #2e7d32; padding: 8px 16px; border-radius: 20px; font-weight: bold; display: inline-block; }
+                .btn-admin { display: inline-block; margin-top: 15px; padding: 10px 20px; background: #2c3e50; color: white; text-decoration: none; border-radius: 6px; font-weight: bold; }
+                .btn-admin:hover { background: #34495e; }
             </style>
         </head>
         <body>
@@ -54,13 +58,16 @@ app.get('/', (req, res) => {
                 <h2>POS Online Cloud Backend API</h2>
                 <p class="status">🟢 Server is Running (Port ${PORT})</p>
                 <p>Cloud Synchronization & Authentication Ready!</p>
+                <a href="/admin" class="btn-admin">Go to Admin Panel</a>
             </div>
         </body>
         </html>
     `);
 });
 
+// -------------------------------------------------------------
 // 2. Check Status Endpoint
+// -------------------------------------------------------------
 app.post('/api/check-status', (req, res) => {
     res.json({
         status: 'online',
@@ -69,7 +76,9 @@ app.post('/api/check-status', (req, res) => {
     });
 });
 
+// -------------------------------------------------------------
 // 3. Login Endpoint
+// -------------------------------------------------------------
 app.post('/api/login', (req, res) => {
     const { phoneNo, password } = req.body;
     const db = loadDB();
@@ -94,7 +103,9 @@ app.post('/api/login', (req, res) => {
     }
 });
 
+// -------------------------------------------------------------
 // 4. Register Endpoint
+// -------------------------------------------------------------
 app.post('/api/register', (req, res) => {
     const { phoneNo, password, businessName, shopBranchCode } = req.body;
     const db = loadDB();
@@ -103,7 +114,7 @@ app.post('/api/register', (req, res) => {
     if (existingUser) {
         return res.status(400).json({
             status: 'error',
-            message: 'ဤဖုန်းနံပါတ်ဖြင့် အကောင့်ဖွင့်ပြီးသားဖြစ်ပါသည်။'
+            message: 'ဤဖုန်းနံပါတ်ဖြင့် အကောင့်ဖွင့်ပြီးသားဖြစ်ပါသည်။'
         });
     }
 
@@ -125,7 +136,9 @@ app.post('/api/register', (req, res) => {
     });
 });
 
+// -------------------------------------------------------------
 // 5. Cloud Sync Upload Endpoint
+// -------------------------------------------------------------
 app.post('/api/sync-upload', (req, res) => {
     const { shopBranchCode, phoneNo, products, vouchers, customers, suppliers, expenses } = req.body;
     const db = loadDB();
@@ -154,7 +167,9 @@ app.post('/api/sync-upload', (req, res) => {
     });
 });
 
+// -------------------------------------------------------------
 // 6. Cloud Sync Download Endpoint
+// -------------------------------------------------------------
 app.get('/api/sync-download', (req, res) => {
     const shopBranchCode = req.query.shopBranchCode || 'MAIN-01';
     const phoneNo = req.query.phoneNo || '';
@@ -187,7 +202,9 @@ app.get('/api/sync-download', (req, res) => {
     }
 });
 
-// 7. Change Password
+// -------------------------------------------------------------
+// 7. Change Password Endpoint
+// -------------------------------------------------------------
 app.post('/api/change-password', (req, res) => {
     const { phoneNo, oldPassword, newPassword } = req.body;
     const db = loadDB();
@@ -202,10 +219,257 @@ app.post('/api/change-password', (req, res) => {
     }
 });
 
+// -------------------------------------------------------------
+// 8. Admin Panel Route (Web UI Dashboard)
+// -------------------------------------------------------------
+app.get('/admin', (req, res) => {
+    res.send(`
+        <!DOCTYPE html>
+        <html lang="my">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>POS Cloud Admin Dashboard</title>
+            <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+            <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+            <style>
+                body { background-color: #f4f6f9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+                .sidebar { min-height: 100vh; background: #2c3e50; color: #ecf0f1; }
+                .sidebar .nav-link { color: #bdc3c7; padding: 12px 20px; font-weight: 500; }
+                .sidebar .nav-link:hover, .sidebar .nav-link.active { background: #34495e; color: #fff; }
+                .card-stat { border-radius: 10px; border: none; transition: transform 0.2s; }
+                .card-stat:hover { transform: translateY(-3px); }
+                .table-container { background: #fff; border-radius: 10px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+            </style>
+        </head>
+        <body>
+
+        <div class="container-fluid">
+            <div class="row">
+                <!-- Sidebar Navigation -->
+                <div class="col-md-3 col-lg-2 sidebar p-0">
+                    <div class="p-3 text-center border-bottom border-secondary">
+                        <h4 class="m-0 text-primary fw-bold"><i class="fa-solid fa-store"></i> POS Cloud</h4>
+                        <small class="text-muted">Admin Control Center</small>
+                    </div>
+                    <nav class="nav flex-column mt-3">
+                        <a class="nav-link active" href="#" id="link-users" onclick="switchTab('users-tab', 'link-users')"><i class="fa-solid fa-users me-2"></i> Users Management</a>
+                        <a class="nav-link" href="#" id="link-sync" onclick="switchTab('sync-tab', 'link-sync')"><i class="fa-solid fa-cloud-arrow-down me-2"></i> Synced Stores Data</a>
+                    </nav>
+                </div>
+
+                <!-- Main Content Area -->
+                <div class="col-md-9 col-lg-10 p-4">
+                    <div class="d-flex justify-content-between align-items-center mb-4">
+                        <h2>Admin Dashboard</h2>
+                        <button class="btn btn-outline-primary btn-sm" onclick="loadAdminData()"><i class="fa-solid fa-rotate"></i> Refresh Data</button>
+                    </div>
+
+                    <!-- Stats Overview -->
+                    <div class="row mb-4">
+                        <div class="col-md-4">
+                            <div class="card card-stat bg-primary text-white p-3">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <h6 class="text-uppercase mb-1">Total Users</h6>
+                                        <h3 class="m-0" id="stat-total-users">0</h3>
+                                    </div>
+                                    <i class="fa-solid fa-user-gear fa-2x opacity-50"></i>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card card-stat bg-success text-white p-3">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <h6 class="text-uppercase mb-1">Active Cloud Stores</h6>
+                                        <h3 class="m-0" id="stat-total-stores">0</h3>
+                                    </div>
+                                    <i class="fa-solid fa-shop fa-2x opacity-50"></i>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card card-stat bg-info text-white p-3">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <h6 class="text-uppercase mb-1">System Status</h6>
+                                        <h3 class="m-0">ONLINE</h3>
+                                    </div>
+                                    <i class="fa-solid fa-server fa-2x opacity-50"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Section 1: Registered Users -->
+                    <div id="users-tab" class="tab-content">
+                        <div class="table-container mb-4">
+                            <h5 class="mb-3 text-secondary"><i class="fa-solid fa-address-book me-2"></i> Registered Account List</h5>
+                            <div class="table-responsive">
+                                <table class="table table-hover align-middle">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>#</th>
+                                            <th>Business Name</th>
+                                            <th>Phone Number</th>
+                                            <th>Branch Code</th>
+                                            <th>Created Date</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="users-table-body">
+                                        <tr><td colspan="5" class="text-center">Loading users data...</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Section 2: Synced Cloud Data Viewer -->
+                    <div id="sync-tab" class="tab-content d-none">
+                        <div class="table-container">
+                            <h5 class="mb-3 text-secondary"><i class="fa-solid fa-database me-2"></i> Cloud Sync Stores Summary</h5>
+                            <div class="table-responsive">
+                                <table class="table table-striped align-middle">
+                                    <thead class="table-dark">
+                                        <tr>
+                                            <th>Store Key</th>
+                                            <th>Branch Code</th>
+                                            <th>Phone No</th>
+                                            <th>Products</th>
+                                            <th>Vouchers</th>
+                                            <th>Customers</th>
+                                            <th>Last Updated</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="sync-table-body">
+                                        <tr><td colspan="7" class="text-center">Loading store sync data...</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+        <script>
+            const API_BASE_URL = window.location.origin;
+
+            document.addEventListener("DOMContentLoaded", () => {
+                loadAdminData();
+            });
+
+            function switchTab(tabId, linkId) {
+                document.querySelectorAll('.tab-content').forEach(el => el.classList.add('d-none'));
+                document.getElementById(tabId).classList.remove('d-none');
+                
+                document.querySelectorAll('.sidebar .nav-link').forEach(el => el.classList.remove('active'));
+                document.getElementById(linkId).classList.add('active');
+            }
+
+            async function loadAdminData() {
+                try {
+                    const response = await fetch(\`\${API_BASE_URL}/api/admin/overview\`);
+                    const result = await response.json();
+
+                    if (result.status === 'success') {
+                        document.getElementById('stat-total-users').innerText = result.totalUsers;
+                        document.getElementById('stat-total-stores').innerText = result.totalSyncedStores;
+
+                        const usersBody = document.getElementById('users-table-body');
+                        usersBody.innerHTML = '';
+                        if(result.users.length === 0) {
+                            usersBody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No registered users found.</td></tr>';
+                        } else {
+                            result.users.forEach((user, index) => {
+                                usersBody.innerHTML += \`
+                                    <tr>
+                                        <td>\${index + 1}</td>
+                                        <td><strong>\${user.businessName || '-'}</strong></td>
+                                        <td>\${user.phoneNo}</td>
+                                        <td><span class="badge bg-secondary">\${user.shopBranchCode || 'MAIN-01'}</span></td>
+                                        <td>\${user.createdAt ? new Date(user.createdAt).toLocaleString() : '-'}</td>
+                                    </tr>
+                                \`;
+                            });
+                        }
+
+                        const syncBody = document.getElementById('sync-table-body');
+                        syncBody.innerHTML = '';
+                        if(result.syncedStores.length === 0) {
+                            syncBody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No cloud sync data available yet.</td></tr>';
+                        } else {
+                            result.syncedStores.forEach(store => {
+                                syncBody.innerHTML += \`
+                                    <tr>
+                                        <td><code>\${store.key}</code></td>
+                                        <td><span class="badge bg-info text-dark">\${store.shopBranchCode}</span></td>
+                                        <td>\${store.phoneNo}</td>
+                                        <td><span class="badge bg-primary">\${store.productsCount}</span></td>
+                                        <td><span class="badge bg-success">\${store.vouchersCount}</span></td>
+                                        <td><span class="badge bg-warning text-dark">\${store.customersCount}</span></td>
+                                        <td><small>\${store.updatedAt ? new Date(store.updatedAt).toLocaleString() : '-'}</small></td>
+                                    </tr>
+                                \`;
+                            });
+                        }
+                    }
+                } catch (err) {
+                    console.error('Error fetching admin data:', err);
+                    alert('Admin Data ရယူရာတွင် အမှားအယွင်းရှိနေပါသည်။ Server ဖွင့်ထားခြင်း ရှိမရှိ စစ်ဆေးပါ။');
+                }
+            }
+        </script>
+
+        </body>
+        </html>
+    `);
+});
+
+// -------------------------------------------------------------
+// 9. Admin Overview Data API Endpoint
+// -------------------------------------------------------------
+app.get('/api/admin/overview', (req, res) => {
+    const db = loadDB();
+    
+    // User ၏ Password များကို Admin API တွင် ဖျောက်ထားပေးခြင်း
+    const safeUsers = db.users.map(u => ({
+        phoneNo: u.phoneNo,
+        businessName: u.businessName,
+        shopBranchCode: u.shopBranchCode,
+        createdAt: u.createdAt
+    }));
+
+    // Cloud Sync Data များမှ စာရင်းအကျဉ်း ထုတ်ယူခြင်း
+    const syncedStores = Object.keys(db.cloudSyncData).map(key => {
+        const item = db.cloudSyncData[key];
+        return {
+            key: key,
+            shopBranchCode: item.shopBranchCode || 'MAIN-01',
+            phoneNo: item.phoneNo || '',
+            productsCount: item.products ? item.products.length : 0,
+            vouchersCount: item.vouchers ? item.vouchers.length : 0,
+            customersCount: item.customers ? item.customers.length : 0,
+            updatedAt: item.updatedAt
+        };
+    });
+
+    res.json({
+        status: 'success',
+        totalUsers: db.users.length,
+        totalSyncedStores: syncedStores.length,
+        users: safeUsers,
+        syncedStores: syncedStores
+    });
+});
+
 // Start Server
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`==========================================`);
     console.log(`🚀 POS Online Cloud Backend Running on Port ${PORT}`);
-    console.log(`🌐 Local Test: http://localhost:${PORT}`);
+    console.log(`🌐 API Landing: http://localhost:${PORT}`);
+    console.log(`💻 Admin Panel: http://localhost:${PORT}/admin`);
     console.log(`==========================================`);
 });
