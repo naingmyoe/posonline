@@ -35,15 +35,13 @@ function saveDB(dbData) {
     fs.writeFileSync(DB_FILE, JSON.stringify(dbData, null, 2));
 }
 
-// -------------------------------------------------------------
-// 1. Health Check Endpoint (Public Status Page)
-// -------------------------------------------------------------
+// 1. Health Check Endpoint
 app.get('/', (req, res) => {
     res.send(`
         <!DOCTYPE html>
         <html>
         <head>
-            <title>POS Online Cloud API Server</title>
+            <title>UN POS Cloud API Server</title>
             <style>
                 body { font-family: sans-serif; background: #f4f6f9; padding: 40px; text-align: center; }
                 .card { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); max-width: 500px; margin: auto; }
@@ -55,8 +53,9 @@ app.get('/', (req, res) => {
         </head>
         <body>
             <div class="card">
-                <h2>POS Online Cloud Backend API</h2>
-                <p class="status">🟢 Server is Running (Port ${PORT})</p>
+                <h2>UN POS Cloud Backend API</h2>
+                <p class="status">🟢 Server is Running</p>
+                <p>Port: ${PORT}</p>
                 <p>Cloud Synchronization & Authentication Ready!</p>
                 <a href="/admin" class="btn-admin">Go to Admin Panel</a>
             </div>
@@ -65,49 +64,131 @@ app.get('/', (req, res) => {
     `);
 });
 
-// -------------------------------------------------------------
 // 2. Check Status Endpoint
-// -------------------------------------------------------------
 app.post('/api/check-status', (req, res) => {
+    const { phoneNo, deviceId } = req.body;
+    const db = loadDB();
+    if (!phoneNo) {
+        return res.json({ status: 'on', message: 'UN POS Cloud Server Online', timestamp: Date.now() });
+    }
+
+    const user = db.users.find(u => u.phoneNo === phoneNo);
+    if (!user) {
+        return res.json({ status: 'not_found', message: 'အကောင့် မတွေ့ရှိပါ' });
+    }
+
+    // Check expiration
+    if (user.endDate) {
+        const todayStr = new Date().toISOString().split('T')[0];
+        if (todayStr > user.endDate) {
+            return res.json({ status: 'expired', message: `အကောင့် သက်တမ်းကုန်ဆုံးသွားပါပြီ (${user.endDate})` });
+        }
+    }
+
+    if (!user.devices) user.devices = [];
+    const limit = user.deviceLimit || 5;
+
+    if (deviceId && !user.devices.includes(deviceId)) {
+        if (user.devices.length >= limit) {
+            return res.json({
+                status: 'device_limit_exceeded',
+                message: `Device Limit (${limit} စက်) ပြည့်သွားပါပြီ`
+            });
+        } else {
+            user.devices.push(deviceId);
+            saveDB(db);
+        }
+    }
+
     res.json({
-        status: 'online',
-        message: 'POS Online Cloud Server Online',
-        timestamp: Date.now()
+        status: user.status || 'on',
+        message: 'Active',
+        user: {
+            phoneNo: user.phoneNo,
+            username: user.username,
+            deviceLimit: limit,
+            devicesCount: user.devices.length,
+            startDate: user.startDate,
+            endDate: user.endDate
+        }
     });
 });
 
-// -------------------------------------------------------------
 // 3. Login Endpoint
-// -------------------------------------------------------------
 app.post('/api/login', (req, res) => {
-    const { phoneNo, password } = req.body;
+    const { phoneNo, password, deviceId } = req.body;
     const db = loadDB();
-    const user = db.users.find(u => u.phoneNo === phoneNo && u.password === password);
+    const user = db.users.find(u => u.phoneNo === phoneNo);
 
-    if (user) {
-        res.json({
-            status: 'success',
-            message: 'Login successful',
-            user: {
-                phoneNo: user.phoneNo,
-                businessName: user.businessName,
-                shopBranchCode: user.shopBranchCode || 'MAIN-01',
-                role: user.role || 'Admin'
-            }
-        });
-    } else {
-        res.status(401).json({
-            status: 'error',
-            message: 'ဖုန်းနံပါတ် သို့မဟုတ် စကားဝှက် မှားယွင်းနေပါသည်။'
+    if (!user) {
+        return res.status(404).json({
+            status: 'not_found',
+            success: false,
+            message: 'ဤဖုန်းနံပါတ်ဖြင့် အကောင့်ဖွင့်ထားခြင်း မရှိပါ (Account not registered)'
         });
     }
+
+    if (user.password !== password) {
+        return res.status(401).json({
+            status: 'invalid_password',
+            success: false,
+            message: 'Password မှားယွင်းနေပါသည် (Incorrect password)'
+        });
+    }
+
+    // Check expiration date
+    if (user.endDate) {
+        const todayStr = new Date().toISOString().split('T')[0];
+        if (todayStr > user.endDate) {
+            return res.status(403).json({
+                status: 'expired',
+                success: false,
+                message: `အကောင့် သက်တမ်းကုန်ဆုံးသွားပါပြီ (${user.endDate} ထိသာ သုံးစွဲနိုင်ပါသည်)`
+            });
+        }
+    }
+
+    // Check devices array & limit (default 5)
+    if (!user.devices) user.devices = [];
+    const limit = user.deviceLimit || 5;
+
+    if (deviceId && !user.devices.includes(deviceId)) {
+        if (user.devices.length >= limit) {
+            return res.status(403).json({
+                status: 'device_limit_exceeded',
+                success: false,
+                message: `Device Limit (${limit} စက်) ပြည့်သွားပါပြီ။ အကောင့်အသစ်မဝင်ရောက်နိုင်ပါ`
+            });
+        } else {
+            user.devices.push(deviceId);
+            saveDB(db);
+        }
+    }
+
+    res.json({
+        status: 'on',
+        success: true,
+        message: 'Login successful',
+        user: {
+            phoneNo: user.phoneNo,
+            username: user.username,
+            businessName: user.businessName,
+            businessType: user.businessType,
+            address: user.address,
+            role: user.role,
+            shopBranchCode: user.shopBranchCode || 'MAIN-01',
+            deviceLimit: limit,
+            devicesCount: user.devices.length,
+            startDate: user.startDate,
+            endDate: user.endDate,
+            status: 'on'
+        }
+    });
 });
 
-// -------------------------------------------------------------
 // 4. Register Endpoint
-// -------------------------------------------------------------
 app.post('/api/register', (req, res) => {
-    const { phoneNo, password, businessName, shopBranchCode } = req.body;
+    const { phoneNo, password, username, businessName, businessType, address, role, deviceId, deviceLimit, startDate, endDate, shopBranchCode } = req.body;
     const db = loadDB();
 
     const existingUser = db.users.find(u => u.phoneNo === phoneNo);
@@ -118,11 +199,25 @@ app.post('/api/register', (req, res) => {
         });
     }
 
+    const todayStr = new Date().toISOString().split('T')[0];
+    const nextYear = new Date();
+    nextYear.setFullYear(nextYear.getFullYear() + 1);
+    const nextYearStr = nextYear.toISOString().split('T')[0];
+
     const newUser = {
         phoneNo,
         password,
+        username: username || 'User',
         businessName: businessName || 'UN POS Shop',
+        businessType: businessType || '',
+        address: address || '',
+        role: role || 'ADMIN',
         shopBranchCode: shopBranchCode || 'MAIN-01',
+        devices: deviceId ? [deviceId] : [],
+        deviceLimit: Number(deviceLimit) || 5,
+        startDate: startDate || todayStr,
+        endDate: endDate || nextYearStr,
+        status: 'on', // Activated immediately upon register
         createdAt: new Date().toISOString()
     };
 
@@ -136,9 +231,7 @@ app.post('/api/register', (req, res) => {
     });
 });
 
-// -------------------------------------------------------------
 // 5. Cloud Sync Upload Endpoint
-// -------------------------------------------------------------
 app.post('/api/sync-upload', (req, res) => {
     const { shopBranchCode, phoneNo, products, vouchers, customers, suppliers, expenses } = req.body;
     const db = loadDB();
@@ -167,9 +260,7 @@ app.post('/api/sync-upload', (req, res) => {
     });
 });
 
-// -------------------------------------------------------------
 // 6. Cloud Sync Download Endpoint
-// -------------------------------------------------------------
 app.get('/api/sync-download', (req, res) => {
     const shopBranchCode = req.query.shopBranchCode || 'MAIN-01';
     const phoneNo = req.query.phoneNo || '';
@@ -202,9 +293,7 @@ app.get('/api/sync-download', (req, res) => {
     }
 });
 
-// -------------------------------------------------------------
-// 7. Change Password Endpoint
-// -------------------------------------------------------------
+// 7. Change Password
 app.post('/api/change-password', (req, res) => {
     const { phoneNo, oldPassword, newPassword } = req.body;
     const db = loadDB();
@@ -219,28 +308,34 @@ app.post('/api/change-password', (req, res) => {
     }
 });
 
-// -------------------------------------------------------------
+// =============================================================
+// ADMIN PANEL ROUTES & APIs
+// =============================================================
+
 // 8. Serve Admin HTML File Route
-// -------------------------------------------------------------
 app.get('/admin', (req, res) => {
     res.sendFile(path.join(__dirname, 'admin.html'));
 });
 
-// -------------------------------------------------------------
 // 9. Admin Overview Data API Endpoint
-// -------------------------------------------------------------
 app.get('/api/admin/overview', (req, res) => {
     const db = loadDB();
     
-    // User ၏ Password များကို ဖျောက်ထားပေးခြင်း
-    const safeUsers = db.users.map(u => ({
+    // Safety check & data formatting for Users
+    const users = db.users.map(u => ({
         phoneNo: u.phoneNo,
-        businessName: u.businessName,
-        shopBranchCode: u.shopBranchCode,
+        username: u.username || 'User',
+        businessName: u.businessName || '-',
+        shopBranchCode: u.shopBranchCode || 'MAIN-01',
+        deviceLimit: u.deviceLimit || 5,
+        devicesCount: u.devices ? u.devices.length : 0,
+        startDate: u.startDate || '-',
+        endDate: u.endDate || '-',
+        status: u.status || 'on',
         createdAt: u.createdAt
     }));
 
-    // Cloud Sync Data များမှ စာရင်းအကျဉ်း ထုတ်ယူခြင်း
+    // Cloud Sync Data Summary
     const syncedStores = Object.keys(db.cloudSyncData).map(key => {
         const item = db.cloudSyncData[key];
         return {
@@ -258,16 +353,66 @@ app.get('/api/admin/overview', (req, res) => {
         status: 'success',
         totalUsers: db.users.length,
         totalSyncedStores: syncedStores.length,
-        users: safeUsers,
+        users: users,
         syncedStores: syncedStores
     });
+});
+
+// 10. Admin Update User API (Extend Validity, Update Device Limit, Change Status)
+app.post('/api/admin/update-user', (req, res) => {
+    const { phoneNo, deviceLimit, startDate, endDate, status, password } = req.body;
+    const db = loadDB();
+    const user = db.users.find(u => u.phoneNo === phoneNo);
+
+    if (!user) {
+        return res.status(404).json({ status: 'error', message: 'User မတွေ့ရှိပါ' });
+    }
+
+    if (deviceLimit !== undefined) user.deviceLimit = Number(deviceLimit);
+    if (startDate) user.startDate = startDate;
+    if (endDate) user.endDate = endDate;
+    if (status) user.status = status;
+    if (password) user.password = password;
+
+    saveDB(db);
+    res.json({ status: 'success', message: 'အကောင့် အချက်အလက်များ အောင်မြင်စွာ ပြင်ဆင်ပြီးပါပြီ' });
+});
+
+// 11. Admin Reset User Registered Devices API
+app.post('/api/admin/reset-devices', (req, res) => {
+    const { phoneNo } = req.body;
+    const db = loadDB();
+    const user = db.users.find(u => u.phoneNo === phoneNo);
+
+    if (!user) {
+        return res.status(404).json({ status: 'error', message: 'User မတွေ့ရှိပါ' });
+    }
+
+    user.devices = [];
+    saveDB(db);
+    res.json({ status: 'success', message: 'ချိတ်ဆက်ထားသော Device များအားလုံး အောင်မြင်စွာ Reset ပြုလုပ်ပြီးပါပြီ' });
+});
+
+// 12. Admin Delete User API
+app.post('/api/admin/delete-user', (req, res) => {
+    const { phoneNo } = req.body;
+    const db = loadDB();
+    const idx = db.users.findIndex(u => u.phoneNo === phoneNo);
+
+    if (idx !== -1) {
+        db.users.splice(idx, 1);
+        saveDB(db);
+        res.json({ status: 'success', message: 'အကောင့် အောင်မြင်စွာ ဖျက်ဆီးပြီးပါပြီ' });
+    } else {
+        res.status(404).json({ status: 'error', message: 'User မတွေ့ရှိပါ' });
+    }
 });
 
 // Start Server
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`==========================================`);
-    console.log(`🚀 POS Online Cloud Backend Running on Port ${PORT}`);
-    console.log(`🌐 API Landing: http://localhost:${PORT}`);
+    console.log(`🚀 UN POS Cloud Backend Running on Port ${PORT}`);
+    console.log(`🌐 Local Test: http://localhost:${PORT}`);
     console.log(`💻 Admin Panel: http://localhost:${PORT}/admin`);
     console.log(`==========================================`);
 });
