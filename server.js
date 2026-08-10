@@ -5,7 +5,7 @@ const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 
 const app = express();
-const PORT = process.env.PORT || 8081;
+const PORT = process.env.PORT || 8082;
 const API_KEY = process.env.API_KEY || "my_secret_pos_key"; // VPS API Secret Key
 
 app.use(cors());
