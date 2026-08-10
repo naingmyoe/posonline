@@ -1,461 +1,134 @@
+// server.js
 const express = require('express');
 const cors = require('cors');
-const fs = require('fs');
+const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 
 const app = express();
-const PORT = process.env.PORT || 8082;
+const PORT = process.env.PORT || 8081;
+const API_KEY = process.env.API_KEY || "my_secret_pos_key"; // VPS API Secret Key
 
-// Middleware
 app.use(cors());
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json());
 
-// Database File Path (JSON File Database)
-const DB_FILE = path.join(__dirname, 'pos_cloud_db.json');
+// Auth Middleware
+function checkAuth(req, res, next) {
+    const authHeader = req.headers['authorization'];
+    const apiKeyHeader = req.headers['x-api-key'];
+    const token = authHeader ? authHeader.replace('Bearer ', '') : apiKeyHeader;
 
-// Initialize local DB structure if not existing
-function loadDB() {
-    if (!fs.existsSync(DB_FILE)) {
-        const initialData = {
-            users: [],
-            cloudSyncData: {} // shopBranchCode_phoneNo -> data
-        };
-        fs.writeFileSync(DB_FILE, JSON.stringify(initialData, null, 2));
-        return initialData;
+    if (API_KEY && token !== API_KEY) {
+        return res.status(401).json({ success: false, message: 'Unauthorized API Key' });
     }
-    try {
-        const data = fs.readFileSync(DB_FILE, 'utf8');
-        return JSON.parse(data);
-    } catch (e) {
-        return { users: [], cloudSyncData: {} };
-    }
+    next();
 }
 
-function saveDB(dbData) {
-    fs.writeFileSync(DB_FILE, JSON.stringify(dbData, null, 2));
-}
-
-// 1. Health Check Endpoint
-app.get('/', (req, res) => {
-    res.send(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <title>UN POS Cloud API Server</title>
-            <style>
-                body { font-family: sans-serif; background: #f4f6f9; padding: 40px; text-align: center; }
-                .card { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); max-width: 500px; margin: auto; }
-                h2 { color: #4D5EED; }
-                .status { background: #e8f5e9; color: #2e7d32; padding: 8px 16px; border-radius: 20px; font-weight: bold; display: inline-block; }
-                .btn-admin { display: inline-block; margin-top: 15px; padding: 10px 20px; background: #2c3e50; color: white; text-decoration: none; border-radius: 6px; font-weight: bold; }
-                .btn-admin:hover { background: #34495e; }
-            </style>
-        </head>
-        <body>
-            <div class="card">
-                <h2>UN POS Cloud Backend API</h2>
-                <p class="status">🟢 Server is Running</p>
-                <p>Port: ${PORT}</p>
-                <p>Cloud Synchronization & Authentication Ready!</p>
-                <a href="/admin" class="btn-admin">Go to Admin Panel</a>
-            </div>
-        </body>
-        </html>
-    `);
+// Database Setup (SQLite)
+const dbPath = path.resolve(__dirname, 'pos_database.db');
+const db = new sqlite3.Database(dbPath, (err) => {
+    if (err) console.error("Database Connection Error:", err.message);
+    else console.log("Connected to POS SQLite Database on VPS.");
 });
 
-// 2. Check Status Endpoint (Supports POST & GET)
-const handleCheckStatus = (req, res) => {
-    const phoneNo = req.body?.phoneNo || req.query?.phoneNo || '';
-    const deviceId = req.body?.deviceId || req.query?.deviceId || '';
-    const db = loadDB();
-    if (!phoneNo) {
-        return res.json({ status: 'on', message: 'UN POS Cloud Server Online', timestamp: Date.now() });
-    }
+// Create Tables
+db.serialize(() => {
+    db.run(`CREATE TABLE IF NOT EXISTS products (
+        id INTEGER PRIMARY KEY,
+        name TEXT,
+        groupName TEXT,
+        purchasePrice REAL,
+        sellingPrice REAL,
+        unit TEXT,
+        note TEXT,
+        trackStock INTEGER,
+        barcode TEXT,
+        quantity INTEGER,
+        alertQuantity INTEGER,
+        imageUri TEXT,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`);
 
-    const user = db.users.find(u => u.phoneNo === phoneNo);
-    if (!user) {
-        return res.json({ status: 'not_found', message: 'အကောင့် မတွေ့ရှိပါ' });
-    }
+    db.run(`CREATE TABLE IF NOT EXISTS vouchers (
+        receiptNo TEXT PRIMARY KEY,
+        timestamp INTEGER,
+        cashierName TEXT,
+        totalAmount REAL,
+        totalItems INTEGER,
+        customerName TEXT,
+        paymentMethod TEXT,
+        isCompleted INTEGER,
+        paidAmount REAL,
+        changeAmount REAL,
+        balanceAmount REAL,
+        note TEXT,
+        discount REAL,
+        fee REAL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`);
+});
 
-    // Check expiration
-    if (user.endDate) {
-        const todayStr = new Date().toISOString().split('T')[0];
-        if (todayStr > user.endDate) {
-            return res.json({ status: 'expired', message: `အကောင့် သက်တမ်းကုန်ဆုံးသွားပါပြီ (${user.endDate})` });
-        }
-    }
+// 1. Connection Test Ping
+app.get('/api/ping', (req, res) => {
+    res.status(200).json({ status: "ok", message: "VPS POS Server is Running Online!" });
+});
+app.get('/ping', (req, res) => {
+    res.status(200).json({ status: "ok", message: "VPS POS Server is Running Online!" });
+});
 
-    if (!user.devices) user.devices = [];
-    const limit = user.deviceLimit || 5;
+// 2. Sync / Save Products
+app.post('/api/products', checkAuth, (req, res) => {
+    const p = req.body;
+    const query = `INSERT INTO products (id, name, groupName, purchasePrice, sellingPrice, unit, note, trackStock, barcode, quantity, alertQuantity, imageUri)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET
+                   name=excluded.name, groupName=excluded.groupName, purchasePrice=excluded.purchasePrice,
+                   sellingPrice=excluded.sellingPrice, unit=excluded.unit, note=excluded.note,
+                   trackStock=excluded.trackStock, barcode=excluded.barcode, quantity=excluded.quantity,
+                   alertQuantity=excluded.alertQuantity, imageUri=excluded.imageUri`;
 
-    if (deviceId && !user.devices.includes(deviceId)) {
-        if (user.devices.length >= limit) {
-            return res.json({
-                status: 'device_limit_exceeded',
-                message: `Device Limit (${limit} စက်) ပြည့်သွားပါပြီ`
-            });
-        } else {
-            user.devices.push(deviceId);
-            saveDB(db);
-        }
-    }
-
-    res.json({
-        status: user.status || 'on',
-        message: 'Active',
-        user: {
-            phoneNo: user.phoneNo,
-            username: user.username,
-            deviceLimit: limit,
-            devicesCount: user.devices.length,
-            startDate: user.startDate,
-            endDate: user.endDate
-        }
-    });
-};
-app.post('/api/check-status', handleCheckStatus);
-app.get('/api/check-status', handleCheckStatus);
-
-// 3. Login Endpoint (Supports POST & GET)
-const handleLogin = (req, res) => {
-    const phoneNo = req.body?.phoneNo || req.query?.phoneNo || '';
-    const password = req.body?.password || req.query?.password || '';
-    const deviceId = req.body?.deviceId || req.query?.deviceId || '';
-    
-    if (!phoneNo || !password) {
-        return res.status(400).json({
-            status: 'error',
-            message: 'ဖုန်းနံပါတ် နှင့် Password ထည့်သွင်းပါ (Please provide phoneNo and password)'
-        });
-    }
-
-    const db = loadDB();
-    const user = db.users.find(u => u.phoneNo === phoneNo);
-
-    if (!user) {
-        return res.status(404).json({
-            status: 'not_found',
-            success: false,
-            message: 'ဤဖုန်းနံပါတ်ဖြင့် အကောင့်ဖွင့်ထားခြင်း မရှိပါ (Account not registered)'
-        });
-    }
-
-    if (user.password !== password) {
-        return res.status(401).json({
-            status: 'invalid_password',
-            success: false,
-            message: 'Password မှားယွင်းနေပါသည် (Incorrect password)'
-        });
-    }
-
-    // Check expiration date
-    if (user.endDate) {
-        const todayStr = new Date().toISOString().split('T')[0];
-        if (todayStr > user.endDate) {
-            return res.status(403).json({
-                status: 'expired',
-                success: false,
-                message: `အကောင့် သက်တမ်းကုန်ဆုံးသွားပါပြီ (${user.endDate} ထိသာ သုံးစွဲနိုင်ပါသည်)`
-            });
-        }
-    }
-
-    // Check devices array & limit (default 5)
-    if (!user.devices) user.devices = [];
-    const limit = user.deviceLimit || 5;
-
-    if (deviceId && !user.devices.includes(deviceId)) {
-        if (user.devices.length >= limit) {
-            return res.status(403).json({
-                status: 'device_limit_exceeded',
-                success: false,
-                message: `Device Limit (${limit} စက်) ပြည့်သွားပါပြီ။ အကောင့်အသစ်မဝင်ရောက်နိုင်ပါ`
-            });
-        } else {
-            user.devices.push(deviceId);
-            saveDB(db);
-        }
-    }
-
-    res.json({
-        status: 'on',
-        success: true,
-        message: 'Login successful',
-        user: {
-            phoneNo: user.phoneNo,
-            username: user.username,
-            businessName: user.businessName,
-            businessType: user.businessType,
-            address: user.address,
-            role: user.role,
-            shopBranchCode: user.shopBranchCode || 'MAIN-01',
-            deviceLimit: limit,
-            devicesCount: user.devices.length,
-            startDate: user.startDate,
-            endDate: user.endDate,
-            status: 'on'
-        }
-    });
-};
-app.post('/api/login', handleLogin);
-app.get('/api/login', handleLogin);
-
-// 4. Register Endpoint (Supports POST & GET)
-const handleRegister = (req, res) => {
-    const data = req.method === 'POST' ? req.body : req.query;
-    const { phoneNo, password, username, businessName, businessType, address, role, deviceId, deviceLimit, startDate, endDate, shopBranchCode } = data;
-
-    const db = loadDB();
-
-    if (!phoneNo || !password) {
-        // If GET without params, return existing registered users list
-        return res.json({
-            status: 'online',
-            message: 'UN POS Register API is Ready (POST or GET with phoneNo & password to register)',
-            totalUsers: db.users.length,
-            users: db.users.map(u => ({
-                phoneNo: u.phoneNo,
-                username: u.username,
-                businessName: u.businessName,
-                startDate: u.startDate,
-                endDate: u.endDate,
-                deviceLimit: u.deviceLimit,
-                devicesCount: u.devices?.length || 0,
-                createdAt: u.createdAt
-            }))
-        });
-    }
-
-    const existingUser = db.users.find(u => u.phoneNo === phoneNo);
-    if (existingUser) {
-        return res.status(400).json({
-            status: 'error',
-            message: 'ဤဖုန်းနံပါတ်ဖြင့် အကောင့်ဖွင့်ပြီးသားဖြစ်ပါသည်။'
-        });
-    }
-
-    const today = new Date();
-    const todayStr = today.toISOString().split('T')[0];
-    
-    // Default 7 days trial period upon registration
-    const sevenDaysLater = new Date(today.getTime() + (7 * 24 * 60 * 60 * 1000));
-    const sevenDaysStr = sevenDaysLater.toISOString().split('T')[0];
-
-    const newUser = {
-        phoneNo,
-        password,
-        username: username || 'User',
-        businessName: businessName || 'UN POS Shop',
-        businessType: businessType || '',
-        address: address || '',
-        role: role || 'ADMIN',
-        shopBranchCode: shopBranchCode || 'MAIN-01',
-        devices: deviceId ? [deviceId] : [],
-        deviceLimit: parseInt(deviceLimit) || 5,
-        startDate: startDate || todayStr,
-        endDate: endDate || sevenDaysStr, // Default 7 days
-        status: 'on', // Activated immediately upon register
-        createdAt: new Date().toISOString()
-    };
-
-    db.users.push(newUser);
-    saveDB(db);
-
-    console.log(`[Register] Registered user ${phoneNo} (${newUser.username}) valid until ${newUser.endDate}`);
-
-    res.json({
-        status: 'success',
-        message: 'အကောင့်သစ် (၇ ရက်စာ) အောင်မြင်စွာ ဖန်တီးပြီးပါပြီ။',
-        user: newUser
-    });
-};
-app.post('/api/register', handleRegister);
-app.get('/api/register', handleRegister);
-
-// 5. Cloud Sync Upload Endpoint
-app.post('/api/sync-upload', (req, res) => {
-    const { shopBranchCode, phoneNo, products, vouchers, customers, suppliers, expenses } = req.body;
-    const db = loadDB();
-
-    const key = `${shopBranchCode || 'MAIN-01'}_${phoneNo || 'default'}`;
-    
-    db.cloudSyncData[key] = {
-        shopBranchCode: shopBranchCode || 'MAIN-01',
-        phoneNo: phoneNo || '',
-        updatedAt: new Date().toISOString(),
-        products: products || [],
-        vouchers: vouchers || [],
-        customers: customers || [],
-        suppliers: suppliers || [],
-        expenses: expenses || []
-    };
-
-    saveDB(db);
-
-    console.log(`[Cloud Sync] Uploaded data for ${key}: ${products?.length || 0} products, ${vouchers?.length || 0} vouchers`);
-
-    res.json({
-        status: 'success',
-        message: 'Cloud Server သို့ ဒေတာများ အောင်မြင်စွာ Upload သိမ်းဆည်းပြီးပါပြီ!',
-        timestamp: new Date().toISOString()
+    db.run(query, [
+        p.id, p.name, p.groupName, p.purchasePrice, p.sellingPrice, p.unit, p.note,
+        p.trackStock ? 1 : 0, p.barcode, p.quantity, p.alertQuantity, p.imageUri
+    ], function(err) {
+        if (err) return res.status(500).json({ success: false, error: err.message });
+        res.json({ success: true, message: "Product synced to VPS successfully!" });
     });
 });
 
-// 6. Cloud Sync Download Endpoint
-app.get('/api/sync-download', (req, res) => {
-    const shopBranchCode = req.query.shopBranchCode || 'MAIN-01';
-    const phoneNo = req.query.phoneNo || '';
-    const key = `${shopBranchCode}_${phoneNo}`;
-
-    const db = loadDB();
-    const data = db.cloudSyncData[key];
-
-    if (data) {
-        res.json({
-            status: 'success',
-            shopBranchCode: data.shopBranchCode,
-            updatedAt: data.updatedAt,
-            products: data.products || [],
-            vouchers: data.vouchers || [],
-            customers: data.customers || [],
-            suppliers: data.suppliers || [],
-            expenses: data.expenses || []
-        });
-    } else {
-        res.json({
-            status: 'success',
-            message: 'No synced data found on Cloud yet',
-            products: [],
-            vouchers: [],
-            customers: [],
-            suppliers: [],
-            expenses: []
-        });
-    }
-});
-
-// 7. Change Password
-app.post('/api/change-password', (req, res) => {
-    const { phoneNo, oldPassword, newPassword } = req.body;
-    const db = loadDB();
-    const idx = db.users.findIndex(u => u.phoneNo === phoneNo && u.password === oldPassword);
-
-    if (idx !== -1) {
-        db.users[idx].password = newPassword;
-        saveDB(db);
-        res.json({ status: 'success', message: 'စကားဝှက် အောင်မြင်စွာ ပြောင်းလဲပြီးပါပြီ။' });
-    } else {
-        res.status(400).json({ status: 'error', message: 'စကားဝှက်အဟောင်း မမှန်ကန်ပါ။' });
-    }
-});
-
-// =============================================================
-// ADMIN PANEL ROUTES & APIs
-// =============================================================
-
-// 8. Serve Admin HTML File Route
-app.get('/admin', (req, res) => {
-    res.sendFile(path.join(__dirname, 'admin.html'));
-});
-
-// 9. Admin Overview Data API Endpoint
-app.get('/api/admin/overview', (req, res) => {
-    const db = loadDB();
-    
-    // Safety check & data formatting for Users
-    const users = db.users.map(u => ({
-        phoneNo: u.phoneNo,
-        username: u.username || 'User',
-        businessName: u.businessName || '-',
-        shopBranchCode: u.shopBranchCode || 'MAIN-01',
-        deviceLimit: u.deviceLimit || 5,
-        devicesCount: u.devices ? u.devices.length : 0,
-        startDate: u.startDate || '-',
-        endDate: u.endDate || '-',
-        status: u.status || 'on',
-        createdAt: u.createdAt
-    }));
-
-    // Cloud Sync Data Summary
-    const syncedStores = Object.keys(db.cloudSyncData).map(key => {
-        const item = db.cloudSyncData[key];
-        return {
-            key: key,
-            shopBranchCode: item.shopBranchCode || 'MAIN-01',
-            phoneNo: item.phoneNo || '',
-            productsCount: item.products ? item.products.length : 0,
-            vouchersCount: item.vouchers ? item.vouchers.length : 0,
-            customersCount: item.customers ? item.customers.length : 0,
-            updatedAt: item.updatedAt
-        };
-    });
-
-    res.json({
-        status: 'success',
-        totalUsers: db.users.length,
-        totalSyncedStores: syncedStores.length,
-        users: users,
-        syncedStores: syncedStores
+// Get Products
+app.get('/api/products', checkAuth, (req, res) => {
+    db.all("SELECT * FROM products ORDER BY id DESC", [], (err, rows) => {
+        if (err) return res.status(500).json({ success: false, error: err.message });
+        res.json({ success: true, data: rows });
     });
 });
 
-// 10. Admin Update User API (Extend Validity, Update Device Limit, Change Status)
-app.post('/api/admin/update-user', (req, res) => {
-    const { phoneNo, deviceLimit, startDate, endDate, status, password } = req.body;
-    const db = loadDB();
-    const user = db.users.find(u => u.phoneNo === phoneNo);
+// 3. Sync / Save Sales Voucher
+app.post('/api/vouchers', checkAuth, (req, res) => {
+    const v = req.body;
+    const query = `INSERT INTO vouchers (receiptNo, timestamp, cashierName, totalAmount, totalItems, customerName, paymentMethod, isCompleted, paidAmount, changeAmount, balanceAmount, note, discount, fee)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(receiptNo) DO UPDATE SET
+                   totalAmount=excluded.totalAmount, isCompleted=excluded.isCompleted, balanceAmount=excluded.balanceAmount`;
 
-    if (!user) {
-        return res.status(404).json({ status: 'error', message: 'User မတွေ့ရှိပါ' });
-    }
-
-    if (deviceLimit !== undefined) user.deviceLimit = Number(deviceLimit);
-    if (startDate) user.startDate = startDate;
-    if (endDate) user.endDate = endDate;
-    if (status) user.status = status;
-    if (password) user.password = password;
-
-    saveDB(db);
-    res.json({ status: 'success', message: 'အကောင့် အချက်အလက်များ အောင်မြင်စွာ ပြင်ဆင်ပြီးပါပြီ' });
+    db.run(query, [
+        v.receiptNo, v.timestamp, v.cashierName, v.totalAmount, v.totalItems, v.customerName,
+        v.paymentMethod, v.isCompleted ? 1 : 0, v.paidAmount, v.changeAmount, v.balanceAmount,
+        v.note, v.discount, v.fee
+    ], function(err) {
+        if (err) return res.status(500).json({ success: false, error: err.message });
+        res.json({ success: true, message: "Voucher synced to VPS successfully!" });
+    });
 });
 
-// 11. Admin Reset User Registered Devices API
-app.post('/api/admin/reset-devices', (req, res) => {
-    const { phoneNo } = req.body;
-    const db = loadDB();
-    const user = db.users.find(u => u.phoneNo === phoneNo);
-
-    if (!user) {
-        return res.status(404).json({ status: 'error', message: 'User မတွေ့ရှိပါ' });
-    }
-
-    user.devices = [];
-    saveDB(db);
-    res.json({ status: 'success', message: 'ချိတ်ဆက်ထားသော Device များအားလုံး အောင်မြင်စွာ Reset ပြုလုပ်ပြီးပါပြီ' });
+// Get Vouchers
+app.get('/api/vouchers', checkAuth, (req, res) => {
+    db.all("SELECT * FROM vouchers ORDER BY timestamp DESC", [], (err, rows) => {
+        if (err) return res.status(500).json({ success: false, error: err.message });
+        res.json({ success: true, data: rows });
+    });
 });
 
-// 12. Admin Delete User API
-app.post('/api/admin/delete-user', (req, res) => {
-    const { phoneNo } = req.body;
-    const db = loadDB();
-    const idx = db.users.findIndex(u => u.phoneNo === phoneNo);
-
-    if (idx !== -1) {
-        db.users.splice(idx, 1);
-        saveDB(db);
-        res.json({ status: 'success', message: 'အကောင့် အောင်မြင်စွာ ဖျက်ဆီးပြီးပါပြီ' });
-    } else {
-        res.status(404).json({ status: 'error', message: 'User မတွေ့ရှိပါ' });
-    }
-});
-
-// Start Server
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`==========================================`);
-    console.log(`🚀 UN POS Cloud Backend Running on Port ${PORT}`);
-    console.log(`🌐 Local Test: http://localhost:${PORT}`);
-    console.log(`💻 Admin Panel: http://localhost:${PORT}/admin`);
-    console.log(`==========================================`);
+app.listen(PORT, () => {
+    console.log(`POS VPS API Server running on port ${PORT}`);
 });
