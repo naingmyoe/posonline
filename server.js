@@ -1,7 +1,7 @@
 /**
  * POS Application Backend API Server
  * Runtime: Node.js (Express + SQLite3)
- * Default Port: 8082a
+ * Default Port: 8082
  * 
  * Features Included:
  * - Static Web Panel Serving ('public/index.html')
@@ -9,7 +9,7 @@
  * - 7-Day Auto Trial Setup on Registration
  * - Expired Account Cleanup & Status check
  * - Up to 5 Devices allowed per account (1 Admin + 4 Cashiers)
- * - Server Stock Deduction on Voucher Sale
+ * - Guaranteed Server Stock Deduction on Voucher Sale
  */
 
 const express = require('express');
@@ -741,7 +741,7 @@ app.delete('/api/product-units/:name', async (req, res) => {
   }
 });
 
-// 8. VOUCHERS API (WITH SERVER STOCK DEDUCTION)
+// 8. VOUCHERS API (GUARANTEED SERVER STOCK DEDUCTION)
 app.get('/api/vouchers', async (req, res) => {
   try {
     const uPhone = getUserPhone(req);
@@ -780,12 +780,13 @@ app.post('/api/vouchers', async (req, res) => {
           [uPhone, v.receiptNo, item.productId || 0, item.productName || '', item.quantity || 1, item.purchasePrice || 0, item.sellingPrice || 0]
         );
 
-        // 🔴 Server ဘက်မှ Product Quantity ကို တိုက်ရိုက် နှုတ်/ပေါင်း ပေးမည့်စနစ်
-        if ((v.isCompleted || v.isCompleted === 1) && item.productId) {
+        // 🔴 ပစ္စည်းရောင်းလိုက်တိုင်း Server ဘက်မှ Quantity ကို ချက်ချင်း အလိုအလျောက် နှုတ်/ပေါင်း ပေးမည်
+        if (item.productId) {
           const prod = await dbGet('SELECT * FROM products WHERE id = ?', [item.productId]);
-          if (prod && (prod.track_stock === 1 || prod.track_stock === true)) {
+          if (prod) {
             const qtyDelta = item.quantity || 1;
-            const newQty = v.isPurchase ? (prod.quantity + qtyDelta) : Math.max(0, prod.quantity - qtyDelta);
+            const isPurchaseVal = (v.isPurchase == 1 || v.isPurchase === true || String(v.isPurchase) === 'true');
+            const newQty = isPurchaseVal ? (prod.quantity + qtyDelta) : Math.max(0, prod.quantity - qtyDelta);
             await dbRun('UPDATE products SET quantity = ? WHERE id = ?', [newQty, item.productId]);
           }
         }
