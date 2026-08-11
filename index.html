@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>POS API Drawer Panel</title>
+    <title>POS SuperAdmin Dashboard</title>
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
@@ -24,29 +24,24 @@
         <button class="navbar-toggler" type="button" data-bs-toggle="offcanvas" data-bs-target="#apiDrawer">
             <span class="navbar-toggler-icon"></span>
         </button>
-        <span class="navbar-brand ms-3 me-auto">POS Admin Dashboard (VPS)</span>
+        <span class="navbar-brand ms-3 me-auto">POS SuperAdmin Dashboard</span>
     </div>
 </nav>
 
 <!-- Menu Drawer -->
 <div class="offcanvas offcanvas-start bg-dark text-white" tabindex="-1" id="apiDrawer">
     <div class="offcanvas-header border-bottom border-secondary">
-        <h5 class="offcanvas-title">API Endpoints</h5>
+        <h5 class="offcanvas-title">System Endpoints</h5>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas"></button>
     </div>
     <div class="offcanvas-body p-0">
         <div class="list-group list-group-flush border-0">
-            <!-- 🟢 API အားလုံးကို အပြည့်အစုံ ပြန်ထည့်ထားပါသည် -->
-            <a href="#" class="list-group-item list-group-item-action list-group-item-dark" onclick="fetchAndDisplay('users', 'Users Management')">👥 /api/users</a>
-            <a href="#" class="list-group-item list-group-item-action list-group-item-dark" onclick="fetchAndDisplay('products', 'Products List')">📦 /api/products</a>
-            <a href="#" class="list-group-item list-group-item-action list-group-item-dark" onclick="fetchAndDisplay('product-groups', 'Product Groups')">📂 /api/product-groups</a>
-            <a href="#" class="list-group-item list-group-item-action list-group-item-dark" onclick="fetchAndDisplay('product-units', 'Product Units')">⚖️ /api/product-units</a>
-            <a href="#" class="list-group-item list-group-item-action list-group-item-dark" onclick="fetchAndDisplay('vouchers', 'Sales Vouchers')">🧾 /api/vouchers</a>
-            <a href="#" class="list-group-item list-group-item-action list-group-item-dark" onclick="fetchAndDisplay('customers', 'Customers')">🤝 /api/customers</a>
-            <a href="#" class="list-group-item list-group-item-action list-group-item-dark" onclick="fetchAndDisplay('suppliers', 'Suppliers')">🏢 /api/suppliers</a>
-            <a href="#" class="list-group-item list-group-item-action list-group-item-dark" onclick="fetchAndDisplay('expenses', 'Expenses')">💸 /api/expenses</a>
-            <a href="#" class="list-group-item list-group-item-action list-group-item-dark" onclick="fetchAndDisplay('payments', 'Payments')">💳 /api/payments</a>
-            <a href="#" class="list-group-item list-group-item-action bg-primary text-white border-top border-secondary mt-3" onclick="syncAll()">🔄 /api/sync/all (Test JSON)</a>
+            <a href="#" class="list-group-item list-group-item-action list-group-item-dark text-warning" onclick="fetchAndDisplay('users', 'Users Management')">👥 All Tenants (Users)</a>
+            <a href="#" class="list-group-item list-group-item-action list-group-item-dark" onclick="fetchAndDisplay('products', 'All Products')">📦 Products</a>
+            <a href="#" class="list-group-item list-group-item-action list-group-item-dark" onclick="fetchAndDisplay('vouchers', 'All Sales Vouchers')">🧾 Vouchers</a>
+            <a href="#" class="list-group-item list-group-item-action list-group-item-dark" onclick="fetchAndDisplay('customers', 'All Customers')">🤝 Customers</a>
+            <a href="#" class="list-group-item list-group-item-action list-group-item-dark" onclick="fetchAndDisplay('expenses', 'All Expenses')">💸 Expenses</a>
+            <a href="#" class="list-group-item list-group-item-action list-group-item-dark" onclick="fetchAndDisplay('payments', 'All Payments')">💳 Payments</a>
         </div>
     </div>
 </div>
@@ -54,13 +49,11 @@
 <!-- Main Content Area -->
 <div class="container-fluid">
     <div class="row justify-content-center">
-        <div class="col-12 col-lg-10">
+        <div class="col-12 col-lg-11">
             <div id="content-area">
-                <h3 id="page-title" class="text-secondary">Welcome!</h3>
-                <p class="text-muted" id="page-desc">Please open the menu drawer on the top left and select an API to view its data.</p>
-                <div id="table-container" class="table-responsive">
-                    <!-- Dynamic Table or JSON will be injected here -->
-                </div>
+                <h3 id="page-title" class="text-secondary">Welcome SuperAdmin!</h3>
+                <p class="text-muted" id="page-desc">Select an API from the drawer to manage Multi-Tenant Data.</p>
+                <div id="table-container" class="table-responsive"></div>
             </div>
         </div>
     </div>
@@ -71,7 +64,7 @@
   <div class="modal-dialog">
     <div class="modal-content">
       <div class="modal-header bg-warning">
-        <h5 class="modal-title">Manage User Data</h5>
+        <h5 class="modal-title">Manage User (Tenant)</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
@@ -84,17 +77,17 @@
             <option value="on">Active (On)</option>
             <option value="banned">Banned</option>
             <option value="blocked">Blocked</option>
+            <option value="expired">Expired</option>
           </select>
         </div>
         
         <div class="mb-3">
-          <label class="form-label fw-bold">Expire Date</label>
+          <label class="form-label fw-bold">Expire Date (YYYY-MM-DD)</label>
           <input type="date" id="m_end_date" class="form-control">
-          <small class="text-muted">Current stored format (YYYY-MM-DD)</small>
         </div>
 
         <div class="d-flex justify-content-between mt-4">
-            <button class="btn btn-danger" onclick="deleteUser()">🗑 Delete User</button>
+            <button class="btn btn-danger" onclick="deleteUser()">🗑 Delete</button>
             <button class="btn btn-success" onclick="updateUser()">💾 Save Changes</button>
         </div>
       </div>
@@ -106,26 +99,35 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
 <script>
-    // VPS IP Configuration
     const API_BASE_URL = 'http://74.81.63.87:8082/api';
-    
-    // Global variable to keep track of selected user
     let selectedUserPhone = '';
 
-    // 🟢 API Configurations အားလုံး အပြည့်အစုံ
+    // 🟢 Configurations modified to show Tenant's Phone (user_phone)
     const apiConfig = {
         'users': { 
             keys: ['phoneNo', 'username', 'role', 'status', 'endDate', 'action'], 
-            headers: ['Phone', 'Username', 'Role', 'Status', 'Expire Date', 'Action'] 
+            headers: ['Owner Phone', 'Username', 'Role', 'Status', 'Expire Date', 'Action'] 
         },
-        'products': { keys: ['id', 'name', 'groupName', 'sellingPrice', 'quantity'], headers: ['ID', 'Name', 'Group', 'Price', 'Stock'] },
-        'product-groups': { keys: ['name'], headers: ['Group Name'] },
-        'product-units': { keys: ['name'], headers: ['Unit Name'] },
-        'vouchers': { keys: ['receipt_no', 'cashier_name', 'total_amount', 'payment_method', 'timestamp'], headers: ['Receipt No', 'Cashier', 'Total Amount', 'Payment', 'Date/Time'] },
-        'customers': { keys: ['id', 'name', 'phone', 'address'], headers: ['ID', 'Name', 'Phone', 'Address'] },
-        'suppliers': { keys: ['id', 'name', 'phone', 'address'], headers: ['ID', 'Name', 'Phone', 'Address'] },
-        'expenses': { keys: ['id', 'category_name', 'amount', 'timestamp'], headers: ['ID', 'Category', 'Amount', 'Date'] },
-        'payments': { keys: ['id', 'method', 'amount', 'date'], headers: ['ID', 'Method', 'Amount', 'Date'] }
+        'products': { 
+            keys: ['id', 'userPhone', 'name', 'groupName', 'sellingPrice', 'quantity'], 
+            headers: ['Prod ID', '🔑 Owner Phone', 'Product Name', 'Group', 'Sell Price', 'Stock'] 
+        },
+        'vouchers': { 
+            keys: ['receipt_no', 'user_phone', 'cashier_name', 'total_amount', 'payment_method', 'timestamp'], 
+            headers: ['Receipt No', '🔑 Owner Phone', 'Cashier', 'Total Amount', 'Payment', 'Date/Time'] 
+        },
+        'customers': { 
+            keys: ['id', 'user_phone', 'name', 'phone'], 
+            headers: ['ID', '🔑 Owner Phone', 'Customer Name', 'Phone'] 
+        },
+        'expenses': { 
+            keys: ['id', 'user_phone', 'category_name', 'amount', 'timestamp'], 
+            headers: ['ID', '🔑 Owner Phone', 'Category', 'Amount', 'Date'] 
+        },
+        'payments': { 
+            keys: ['id', 'user_phone', 'method', 'amount', 'date'], 
+            headers: ['ID', '🔑 Owner Phone', 'Method', 'Amount', 'Date'] 
+        }
     };
 
     async function fetchAndDisplay(endpoint, title) {
@@ -142,14 +144,7 @@
 
             if (data.success) {
                 document.getElementById('page-desc').innerText = `Data loaded successfully.`;
-                
-                // 🟢 JSON Data Array ကို မှန်ကန်စွာ ခွဲထုတ်ခြင်း
-                let dataArray = [];
-                if (endpoint === 'product-groups') dataArray = data.groups;
-                else if (endpoint === 'product-units') dataArray = data.units;
-                else dataArray = data[endpoint]; 
-
-                generateTable(endpoint, dataArray);
+                generateTable(endpoint, data[endpoint]);
             } else {
                 document.getElementById('table-container').innerHTML = `<div class="alert alert-danger">Error fetching data.</div>`;
             }
@@ -161,7 +156,7 @@
     function generateTable(endpoint, items) {
         const container = document.getElementById('table-container');
         if (!items || items.length === 0) {
-            container.innerHTML = `<div class="alert alert-warning">No data found in this table.</div>`;
+            container.innerHTML = `<div class="alert alert-warning">No data found.</div>`;
             return;
         }
 
@@ -176,25 +171,25 @@
         items.forEach(item => {
             tableHTML += `<tr>`;
             config.keys.forEach(key => {
-                // 🔴 Action Column For Users
                 if (key === 'action' && endpoint === 'users') {
-                    // Safe stringify for HTML onClick event
                     const userJson = encodeURIComponent(JSON.stringify(item));
                     tableHTML += `<td><button class="btn btn-sm btn-primary" onclick="openManageModal('${userJson}')">⚙️ Manage</button></td>`;
-                    return; // Skip normal cell processing
+                    return; 
                 }
 
                 let cellData = item[key] !== undefined && item[key] !== null ? item[key] : '-';
                 
-                // Color badges for user status
                 if (key === 'status' && endpoint === 'users') {
-                    let badgeColor = cellData === 'on' ? 'bg-success' : (cellData === 'banned' ? 'bg-danger' : 'bg-warning text-dark');
+                    let badgeColor = cellData === 'on' ? 'bg-success' : (cellData === 'expired' ? 'bg-secondary' : 'bg-danger');
                     cellData = `<span class="badge ${badgeColor} status-badge">${cellData}</span>`;
                 }
                 
-                // Format Timestamp
                 if (key === 'timestamp' || key === 'date') {
                     cellData = new Date(parseInt(cellData)).toLocaleString();
+                }
+
+                if (key === 'userPhone' || key === 'user_phone') {
+                    cellData = `<span class="text-primary fw-bold">${cellData || 'System'}</span>`;
                 }
 
                 tableHTML += `<td>${cellData}</td>`;
@@ -206,7 +201,6 @@
         container.innerHTML = tableHTML;
     }
 
-    // 🔴 Open User Modal with Data
     function openManageModal(encodedUserJson) {
         const user = JSON.parse(decodeURIComponent(encodedUserJson));
         selectedUserPhone = user.phoneNo;
@@ -220,11 +214,9 @@
         modal.show();
     }
 
-    // 🔴 Update User (Save Changes)
     async function updateUser() {
         const status = document.getElementById('m_status').value;
         const endDate = document.getElementById('m_end_date').value;
-
         try {
             const res = await fetch(`${API_BASE_URL}/users/${selectedUserPhone}`, {
                 method: 'PUT',
@@ -232,63 +224,25 @@
                 body: JSON.stringify({ status: status, endDate: endDate })
             });
             const data = await res.json();
-            
             if (data.success) {
                 alert("User details updated successfully!");
                 bootstrap.Modal.getInstance(document.getElementById('userManageModal')).hide();
-                fetchAndDisplay('users', 'Users Management'); // Refresh table
-            } else {
-                alert("Failed to update user.");
+                fetchAndDisplay('users', 'Users Management'); 
             }
-        } catch (error) {
-            alert("API connection error.");
-        }
+        } catch (error) { alert("API connection error."); }
     }
 
-    // 🔴 Delete User
     async function deleteUser() {
-        if (!confirm(`Are you sure you want to permanently DELETE user ${selectedUserPhone}?`)) {
-            return;
-        }
-
+        if (!confirm(`Are you sure you want to permanently DELETE user ${selectedUserPhone}?`)) return;
         try {
-            const res = await fetch(`${API_BASE_URL}/users/${selectedUserPhone}`, {
-                method: 'DELETE'
-            });
+            const res = await fetch(`${API_BASE_URL}/users/${selectedUserPhone}`, { method: 'DELETE' });
             const data = await res.json();
-            
             if (data.success) {
                 alert("User deleted successfully!");
                 bootstrap.Modal.getInstance(document.getElementById('userManageModal')).hide();
-                fetchAndDisplay('users', 'Users Management'); // Refresh table
-            } else {
-                alert("Failed to delete user.");
+                fetchAndDisplay('users', 'Users Management'); 
             }
-        } catch (error) {
-            alert("API connection error.");
-        }
-    }
-
-    // 🟢 Sync All (Test API Dump)
-    async function syncAll() {
-        const offcanvas = bootstrap.Offcanvas.getInstance(document.getElementById('apiDrawer'));
-        if(offcanvas) offcanvas.hide();
-
-        document.getElementById('page-title').innerText = "Sync All Data";
-        document.getElementById('page-desc').innerText = "Fetching everything from /api/sync/all...";
-        document.getElementById('table-container').innerHTML = '<div class="spinner-border text-primary"></div> Loading...';
-
-        try {
-            const response = await fetch(`${API_BASE_URL}/sync/all`);
-            const data = await response.json();
-            
-            if (data.success) {
-                document.getElementById('page-desc').innerText = "JSON response received successfully.";
-                document.getElementById('table-container').innerHTML = `<pre class="bg-dark text-light p-3 rounded" style="max-height: 500px; overflow-y: auto;">${JSON.stringify(data.data, null, 2)}</pre>`;
-            }
-        } catch (error) {
-            document.getElementById('table-container').innerHTML = `<div class="alert alert-danger">Error connecting to server.</div>`;
-        }
+        } catch (error) { alert("API connection error."); }
     }
 </script>
 </body>
