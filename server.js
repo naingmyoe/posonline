@@ -1,7 +1,7 @@
 /**
  * POS Application Backend API Server
  * Runtime: Node.js (Express + SQLite3)
- * Default Port: 8082
+ * Default Port: 8082a
  * 
  * Features Included:
  * - Multi-tenant isolation by user_phone
@@ -11,7 +11,7 @@
  * - Cashier to Admin Link System (6-digit code)
  * - Full CRUD for all modules
  * - Payment Methods Table with Default "Cash" & "Credit"
- * - Smart Stock Deduction (Restore old stock & Deduct new to prevent double deduct)
+ * - Prevent Double Stock Deduction (Server only saves vouchers)
  * - Track Stock Default "Yes" Fix
  */
 
@@ -99,6 +99,7 @@ async function initDatabase() {
     await dbRun(`CREATE TABLE IF NOT EXISTS expense_categories (id INTEGER PRIMARY KEY AUTOINCREMENT, user_phone TEXT, name TEXT NOT NULL, icon_name TEXT DEFAULT 'ShoppingCart')`);
     await dbRun(`CREATE TABLE IF NOT EXISTS expenses (id INTEGER PRIMARY KEY AUTOINCREMENT, user_phone TEXT, category_name TEXT NOT NULL, description TEXT, amount REAL DEFAULT 0, payment_method TEXT, note TEXT, timestamp INTEGER NOT NULL, date_string TEXT, time_string TEXT)`);
     
+    // 🔴 Payment Methods Table အသစ်ထည့်ခြင်း
     await dbRun(`CREATE TABLE IF NOT EXISTS payment_methods (id INTEGER PRIMARY KEY AUTOINCREMENT, user_phone TEXT, name TEXT NOT NULL)`);
 
     const alterTables = ['products', 'vouchers', 'voucher_items', 'customers', 'suppliers', 'payments', 'expense_categories', 'expenses'];
@@ -110,6 +111,7 @@ async function initDatabase() {
     try { await dbRun(`ALTER TABLE users ADD COLUMN devices TEXT DEFAULT '[]'`); } catch (_) {}
     try { await dbRun(`ALTER TABLE users ADD COLUMN cashier_code TEXT DEFAULT ''`); } catch (_) {}
 
+    // 🔴 Default Payment Methods ဖြည့်သွင်းခြင်း
     const seedPm = await dbGet(`SELECT COUNT(*) as count FROM payment_methods WHERE user_phone IS NULL OR user_phone = ''`);
     if (seedPm && seedPm.count === 0) {
       await dbRun(`INSERT INTO payment_methods (name) VALUES ('Cash'), ('Credit')`);
@@ -121,6 +123,7 @@ async function initDatabase() {
 }
 initDatabase();
 
+// Device check function
 function parseDevices(user, currentDeviceId) {
   let deviceList = [];
   try { if (user.devices) deviceList = JSON.parse(user.devices); } catch (e) { deviceList = []; }
@@ -190,11 +193,6 @@ app.post('/api/link-cashier', async (req, res) => {
 
     const cashier = await dbGet('SELECT * FROM users WHERE cashier_code = ?', [cashierCode.trim()]);
     if (!cashier) return res.status(404).json({ success: false, message: 'ထည့်သွင်းထားသော Code 6 လုံး မမှန်ကန်ပါ' });
-
-    const existingCashiers = await dbAll('SELECT * FROM users WHERE role = "CASHIER" AND business_name = ?', [admin.business_name]);
-    if (existingCashiers && existingCashiers.length >= 4 && cashier.business_name !== admin.business_name) {
-      return res.status(400).json({ success: false, message: 'Cashier အကောင့် ၄ ဦး ထက်ပို၍ ချိတ်ဆက်ခွင့် မရှိပါ (Max 4 Cashiers Reached)' });
-    }
 
     await dbRun(`UPDATE users SET business_name = ?, business_type = ?, address = ?, status = 'on', start_date = ?, end_date = ? WHERE phone_no = ?`, [admin.business_name, admin.business_type, admin.address, admin.start_date, admin.end_date, cashier.phone_no]);
     const updatedCashier = await dbGet('SELECT * FROM users WHERE phone_no = ?', [cashier.phone_no]);
@@ -287,7 +285,7 @@ app.post('/api/products', async (req, res) => {
     const uPhone = getUserPhone(req);
     const p = req.body;
     
-    // Track Stock Default Fix
+    // 🔴 Track Stock Default Fix
     let ts = p.trackStock !== undefined ? p.trackStock : p.track_stock;
     let finalTrackStock = 1; 
     if (ts !== undefined) finalTrackStock = (ts === 1 || ts === true || String(ts).toLowerCase() === 'true' || String(ts) === '1') ? 1 : 0;
@@ -447,7 +445,7 @@ app.delete('/api/payment-methods/:id', async (req, res) => {
 });
 
 // ------------------------------------------
-// 🧾 VOUCHERS (SMART DEDUCT & RESTORE)
+// 🧾 VOUCHERS (NO DOUBLE DEDUCT FIX)
 // ------------------------------------------
 app.get('/api/vouchers', async (req, res) => {
   try {
@@ -470,51 +468,20 @@ app.post('/api/vouchers', async (req, res) => {
     const v = req.body;
     const payMethod = v.paymentMethod || v.payment_method || 'CASH';
 
-    // 🔴 1. RESTORE OLD STOCK (Double Deduct Protection)
-    const oldVoucher = await dbGet('SELECT is_purchase, is_completed FROM vouchers WHERE receipt_no = ?', [v.receiptNo]);
-    if (oldVoucher) {
-      const oldItems = await dbAll('SELECT product_id, quantity FROM voucher_items WHERE voucher_id = ?', [v.receiptNo]);
-      for (const oldItem of oldItems) {
-        if (oldItem.product_id) {
-          const prod = await dbGet('SELECT * FROM products WHERE id = ?', [oldItem.product_id]);
-          if (prod && (prod.track_stock == 1 || prod.track_stock === 'true' || prod.track_stock === true)) {
-            const isOldPurchase = (oldVoucher.is_purchase == 1 || oldVoucher.is_purchase === true || String(oldVoucher.is_purchase) === 'true');
-            // If it was purchase -> subtract back. If sale -> add back.
-            const restoredQty = isOldPurchase ? (prod.quantity - oldItem.quantity) : (prod.quantity + oldItem.quantity);
-            await dbRun('UPDATE products SET quantity = ? WHERE id = ?', [Math.max(0, restoredQty), oldItem.product_id]);
-          }
-        }
-      }
-    }
-
-    // 🔴 2. INSERT VOUCHER
+    // 🔴 Server ဘက်မှ Stock ကို ထပ်မံအနှုတ်မခံရစေရန် Update Products Code ကို ဖြုတ်ထားပါသည် (APK မှသာ နှုတ်မည်)
     await dbRun(
       `INSERT OR REPLACE INTO vouchers (receipt_no, user_phone, timestamp, cashier_name, total_amount, total_items, customer_name, payment_method, is_completed, is_purchase, paid_amount, change_amount, balance_amount, note, discount, fee) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [v.receiptNo, uPhone || null, v.timestamp || Date.now(), v.cashierName || '', v.totalAmount || 0, v.totalItems || 0, v.customerName || 'Not Register', payMethod, v.isCompleted ? 1 : 0, v.isPurchase ? 1 : 0, v.paidAmount || 0, v.changeAmount || 0, v.balanceAmount || 0, v.note || '', v.discount || 0, v.fee || 0]
     );
 
-    // 🔴 3. DELETE OLD ITEMS
     await dbRun('DELETE FROM voucher_items WHERE voucher_id = ?', [v.receiptNo]);
 
-    // 🔴 4. INSERT NEW ITEMS & DEDUCT STOCK
     if (v.items && Array.isArray(v.items)) {
       for (const item of v.items) {
         await dbRun(
           `INSERT INTO voucher_items (user_phone, voucher_id, product_id, product_name, quantity, purchase_price, selling_price) VALUES (?, ?, ?, ?, ?, ?, ?)`,
           [uPhone || null, v.receiptNo, item.productId || 0, item.productName || '', item.quantity || 1, item.purchasePrice || 0, item.sellingPrice || 0]
         );
-
-        // Stock Deduct/Add
-        if ((v.isCompleted == 1 || v.isCompleted === true || String(v.isCompleted) === 'true') && item.productId) {
-          const prod = await dbGet('SELECT * FROM products WHERE id = ?', [item.productId]);
-          if (prod && (prod.track_stock == 1 || prod.track_stock === 'true' || prod.track_stock === true)) {
-            const isNewPurchase = (v.isPurchase == 1 || v.isPurchase === true || String(v.isPurchase) === 'true');
-            const qtyDelta = item.quantity || 1;
-            // If new is purchase -> add. If sale -> subtract.
-            const newQty = isNewPurchase ? (prod.quantity + qtyDelta) : Math.max(0, prod.quantity - qtyDelta);
-            await dbRun('UPDATE products SET quantity = ? WHERE id = ?', [newQty, item.productId]);
-          }
-        }
       }
     }
     res.status(201).json({ success: true });
