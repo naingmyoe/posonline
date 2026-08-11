@@ -10,8 +10,8 @@
  * - Up to 5 Devices allowed per account
  * - Full CRUD (GET, POST, PUT, DELETE) for all modules
  * - Web Panel Static File Serving
- * - Stock Auto Restore & Deduct on Voucher Update
- * - Track Stock Default "Yes" Fix
+ * - Stock Deduction handled by APK (Server only saves data)
+ * - Track Stock Default "Yes" Fix included
  */
 
 const express = require('express');
@@ -246,9 +246,9 @@ app.post('/api/products', async (req, res) => {
     const uPhone = getUserPhone(req);
     const p = req.body;
 
-    // 🔴 Track Stock ပြဿနာကို ဖြေရှင်းထားခြင်း (APK က မပို့ခဲ့ရင် Default 1 - Yes ထားမည်)
+    // 🔴 Track Stock Default Fix
     let ts = p.trackStock !== undefined ? p.trackStock : p.track_stock;
-    let finalTrackStock = 1; // Default Yes
+    let finalTrackStock = 1; 
     if (ts !== undefined) {
       finalTrackStock = (ts === 1 || ts === true || String(ts).toLowerCase() === 'true' || String(ts) === '1') ? 1 : 0;
     }
@@ -256,20 +256,7 @@ app.post('/api/products', async (req, res) => {
     const result = await dbRun(
       `INSERT INTO products (user_phone, name, group_name, purchase_price, selling_price, unit, note, track_stock, barcode, quantity, alert_quantity, image_uri) 
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, 
-      [
-        uPhone || p.userPhone || null, 
-        p.name, 
-        p.groupName || p.group_name || '', 
-        p.purchasePrice || p.purchase_price || 0, 
-        p.sellingPrice || p.selling_price || 0, 
-        p.unit || '', 
-        p.note || '', 
-        finalTrackStock, 
-        p.barcode || '', 
-        p.quantity || 0, 
-        p.alertQuantity || p.alert_quantity || 0, 
-        p.imageUri || p.image_uri || ''
-      ]
+      [uPhone || p.userPhone || null, p.name, p.groupName || p.group_name || '', p.purchasePrice || p.purchase_price || 0, p.sellingPrice || p.selling_price || 0, p.unit || '', p.note || '', finalTrackStock, p.barcode || '', p.quantity || 0, p.alertQuantity || p.alert_quantity || 0, p.imageUri || p.image_uri || '']
     );
     res.status(201).json({ success: true, id: result.lastID });
   } catch (err) { res.status(500).json({ success: false, error: err.message }); }
@@ -281,9 +268,8 @@ app.put('/api/products/:id', async (req, res) => {
     const uPhone = getUserPhone(req);
     const p = req.body;
 
-    // 🔴 Track Stock ပြဿနာကို ဖြေရှင်းထားခြင်း
     let ts = p.trackStock !== undefined ? p.trackStock : p.track_stock;
-    let finalTrackStock = 1; // Default Yes
+    let finalTrackStock = 1; 
     if (ts !== undefined) {
       finalTrackStock = (ts === 1 || ts === true || String(ts).toLowerCase() === 'true' || String(ts) === '1') ? 1 : 0;
     }
@@ -324,7 +310,9 @@ app.delete('/api/products/:id', async (req, res) => {
 app.get('/api/product-groups', async (req, res) => {
   try {
     const uPhone = getUserPhone(req);
-    const groups = await dbAll(uPhone ? 'SELECT name FROM product_groups WHERE user_phone = ? OR user_phone IS NULL OR user_phone = ""' : 'SELECT name FROM product_groups', uPhone ? [uPhone] : []);
+    // 🔴 userPhone ပါ ဆွဲထုတ်ရန် ပြင်ထားသည်
+    const sql = uPhone ? 'SELECT name, user_phone as userPhone FROM product_groups WHERE user_phone = ? OR user_phone IS NULL OR user_phone = ""' : 'SELECT name, user_phone as userPhone FROM product_groups';
+    const groups = await dbAll(sql, uPhone ? [uPhone] : []);
     res.json({ success: true, groups });
   } catch (err) { res.status(500).json({ success: false, error: err.message }); }
 });
@@ -373,7 +361,9 @@ app.delete('/api/product-groups/:name', async (req, res) => {
 app.get('/api/product-units', async (req, res) => {
   try {
     const uPhone = getUserPhone(req);
-    const units = await dbAll(uPhone ? 'SELECT name FROM product_units WHERE user_phone = ? OR user_phone IS NULL OR user_phone = ""' : 'SELECT name FROM product_units', uPhone ? [uPhone] : []);
+    // 🔴 userPhone ပါ ဆွဲထုတ်ရန် ပြင်ထားသည်
+    const sql = uPhone ? 'SELECT name, user_phone as userPhone FROM product_units WHERE user_phone = ? OR user_phone IS NULL OR user_phone = ""' : 'SELECT name, user_phone as userPhone FROM product_units';
+    const units = await dbAll(sql, uPhone ? [uPhone] : []);
     res.json({ success: true, units });
   } catch (err) { res.status(500).json({ success: false, error: err.message }); }
 });
@@ -434,41 +424,23 @@ app.get('/api/vouchers', async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, error: err.message }); }
 });
 
+// 🔴 Stock (၂) ခါအနှုတ်ခံရသည့် ပြဿနာဖြေရှင်းထားသည့် Code
 app.post('/api/vouchers', async (req, res) => {
   try {
     const uPhone = getUserPhone(req);
     const v = req.body;
 
-    // 🔴 1. RESTORE OLD STOCK
-    const oldVoucher = await dbGet('SELECT is_purchase, is_completed FROM vouchers WHERE receipt_no = ?', [v.receiptNo]);
-
-    if (oldVoucher && (oldVoucher.is_completed === 1 || oldVoucher.is_completed === true || String(oldVoucher.is_completed) === 'true')) {
-      const oldItems = await dbAll('SELECT product_id, quantity FROM voucher_items WHERE voucher_id = ?', [v.receiptNo]);
-      
-      for (const oldItem of oldItems) {
-        if (oldItem.product_id) {
-          const prod = await dbGet('SELECT * FROM products WHERE id = ?', [oldItem.product_id]);
-          if (prod && (prod.track_stock === 1 || prod.track_stock === true || String(prod.track_stock) === 'true')) {
-            const qtyDelta = oldItem.quantity || 1;
-            const isPurchase = (oldVoucher.is_purchase === 1 || oldVoucher.is_purchase === true || String(oldVoucher.is_purchase) === 'true');
-            const restoredQty = isPurchase ? (prod.quantity - qtyDelta) : (prod.quantity + qtyDelta);
-            await dbRun('UPDATE products SET quantity = ? WHERE id = ?', [Math.max(0, restoredQty), oldItem.product_id]);
-          }
-        }
-      }
-    }
-
-    // 🔴 2. INSERT NEW VOUCHER
+    // Voucher အသစ်ကို ထည့်သွင်းခြင်း (သို့) အဟောင်းကို ဖုံးပြီး Save ခြင်း
     await dbRun(
       `INSERT OR REPLACE INTO vouchers (receipt_no, user_phone, timestamp, cashier_name, total_amount, total_items, customer_name, payment_method, is_completed, is_purchase, paid_amount, change_amount, balance_amount, note, discount, fee)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [v.receiptNo, uPhone || null, v.timestamp || Date.now(), v.cashierName || '', v.totalAmount || 0, v.totalItems || 0, v.customerName || 'Not Register', v.paymentMethod || 'CASH', v.isCompleted ? 1 : 0, v.isPurchase ? 1 : 0, v.paidAmount || 0, v.changeAmount || 0, v.balanceAmount || 0, v.note || '', v.discount || 0, v.fee || 0]
     );
 
-    // 🔴 3. DELETE OLD ITEMS
+    // ယခင် Voucher Items အဟောင်းများကို ဖျက်ပစ်ခြင်း
     await dbRun('DELETE FROM voucher_items WHERE voucher_id = ?', [v.receiptNo]);
 
-    // 🔴 4. INSERT NEW ITEMS & DEDUCT STOCK
+    // Voucher Items အသစ်များကိုသာ ထည့်သွင်းမည် (Server မှ Stock နှုတ်ခြင်း မလုပ်တော့ပါ)
     if (v.items && Array.isArray(v.items)) {
       for (const item of v.items) {
         await dbRun(
@@ -476,16 +448,6 @@ app.post('/api/vouchers', async (req, res) => {
            VALUES (?, ?, ?, ?, ?, ?, ?)`,
           [uPhone || null, v.receiptNo, item.productId || 0, item.productName || '', item.quantity || 1, item.purchasePrice || 0, item.sellingPrice || 0]
         );
-
-        if ((v.isCompleted || v.isCompleted === 1 || String(v.isCompleted) === 'true') && item.productId) {
-          const prod = await dbGet('SELECT * FROM products WHERE id = ?', [item.productId]);
-          if (prod && (prod.track_stock === 1 || prod.track_stock === true || String(prod.track_stock) === 'true')) {
-            const qtyDelta = item.quantity || 1;
-            const isPurchase = (v.isPurchase || v.isPurchase === 1 || String(v.isPurchase) === 'true');
-            const newQty = isPurchase ? (prod.quantity + qtyDelta) : Math.max(0, prod.quantity - qtyDelta);
-            await dbRun('UPDATE products SET quantity = ? WHERE id = ?', [newQty, item.productId]);
-          }
-        }
       }
     }
     res.status(201).json({ success: true });
@@ -672,7 +634,7 @@ app.delete('/api/payments/:id', async (req, res) => {
 });
 
 // ------------------------------------------
-// 🔄 FULL SYNC (SCOPED BY USER)
+// 🔄 FULL SYNC (SCOPED BY USER PHONE)
 // ------------------------------------------
 app.get('/api/sync/all', async (req, res) => {
   try {
@@ -681,8 +643,8 @@ app.get('/api/sync/all', async (req, res) => {
     if (uPhone) {
       data.users = await dbAll('SELECT * FROM users WHERE phone_no = ?', [uPhone]);
       data.products = await dbAll('SELECT * FROM products WHERE user_phone = ? OR user_phone IS NULL OR user_phone = ""', [uPhone]);
-      data.productGroups = await dbAll('SELECT * FROM product_groups WHERE user_phone = ? OR user_phone IS NULL OR user_phone = ""', [uPhone]);
-      data.productUnits = await dbAll('SELECT * FROM product_units WHERE user_phone = ? OR user_phone IS NULL OR user_phone = ""', [uPhone]);
+      data.productGroups = await dbAll('SELECT name, user_phone as userPhone FROM product_groups WHERE user_phone = ? OR user_phone IS NULL OR user_phone = ""', [uPhone]);
+      data.productUnits = await dbAll('SELECT name, user_phone as userPhone FROM product_units WHERE user_phone = ? OR user_phone IS NULL OR user_phone = ""', [uPhone]);
       data.vouchers = await dbAll('SELECT * FROM vouchers WHERE user_phone = ? OR user_phone IS NULL OR user_phone = ""', [uPhone]);
       data.voucherItems = await dbAll('SELECT * FROM voucher_items WHERE user_phone = ? OR user_phone IS NULL OR user_phone = ""', [uPhone]);
       data.customers = await dbAll('SELECT * FROM customers WHERE user_phone = ? OR user_phone IS NULL OR user_phone = ""', [uPhone]);
@@ -693,8 +655,8 @@ app.get('/api/sync/all', async (req, res) => {
     } else {
       data.users = await dbAll('SELECT * FROM users');
       data.products = await dbAll('SELECT * FROM products');
-      data.productGroups = await dbAll('SELECT * FROM product_groups');
-      data.productUnits = await dbAll('SELECT * FROM product_units');
+      data.productGroups = await dbAll('SELECT name, user_phone as userPhone FROM product_groups');
+      data.productUnits = await dbAll('SELECT name, user_phone as userPhone FROM product_units');
       data.vouchers = await dbAll('SELECT * FROM vouchers');
       data.voucherItems = await dbAll('SELECT * FROM voucher_items');
       data.customers = await dbAll('SELECT * FROM customers');
