@@ -23,6 +23,8 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+app.use(express.static(path.join(__dirname, 'public')));
+
 // Initialize SQLite Database
 const dbPath = path.join(__dirname, 'pos_database.sqlite');
 const db = new sqlite3.Database(dbPath, (err) => {
