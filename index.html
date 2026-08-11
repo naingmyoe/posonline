@@ -23,7 +23,7 @@
         <button class="navbar-toggler" type="button" data-bs-toggle="offcanvas" data-bs-target="#apiDrawer" aria-controls="apiDrawer">
             <span class="navbar-toggler-icon"></span>
         </button>
-        <span class="navbar-brand ms-3 me-auto">POS API Dashboard</span>
+        <span class="navbar-brand ms-3 me-auto">POS Admin Dashboard (VPS)</span>
     </div>
 </nav>
 
@@ -68,10 +68,9 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
 <script>
-    // Config: API Base URL (Change if running on VPS)
-    const API_BASE_URL = 'http://localhost:8082/api';
+    // 👉 Updated to match your VPS IP 
+    const API_BASE_URL = 'http://74.81.63.87:8082/api';
 
-    // API Table Configurations (Which columns to show for which API)
     const apiConfig = {
         'users': { keys: ['phoneNo', 'username', 'role', 'status'], headers: ['Phone', 'Username', 'Role', 'Status'] },
         'products': { keys: ['id', 'name', 'groupName', 'sellingPrice', 'quantity'], headers: ['ID', 'Name', 'Group', 'Price', 'Stock'] },
@@ -84,14 +83,11 @@
         'payments': { keys: ['id', 'method', 'amount', 'date'], headers: ['ID', 'Method', 'Amount', 'Date'] }
     };
 
-    // Fetch and Display Data
     async function fetchAndDisplay(endpoint, title) {
-        // Close Drawer automatically for better UX
         const drawerEl = document.getElementById('apiDrawer');
         const offcanvas = bootstrap.Offcanvas.getInstance(drawerEl);
         if(offcanvas) offcanvas.hide();
 
-        // Update UI Titles
         document.getElementById('page-title').innerText = title;
         document.getElementById('page-desc').innerText = `Fetching data from /api/${endpoint}...`;
         document.getElementById('table-container').innerHTML = '<div class="spinner-border text-primary" role="status"></div> Loading...';
@@ -103,11 +99,10 @@
             if (data.success) {
                 document.getElementById('page-desc').innerText = `Data loaded from /api/${endpoint}`;
                 
-                // Determine the correct data array key from response
                 let dataArray = [];
                 if (endpoint === 'product-groups') dataArray = data.groups;
                 else if (endpoint === 'product-units') dataArray = data.units;
-                else dataArray = data[endpoint]; // Default matching (users, products, vouchers, etc.)
+                else dataArray = data[endpoint]; 
 
                 generateTable(endpoint, dataArray);
             } else {
@@ -115,11 +110,10 @@
             }
         } catch (error) {
             console.error('Fetch Error:', error);
-            document.getElementById('table-container').innerHTML = `<div class="alert alert-danger">Cannot connect to API Server. Ensure it is running on ${API_BASE_URL}</div>`;
+            document.getElementById('table-container').innerHTML = `<div class="alert alert-danger">Cannot connect to API Server at ${API_BASE_URL}</div>`;
         }
     }
 
-    // Dynamic Table Generator
     function generateTable(endpoint, items) {
         const container = document.getElementById('table-container');
         
@@ -132,23 +126,17 @@
         if (!config) return;
 
         let tableHTML = `<table class="table table-striped table-bordered table-hover">`;
-        
-        // Build Headers
         tableHTML += `<thead class="table-dark"><tr>`;
         config.headers.forEach(h => { tableHTML += `<th>${h}</th>`; });
         tableHTML += `</tr></thead><tbody>`;
 
-        // Build Rows
         items.forEach(item => {
             tableHTML += `<tr>`;
             config.keys.forEach(key => {
                 let cellData = item[key] !== undefined && item[key] !== null ? item[key] : '-';
-                
-                // Format Timestamp specifically for timestamp/date fields
                 if (key === 'timestamp' || key === 'date') {
                     cellData = new Date(parseInt(cellData)).toLocaleString();
                 }
-                
                 tableHTML += `<td>${cellData}</td>`;
             });
             tableHTML += `</tr>`;
@@ -158,7 +146,6 @@
         container.innerHTML = tableHTML;
     }
 
-    // Sync All (Raw JSON Dump for testing)
     async function syncAll() {
         const drawerEl = document.getElementById('apiDrawer');
         const offcanvas = bootstrap.Offcanvas.getInstance(drawerEl);
