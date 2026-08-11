@@ -99,7 +99,7 @@ async function initDatabase() {
     await dbRun(`CREATE TABLE IF NOT EXISTS expense_categories (id INTEGER PRIMARY KEY AUTOINCREMENT, user_phone TEXT, name TEXT NOT NULL, icon_name TEXT DEFAULT 'ShoppingCart')`);
     await dbRun(`CREATE TABLE IF NOT EXISTS expenses (id INTEGER PRIMARY KEY AUTOINCREMENT, user_phone TEXT, category_name TEXT NOT NULL, description TEXT, amount REAL DEFAULT 0, payment_method TEXT, note TEXT, timestamp INTEGER NOT NULL, date_string TEXT, time_string TEXT)`);
     
-    // 🔴 Payment Methods Table အသစ်ထည့်ခြင်း
+    // 🔴 Payment Methods Table
     await dbRun(`CREATE TABLE IF NOT EXISTS payment_methods (id INTEGER PRIMARY KEY AUTOINCREMENT, user_phone TEXT, name TEXT NOT NULL)`);
 
     const alterTables = ['products', 'vouchers', 'voucher_items', 'customers', 'suppliers', 'payments', 'expense_categories', 'expenses'];
@@ -182,7 +182,7 @@ app.post('/api/register', async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, error: err.message }); }
 });
 
-// 👉 LINK CASHIER API 
+// LINK CASHIER
 app.post('/api/link-cashier', async (req, res) => {
   try {
     const { adminPhone, cashierCode } = req.body;
@@ -193,6 +193,11 @@ app.post('/api/link-cashier', async (req, res) => {
 
     const cashier = await dbGet('SELECT * FROM users WHERE cashier_code = ?', [cashierCode.trim()]);
     if (!cashier) return res.status(404).json({ success: false, message: 'ထည့်သွင်းထားသော Code 6 လုံး မမှန်ကန်ပါ' });
+
+    const existingCashiers = await dbAll('SELECT * FROM users WHERE role = "CASHIER" AND business_name = ?', [admin.business_name]);
+    if (existingCashiers && existingCashiers.length >= 4 && cashier.business_name !== admin.business_name) {
+      return res.status(400).json({ success: false, message: 'Cashier အကောင့် ၄ ဦး ထက်ပို၍ ချိတ်ဆက်ခွင့် မရှိပါ (Max 4 Cashiers Reached)' });
+    }
 
     await dbRun(`UPDATE users SET business_name = ?, business_type = ?, address = ?, status = 'on', start_date = ?, end_date = ? WHERE phone_no = ?`, [admin.business_name, admin.business_type, admin.address, admin.start_date, admin.end_date, cashier.phone_no]);
     const updatedCashier = await dbGet('SELECT * FROM users WHERE phone_no = ?', [cashier.phone_no]);
