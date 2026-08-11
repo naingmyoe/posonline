@@ -1,13 +1,15 @@
 /**
  * POS Application Backend API Server
  * Runtime: Node.js (Express + SQLite3)
- * Default Port: 8082a
+ * Default Port: 8082
  * 
- * Features:
+ * Features Included:
  * - Multi-tenant isolation by user_phone
  * - 7-Day Auto Trial Setup on Registration
  * - Expired Account Cleanup & Status check
  * - Up to 5 Devices allowed per account
+ * - Full CRUD (GET, POST, PUT, DELETE) for all modules
+ * - Web Panel Static File Serving
  */
 
 const express = require('express');
@@ -64,24 +66,24 @@ const dbGet = (sql, params = []) => {
   });
 };
 
-// Extract user_phone from request
+// Extract user_phone from request for Multi-tenant
 function getUserPhone(req) {
   return req.query.user_phone || req.headers['x-user-phone'] || req.body?.userPhone || req.body?.user_phone || '';
 }
 
-// Get today's YYYY-MM-DD
 function getTodayString() {
   return new Date().toISOString().split('T')[0];
 }
 
-// Get +7 days YYYY-MM-DD
 function getTrialEndDateString() {
   const d = new Date();
   d.setDate(d.getDate() + 7);
   return d.toISOString().split('T')[0];
 }
 
-// Initialize Database Tables & Migration
+// ==========================================
+// 🛠 DATABASE INITIALIZATION & MIGRATIONS
+// ==========================================
 async function initDatabase() {
   db.serialize(async () => {
     await dbRun(`CREATE TABLE IF NOT EXISTS users (phone_no TEXT PRIMARY KEY, username TEXT NOT NULL, business_name TEXT, business_type TEXT, address TEXT, role TEXT NOT NULL DEFAULT 'ADMIN', password_hash TEXT NOT NULL, device_id TEXT, devices TEXT DEFAULT '[]', status TEXT DEFAULT 'on', start_date TEXT, end_date TEXT, created_at INTEGER)`);
@@ -96,6 +98,7 @@ async function initDatabase() {
     await dbRun(`CREATE TABLE IF NOT EXISTS expense_categories (id INTEGER PRIMARY KEY AUTOINCREMENT, user_phone TEXT, name TEXT NOT NULL, icon_name TEXT DEFAULT 'ShoppingCart')`);
     await dbRun(`CREATE TABLE IF NOT EXISTS expenses (id INTEGER PRIMARY KEY AUTOINCREMENT, user_phone TEXT, category_name TEXT NOT NULL, description TEXT, amount REAL DEFAULT 0, payment_method TEXT, note TEXT, timestamp INTEGER NOT NULL, date_string TEXT, time_string TEXT)`);
 
+    // Migrations
     const alterTables = ['products', 'vouchers', 'voucher_items', 'customers', 'suppliers', 'payments', 'expense_categories', 'expenses'];
     for (const tbl of alterTables) {
       try { await dbRun(`ALTER TABLE ${tbl} ADD COLUMN user_phone TEXT`); } catch (_) {}
@@ -109,7 +112,7 @@ async function initDatabase() {
 }
 initDatabase();
 
-// Helper to check device limit (Max 5 devices per account)
+// Device Limit Helper
 function parseDevices(user, currentDeviceId) {
   let deviceList = [];
   try { if (user.devices) deviceList = JSON.parse(user.devices); } catch (e) { deviceList = []; }
@@ -126,13 +129,15 @@ function parseDevices(user, currentDeviceId) {
   return { allowed: false, devices: deviceList, updated: false };
 }
 
-// ----------------------------------------------------
-// ROUTES
-// ----------------------------------------------------
+// ==========================================
+// 🚀 ROUTES START
+// ==========================================
 
 app.get('/api', (req, res) => { res.json({ status: 'online', server: 'POS Backend API', port: PORT }); });
 
-// 1. REGISTER USER
+// ------------------------------------------
+// 👤 USERS & AUTHENTICATION
+// ------------------------------------------
 app.post('/api/register', async (req, res) => {
   try {
     const { phoneNo, username, businessName, businessType, address, role, password, deviceId, startDate, endDate } = req.body;
@@ -147,29 +152,28 @@ app.post('/api/register', async (req, res) => {
       const devCheck = parseDevices(existing, deviceId);
       if (!devCheck.allowed) return res.status(403).json({ success: false, status: 'device_limit_reached', message: 'Max 5 Devices Reached' });
       await dbRun(`UPDATE users SET username = ?, business_name = ?, business_type = ?, address = ?, role = ?, password_hash = ?, device_id = ?, devices = ?, status = 'on', start_date = ?, end_date = ? WHERE phone_no = ?`, [username, businessName || '', businessType || '', address || '', role || 'ADMIN', password, deviceId || existing.device_id || '', JSON.stringify(devCheck.devices), startStr, trialEndStr, phoneNo]);
-      return res.json({ success: true, message: 'Registration updated (7 Days Trial Active)', status: 'on', user: { phoneNo, username, role, deviceId, status: 'on', startDate: startStr, endDate: trialEndStr } });
+      return res.json({ success: true, message: 'Registration updated', status: 'on', user: { phoneNo, username, role, deviceId, status: 'on', startDate: startStr, endDate: trialEndStr } });
     }
 
     const initialDevices = deviceId ? [deviceId] : [];
     await dbRun(`INSERT INTO users (phone_no, username, business_name, business_type, address, role, password_hash, device_id, devices, status, start_date, end_date, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'on', ?, ?, ?)`, [phoneNo, username, businessName || '', businessType || '', address || '', role || 'ADMIN', password, deviceId || '', JSON.stringify(initialDevices), startStr, trialEndStr, Date.now()]);
-    res.status(201).json({ success: true, message: 'Registration successful! 7 Days Trial Auto-Activated.', status: 'on', user: { phoneNo, username, role, deviceId, status: 'on', startDate: startStr, endDate: trialEndStr } });
+    res.status(201).json({ success: true, message: 'Registration successful!', status: 'on', user: { phoneNo, username, role, deviceId, status: 'on', startDate: startStr, endDate: trialEndStr } });
   } catch (err) { res.status(500).json({ success: false, error: err.message }); }
 });
 
-// 2. LOGIN USER
 app.post('/api/login', async (req, res) => {
   try {
     const { phoneNo, password, deviceId } = req.body;
     const user = await dbGet('SELECT * FROM users WHERE phone_no = ?', [phoneNo]);
-    if (!user) return res.status(404).json({ success: false, message: 'ဖုန်းနံပါတ်ဖြင့် အကောင့်ဖွင့်ထားခြင်း မရှိပါ' });
-    if (user.password_hash !== password) return res.status(401).json({ success: false, message: 'Password မှားယွင်းနေပါသည်' });
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+    if (user.password_hash !== password) return res.status(401).json({ success: false, message: 'Incorrect password' });
 
     if (user.status === 'banned' || user.status === 'blocked') return res.status(403).json({ success: false, message: `Your account is ${user.status}.` });
 
     const todayStr = getTodayString();
     if (user.end_date && user.end_date < todayStr) {
       await dbRun("UPDATE users SET status = 'expired' WHERE phone_no = ?", [phoneNo]);
-      return res.status(403).json({ success: false, status: 'expired', message: 'အကောင့် သက်တမ်းကုန်ဆုံးသွားပါပြီ (7 Days Trial Expired)' });
+      return res.status(403).json({ success: false, status: 'expired', message: 'Account Expired' });
     }
 
     const devCheck = parseDevices(user, deviceId);
@@ -180,7 +184,6 @@ app.post('/api/login', async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, error: err.message }); }
 });
 
-// 3. CHECK USER STATUS
 app.post('/api/check-status', async (req, res) => {
   try {
     const { phoneNo, deviceId } = req.body;
@@ -191,7 +194,7 @@ app.post('/api/check-status', async (req, res) => {
     const todayStr = getTodayString();
     if (user.end_date && user.end_date < todayStr) {
       await dbRun("UPDATE users SET status = 'expired' WHERE phone_no = ?", [phoneNo]);
-      return res.json({ success: true, status: 'expired', message: 'Account trial expired' });
+      return res.json({ success: true, status: 'expired', message: 'Account expired' });
     }
 
     const devCheck = parseDevices(user, deviceId);
@@ -202,7 +205,6 @@ app.post('/api/check-status', async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, error: err.message }); }
 });
 
-// 👉 ADMIN: GET, UPDATE, DELETE USERS
 app.get('/api/users', async (req, res) => {
   try {
     const users = await dbAll('SELECT phone_no as phoneNo, username, business_name as businessName, business_type as businessType, address, role, device_id as deviceId, status, start_date as startDate, end_date as endDate FROM users');
@@ -212,71 +214,379 @@ app.get('/api/users', async (req, res) => {
 
 app.put('/api/users/:phoneNo', async (req, res) => {
   try {
-    const phoneNo = req.params.phoneNo;
     const { status, endDate } = req.body;
-    await dbRun(`UPDATE users SET status = ?, end_date = ? WHERE phone_no = ?`, [status, endDate, phoneNo]);
-    res.json({ success: true, message: 'User updated successfully' });
+    await dbRun(`UPDATE users SET status = ?, end_date = ? WHERE phone_no = ?`, [status, endDate, req.params.phoneNo]);
+    res.json({ success: true, message: 'User updated' });
   } catch (err) { res.status(500).json({ success: false, error: err.message }); }
 });
 
 app.delete('/api/users/:phoneNo', async (req, res) => {
   try {
-    const phoneNo = req.params.phoneNo;
-    await dbRun('DELETE FROM users WHERE phone_no = ?', [phoneNo]);
-    res.json({ success: true, message: 'User deleted successfully' });
+    await dbRun('DELETE FROM users WHERE phone_no = ?', [req.params.phoneNo]);
+    res.json({ success: true, message: 'User deleted' });
   } catch (err) { res.status(500).json({ success: false, error: err.message }); }
 });
 
-// REST OF RESOURCES (ISOLATED BY USER PHONE)
-// Products
+// ------------------------------------------
+// 📦 PRODUCTS
+// ------------------------------------------
 app.get('/api/products', async (req, res) => {
   try {
     const uPhone = getUserPhone(req);
-    const sql = uPhone 
-      ? 'SELECT id, user_phone as userPhone, name, group_name as groupName, purchase_price as purchasePrice, selling_price as sellingPrice, quantity FROM products WHERE user_phone = ? OR user_phone IS NULL'
-      : 'SELECT id, user_phone as userPhone, name, group_name as groupName, purchase_price as purchasePrice, selling_price as sellingPrice, quantity FROM products';
+    const sql = uPhone ? 'SELECT id, user_phone as userPhone, name, group_name as groupName, purchase_price as purchasePrice, selling_price as sellingPrice, unit, note, track_stock as trackStock, barcode, quantity, alert_quantity as alertQuantity, image_uri as imageUri FROM products WHERE user_phone = ? OR user_phone IS NULL' : 'SELECT id, user_phone as userPhone, name, group_name as groupName, purchase_price as purchasePrice, selling_price as sellingPrice, unit, note, track_stock as trackStock, barcode, quantity, alert_quantity as alertQuantity, image_uri as imageUri FROM products';
     const products = await dbAll(sql, uPhone ? [uPhone] : []);
     res.json({ success: true, products });
   } catch (err) { res.status(500).json({ success: false, error: err.message }); }
 });
-// (POST, PUT, DELETE APIs remain identical to your provided code for brevity in execution... skipping to avoid length, use your provided ones but add below)
-app.get('/api/vouchers', async (req, res) => {
+
+app.post('/api/products', async (req, res) => {
   try {
     const uPhone = getUserPhone(req);
-    const sql = uPhone ? 'SELECT * FROM vouchers WHERE user_phone = ? ORDER BY timestamp DESC' : 'SELECT * FROM vouchers ORDER BY timestamp DESC';
-    const vouchers = await dbAll(sql, uPhone ? [uPhone] : []);
-    res.json({ success: true, vouchers });
+    const p = req.body;
+    const result = await dbRun(`INSERT INTO products (user_phone, name, group_name, purchase_price, selling_price, unit, note, track_stock, barcode, quantity, alert_quantity, image_uri) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [uPhone || p.userPhone || null, p.name, p.groupName || p.group_name || '', p.purchasePrice || p.purchase_price || 0, p.sellingPrice || p.selling_price || 0, p.unit || '', p.note || '', p.trackStock || p.track_stock ? 1 : 0, p.barcode || '', p.quantity || 0, p.alertQuantity || p.alert_quantity || 0, p.imageUri || p.image_uri || '']);
+    res.status(201).json({ success: true, id: result.lastID });
   } catch (err) { res.status(500).json({ success: false, error: err.message }); }
 });
 
+app.put('/api/products/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const uPhone = getUserPhone(req);
+    const p = req.body;
+    if (uPhone) {
+      await dbRun(`UPDATE products SET name = ?, group_name = ?, purchase_price = ?, selling_price = ?, unit = ?, note = ?, track_stock = ?, barcode = ?, quantity = ?, alert_quantity = ?, image_uri = ? WHERE id = ? AND (user_phone = ? OR user_phone IS NULL)`, [p.name, p.groupName || p.group_name || '', p.purchasePrice || p.purchase_price || 0, p.sellingPrice || p.selling_price || 0, p.unit || '', p.note || '', p.trackStock || p.track_stock ? 1 : 0, p.barcode || '', p.quantity || 0, p.alertQuantity || p.alert_quantity || 0, p.imageUri || p.image_uri || '', id, uPhone]);
+    } else {
+      await dbRun(`UPDATE products SET name = ?, group_name = ?, purchase_price = ?, selling_price = ?, unit = ?, note = ?, track_stock = ?, barcode = ?, quantity = ?, alert_quantity = ?, image_uri = ? WHERE id = ?`, [p.name, p.groupName || p.group_name || '', p.purchasePrice || p.purchase_price || 0, p.sellingPrice || p.selling_price || 0, p.unit || '', p.note || '', p.trackStock || p.track_stock ? 1 : 0, p.barcode || '', p.quantity || 0, p.alertQuantity || p.alert_quantity || 0, p.imageUri || p.image_uri || '', id]);
+    }
+    res.json({ success: true, id });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.delete('/api/products/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const uPhone = getUserPhone(req);
+    if (uPhone) {
+      await dbRun('DELETE FROM products WHERE id = ? AND (user_phone = ? OR user_phone IS NULL)', [id, uPhone]);
+    } else {
+      await dbRun('DELETE FROM products WHERE id = ?', [id]);
+    }
+    res.json({ success: true, id });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// ------------------------------------------
+// 📂 PRODUCT GROUPS
+// ------------------------------------------
+app.get('/api/product-groups', async (req, res) => {
+  try {
+    const uPhone = getUserPhone(req);
+    const groups = await dbAll(uPhone ? 'SELECT name FROM product_groups WHERE user_phone = ? OR user_phone IS NULL' : 'SELECT name FROM product_groups', uPhone ? [uPhone] : []);
+    res.json({ success: true, groups });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.post('/api/product-groups', async (req, res) => {
+  try {
+    const uPhone = getUserPhone(req);
+    if (req.body.name) await dbRun('INSERT OR IGNORE INTO product_groups (name, user_phone) VALUES (?, ?)', [req.body.name, uPhone || null]);
+    res.status(201).json({ success: true });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.put('/api/product-groups', async (req, res) => {
+  try {
+    const uPhone = getUserPhone(req);
+    const { oldName, newName } = req.body;
+    if (oldName && newName) {
+      if (uPhone) {
+        await dbRun('UPDATE product_groups SET name = ? WHERE name = ? AND (user_phone = ? OR user_phone IS NULL)', [newName, oldName, uPhone]);
+        await dbRun('UPDATE products SET group_name = ? WHERE group_name = ? AND (user_phone = ? OR user_phone IS NULL)', [newName, oldName, uPhone]);
+      } else {
+        await dbRun('UPDATE product_groups SET name = ? WHERE name = ?', [newName, oldName]);
+        await dbRun('UPDATE products SET group_name = ? WHERE group_name = ?', [newName, oldName]);
+      }
+    }
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.delete('/api/product-groups/:name', async (req, res) => {
+  try {
+    const uPhone = getUserPhone(req);
+    const name = decodeURIComponent(req.params.name);
+    if (uPhone) {
+      await dbRun('DELETE FROM product_groups WHERE name = ? AND (user_phone = ? OR user_phone IS NULL)', [name, uPhone]);
+    } else {
+      await dbRun('DELETE FROM product_groups WHERE name = ?', [name]);
+    }
+    res.json({ success: true, name });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// ------------------------------------------
+// ⚖️ PRODUCT UNITS
+// ------------------------------------------
+app.get('/api/product-units', async (req, res) => {
+  try {
+    const uPhone = getUserPhone(req);
+    const units = await dbAll(uPhone ? 'SELECT name FROM product_units WHERE user_phone = ? OR user_phone IS NULL' : 'SELECT name FROM product_units', uPhone ? [uPhone] : []);
+    res.json({ success: true, units });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.post('/api/product-units', async (req, res) => {
+  try {
+    const uPhone = getUserPhone(req);
+    if (req.body.name) await dbRun('INSERT OR IGNORE INTO product_units (name, user_phone) VALUES (?, ?)', [req.body.name, uPhone || null]);
+    res.status(201).json({ success: true });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.put('/api/product-units', async (req, res) => {
+  try {
+    const uPhone = getUserPhone(req);
+    const { oldName, newName } = req.body;
+    if (oldName && newName) {
+      if (uPhone) {
+        await dbRun('UPDATE product_units SET name = ? WHERE name = ? AND (user_phone = ? OR user_phone IS NULL)', [newName, oldName, uPhone]);
+        await dbRun('UPDATE products SET unit = ? WHERE unit = ? AND (user_phone = ? OR user_phone IS NULL)', [newName, oldName, uPhone]);
+      } else {
+        await dbRun('UPDATE product_units SET name = ? WHERE name = ?', [newName, oldName]);
+        await dbRun('UPDATE products SET unit = ? WHERE unit = ?', [newName, oldName]);
+      }
+    }
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.delete('/api/product-units/:name', async (req, res) => {
+  try {
+    const uPhone = getUserPhone(req);
+    const name = decodeURIComponent(req.params.name);
+    if (uPhone) {
+      await dbRun('DELETE FROM product_units WHERE name = ? AND (user_phone = ? OR user_phone IS NULL)', [name, uPhone]);
+    } else {
+      await dbRun('DELETE FROM product_units WHERE name = ?', [name]);
+    }
+    res.json({ success: true, name });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// ------------------------------------------
+// 🧾 VOUCHERS
+// ------------------------------------------
+app.get('/api/vouchers', async (req, res) => {
+  try {
+    const uPhone = getUserPhone(req);
+    let vouchers = [], voucherItems = [];
+    if (uPhone) {
+      vouchers = await dbAll('SELECT * FROM vouchers WHERE user_phone = ? ORDER BY timestamp DESC', [uPhone]);
+      voucherItems = await dbAll('SELECT * FROM voucher_items WHERE user_phone = ?', [uPhone]);
+    } else {
+      vouchers = await dbAll('SELECT * FROM vouchers ORDER BY timestamp DESC');
+      voucherItems = await dbAll('SELECT * FROM voucher_items');
+    }
+    res.json({ success: true, vouchers, voucherItems });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.post('/api/vouchers', async (req, res) => {
+  try {
+    const uPhone = getUserPhone(req);
+    const v = req.body;
+    await dbRun(`INSERT OR REPLACE INTO vouchers (receipt_no, user_phone, timestamp, cashier_name, total_amount, total_items, customer_name, payment_method, is_completed, is_purchase, paid_amount, change_amount, balance_amount, note, discount, fee) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [v.receiptNo, uPhone || null, v.timestamp || Date.now(), v.cashierName || '', v.totalAmount || 0, v.totalItems || 0, v.customerName || 'Not Register', v.paymentMethod || 'CASH', v.isCompleted ? 1 : 0, v.isPurchase ? 1 : 0, v.paidAmount || 0, v.changeAmount || 0, v.balanceAmount || 0, v.note || '', v.discount || 0, v.fee || 0]);
+    await dbRun('DELETE FROM voucher_items WHERE voucher_id = ?', [v.receiptNo]);
+
+    if (v.items && Array.isArray(v.items)) {
+      for (const item of v.items) {
+        await dbRun(`INSERT INTO voucher_items (user_phone, voucher_id, product_id, product_name, quantity, purchase_price, selling_price) VALUES (?, ?, ?, ?, ?, ?, ?)`, [uPhone || null, v.receiptNo, item.productId || 0, item.productName || '', item.quantity || 1, item.purchasePrice || 0, item.sellingPrice || 0]);
+      }
+    }
+    res.status(201).json({ success: true });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.delete('/api/vouchers/:receiptNo', async (req, res) => {
+  try {
+    const receiptNo = req.params.receiptNo;
+    await dbRun('DELETE FROM vouchers WHERE receipt_no = ?', [receiptNo]);
+    await dbRun('DELETE FROM voucher_items WHERE voucher_id = ?', [receiptNo]);
+    res.json({ success: true, receiptNo });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// ------------------------------------------
+// 🤝 CUSTOMERS
+// ------------------------------------------
 app.get('/api/customers', async (req, res) => {
   try {
     const uPhone = getUserPhone(req);
-    const sql = uPhone ? 'SELECT * FROM customers WHERE user_phone = ? OR user_phone IS NULL' : 'SELECT * FROM customers';
-    const customers = await dbAll(sql, uPhone ? [uPhone] : []);
+    const customers = await dbAll(uPhone ? 'SELECT * FROM customers WHERE user_phone = ? OR user_phone IS NULL' : 'SELECT * FROM customers', uPhone ? [uPhone] : []);
     res.json({ success: true, customers });
   } catch (err) { res.status(500).json({ success: false, error: err.message }); }
 });
 
+app.post('/api/customers', async (req, res) => {
+  try {
+    const uPhone = getUserPhone(req);
+    const c = req.body;
+    const result = await dbRun(`INSERT INTO customers (user_phone, name, phone, address, note) VALUES (?, ?, ?, ?, ?)`, [uPhone || null, c.name || '', c.phone || '', c.address || '', c.note || '']);
+    res.status(201).json({ success: true, id: result.lastID });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.put('/api/customers/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const c = req.body;
+    await dbRun(`UPDATE customers SET name = ?, phone = ?, address = ?, note = ? WHERE id = ?`, [c.name || '', c.phone || '', c.address || '', c.note || '', id]);
+    res.json({ success: true, id });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.delete('/api/customers/:id', async (req, res) => {
+  try {
+    await dbRun('DELETE FROM customers WHERE id = ?', [req.params.id]);
+    res.json({ success: true, id: req.params.id });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// ------------------------------------------
+// 🏢 SUPPLIERS
+// ------------------------------------------
+app.get('/api/suppliers', async (req, res) => {
+  try {
+    const uPhone = getUserPhone(req);
+    const suppliers = await dbAll(uPhone ? 'SELECT * FROM suppliers WHERE user_phone = ? OR user_phone IS NULL' : 'SELECT * FROM suppliers', uPhone ? [uPhone] : []);
+    res.json({ success: true, suppliers });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.post('/api/suppliers', async (req, res) => {
+  try {
+    const uPhone = getUserPhone(req);
+    const s = req.body;
+    const result = await dbRun(`INSERT INTO suppliers (user_phone, name, phone, address, note) VALUES (?, ?, ?, ?, ?)`, [uPhone || null, s.name || '', s.phone || '', s.address || '', s.note || '']);
+    res.status(201).json({ success: true, id: result.lastID });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.put('/api/suppliers/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const s = req.body;
+    await dbRun(`UPDATE suppliers SET name = ?, phone = ?, address = ?, note = ? WHERE id = ?`, [s.name || '', s.phone || '', s.address || '', s.note || '', id]);
+    res.json({ success: true, id });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.delete('/api/suppliers/:id', async (req, res) => {
+  try {
+    await dbRun('DELETE FROM suppliers WHERE id = ?', [req.params.id]);
+    res.json({ success: true, id: req.params.id });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// ------------------------------------------
+// 💸 EXPENSES & CATEGORIES
+// ------------------------------------------
 app.get('/api/expenses', async (req, res) => {
   try {
     const uPhone = getUserPhone(req);
-    const sql = uPhone ? 'SELECT * FROM expenses WHERE user_phone = ? ORDER BY timestamp DESC' : 'SELECT * FROM expenses ORDER BY timestamp DESC';
-    const expenses = await dbAll(sql, uPhone ? [uPhone] : []);
+    const expenses = await dbAll(uPhone ? 'SELECT * FROM expenses WHERE user_phone = ? ORDER BY timestamp DESC' : 'SELECT * FROM expenses ORDER BY timestamp DESC', uPhone ? [uPhone] : []);
     res.json({ success: true, expenses });
   } catch (err) { res.status(500).json({ success: false, error: err.message }); }
 });
 
+app.post('/api/expenses', async (req, res) => {
+  try {
+    const uPhone = getUserPhone(req);
+    const e = req.body;
+    const result = await dbRun(`INSERT INTO expenses (user_phone, category_name, description, amount, payment_method, note, timestamp, date_string, time_string) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [uPhone || null, e.categoryName || '', e.description || '', e.amount || 0, e.paymentMethod || '', e.note || '', e.timestamp || Date.now(), e.dateString || '', e.timeString || '']);
+    res.status(201).json({ success: true, id: result.lastID });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.put('/api/expenses/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const e = req.body;
+    await dbRun(`UPDATE expenses SET category_name = ?, description = ?, amount = ?, payment_method = ?, note = ?, timestamp = ?, date_string = ?, time_string = ? WHERE id = ?`, [e.categoryName || '', e.description || '', e.amount || 0, e.paymentMethod || '', e.note || '', e.timestamp || Date.now(), e.dateString || '', e.timeString || '', id]);
+    res.json({ success: true, id });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.delete('/api/expenses/:id', async (req, res) => {
+  try {
+    await dbRun('DELETE FROM expenses WHERE id = ?', [req.params.id]);
+    res.json({ success: true, id: req.params.id });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.get('/api/expense-categories', async (req, res) => {
+  try {
+    const uPhone = getUserPhone(req);
+    const categories = await dbAll(uPhone ? 'SELECT * FROM expense_categories WHERE user_phone = ? OR user_phone IS NULL' : 'SELECT * FROM expense_categories', uPhone ? [uPhone] : []);
+    res.json({ success: true, categories });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.post('/api/expense-categories', async (req, res) => {
+  try {
+    const uPhone = getUserPhone(req);
+    const { name, iconName } = req.body;
+    const result = await dbRun('INSERT INTO expense_categories (user_phone, name, icon_name) VALUES (?, ?, ?)', [uPhone || null, name, iconName || 'ShoppingCart']);
+    res.status(201).json({ success: true, id: result.lastID });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.delete('/api/expense-categories/:id', async (req, res) => {
+  try {
+    await dbRun('DELETE FROM expense_categories WHERE id = ?', [req.params.id]);
+    res.json({ success: true, id: req.params.id });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// ------------------------------------------
+// 💳 PAYMENTS
+// ------------------------------------------
 app.get('/api/payments', async (req, res) => {
   try {
     const uPhone = getUserPhone(req);
-    const sql = uPhone ? 'SELECT * FROM payments WHERE user_phone = ? OR user_phone IS NULL' : 'SELECT * FROM payments';
-    const payments = await dbAll(sql, uPhone ? [uPhone] : []);
+    const payments = await dbAll(uPhone ? 'SELECT * FROM payments WHERE user_phone = ? OR user_phone IS NULL' : 'SELECT * FROM payments', uPhone ? [uPhone] : []);
     res.json({ success: true, payments });
   } catch (err) { res.status(500).json({ success: false, error: err.message }); }
 });
 
-// FULL SYNC
+app.post('/api/payments', async (req, res) => {
+  try {
+    const uPhone = getUserPhone(req);
+    const p = req.body;
+    const result = await dbRun(`INSERT INTO payments (user_phone, method, amount, date) VALUES (?, ?, ?, ?)`, [uPhone || null, p.method || '', p.amount || 0, p.date || Date.now()]);
+    res.status(201).json({ success: true, id: result.lastID });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.put('/api/payments/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const p = req.body;
+    await dbRun('UPDATE payments SET method = ?, amount = ?, date = ? WHERE id = ?', [p.method || '', p.amount || 0, p.date || Date.now(), id]);
+    res.json({ success: true, id });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.delete('/api/payments/:id', async (req, res) => {
+  try {
+    await dbRun('DELETE FROM payments WHERE id = ?', [req.params.id]);
+    res.json({ success: true, id: req.params.id });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// ------------------------------------------
+// 🔄 FULL SYNC (SCOPED BY USER)
+// ------------------------------------------
 app.get('/api/sync/all', async (req, res) => {
   try {
     const uPhone = getUserPhone(req);
@@ -284,18 +594,37 @@ app.get('/api/sync/all', async (req, res) => {
     if (uPhone) {
       data.users = await dbAll('SELECT * FROM users WHERE phone_no = ?', [uPhone]);
       data.products = await dbAll('SELECT * FROM products WHERE user_phone = ?', [uPhone]);
+      data.productGroups = await dbAll('SELECT * FROM product_groups WHERE user_phone = ?', [uPhone]);
+      data.productUnits = await dbAll('SELECT * FROM product_units WHERE user_phone = ?', [uPhone]);
+      data.vouchers = await dbAll('SELECT * FROM vouchers WHERE user_phone = ?', [uPhone]);
+      data.voucherItems = await dbAll('SELECT * FROM voucher_items WHERE user_phone = ?', [uPhone]);
+      data.customers = await dbAll('SELECT * FROM customers WHERE user_phone = ?', [uPhone]);
+      data.suppliers = await dbAll('SELECT * FROM suppliers WHERE user_phone = ?', [uPhone]);
+      data.expenses = await dbAll('SELECT * FROM expenses WHERE user_phone = ?', [uPhone]);
+      data.expenseCategories = await dbAll('SELECT * FROM expense_categories WHERE user_phone = ?', [uPhone]);
+      data.payments = await dbAll('SELECT * FROM payments WHERE user_phone = ?', [uPhone]);
     } else {
       data.users = await dbAll('SELECT * FROM users');
       data.products = await dbAll('SELECT * FROM products');
+      data.productGroups = await dbAll('SELECT * FROM product_groups');
+      data.productUnits = await dbAll('SELECT * FROM product_units');
+      data.vouchers = await dbAll('SELECT * FROM vouchers');
+      data.voucherItems = await dbAll('SELECT * FROM voucher_items');
+      data.customers = await dbAll('SELECT * FROM customers');
+      data.suppliers = await dbAll('SELECT * FROM suppliers');
+      data.expenses = await dbAll('SELECT * FROM expenses');
+      data.expenseCategories = await dbAll('SELECT * FROM expense_categories');
+      data.payments = await dbAll('SELECT * FROM payments');
     }
     res.json({ success: true, data });
   } catch (err) { res.status(500).json({ success: false, error: err.message }); }
 });
 
+// Start Server
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`========================================`);
   console.log(`POS Multi-Tenant Backend is running!`);
   console.log(`Port: ${PORT}`);
-  console.log(`Web Panel: http://74.81.63.87:${PORT}`);
+  console.log(`Web Panel: http://0.0.0.0:${PORT}`);
   console.log(`========================================`);
 });
