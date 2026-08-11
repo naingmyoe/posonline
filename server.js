@@ -1,7 +1,7 @@
 /**
  * POS Application Backend API Server
  * Runtime: Node.js (Express + SQLite3)
- * Default Port: 8082
+ * Default Port: 8082a
  * 
  * Features Included:
  * - Static Web Panel Serving ('public/index.html')
