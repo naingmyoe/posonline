@@ -88,13 +88,15 @@
             <div class="col-md-6 mb-2"><strong>Business Type:</strong> <span id="v_biz_type"></span></div>
             <div class="col-md-6 mb-2"><strong>Address:</strong> <span id="v_address"></span></div>
             <div class="col-md-6 mb-2"><strong>Role:</strong> <span id="v_role" class="badge bg-dark"></span></div>
-            <div class="col-md-6 mb-2"><strong>Device ID:</strong> <span id="v_device"></span></div>
-            <div class="col-md-6 mb-2"><strong>Registered Date:</strong> <span id="v_start"></span></div>
+            <div class="col-md-6 mb-2"><strong>Device ID (Main):</strong> <span id="v_device"></span></div>
+            <div class="col-md-6 mb-2"><strong>Connected Devices:</strong> <span id="v_devices_json" class="text-muted"></span></div>
+            <div class="col-md-6 mb-2 mt-2"><strong>Registered Date:</strong> <span id="v_start"></span></div>
+            <div class="col-md-6 mb-2 mt-2"><strong>Created Timestamp:</strong> <span id="v_created"></span></div>
         </div>
         
         <!-- 🔹 Action Controls (Ban / Block / Expire) -->
         <h5 class="border-bottom pb-2 text-danger mb-3">Account Actions</h5>
-        <div class="row bg-light p-3 rounded">
+        <div class="row bg-light p-3 rounded border">
             <div class="col-md-6 mb-3">
               <label class="form-label fw-bold text-dark">Change Account Status</label>
               <select id="m_status" class="form-select border-secondary">
@@ -129,25 +131,25 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
 <script>
-    // 🌐 Change to your VPS IP if necessary
+    // 🌐 VPS IP Address (Your Server URL)
     const API_BASE_URL = 'http://74.81.63.87:8082/api';
     let selectedUserPhone = '';
 
     // 🟢 ALL DATA COLUMNS INCLUDED
     const apiConfig = {
         'users': { 
-            keys: ['action', 'phoneNo', 'username', 'businessName', 'businessType', 'address', 'role', 'deviceId', 'status', 'startDate', 'endDate'], 
-            headers: ['Action', 'Phone', 'Username', 'Biz Name', 'Biz Type', 'Address', 'Role', 'Device ID', 'Status', 'Start Date', 'Expire Date'] 
+            keys: ['action', 'phoneNo', 'username', 'businessName', 'businessType', 'address', 'role', 'status', 'startDate', 'endDate', 'created_at'], 
+            headers: ['Action', 'Phone', 'Username', 'Biz Name', 'Biz Type', 'Address', 'Role', 'Status', 'Start Date', 'Expire Date', 'Created At'] 
         },
         'products': { 
             keys: ['id', 'userPhone', 'name', 'groupName', 'purchasePrice', 'sellingPrice', 'unit', 'note', 'trackStock', 'barcode', 'quantity', 'alertQuantity', 'imageUri'], 
             headers: ['ID', 'Owner Phone', 'Name', 'Group', 'Buy Price', 'Sell Price', 'Unit', 'Note', 'Track Stock', 'Barcode', 'Qty', 'Alert Qty', 'Image URI'] 
         },
         'product-groups': { 
-            keys: ['name', 'user_phone'], headers: ['Group Name', 'Owner Phone'] 
+            keys: ['name', 'userPhone'], headers: ['Group Name', 'Owner Phone'] 
         },
         'product-units': { 
-            keys: ['name', 'user_phone'], headers: ['Unit Name', 'Owner Phone'] 
+            keys: ['name', 'userPhone'], headers: ['Unit Name', 'Owner Phone'] 
         },
         'vouchers': { 
             keys: ['receipt_no', 'user_phone', 'timestamp', 'cashier_name', 'total_amount', 'total_items', 'customer_name', 'payment_method', 'is_completed', 'is_purchase', 'paid_amount', 'change_amount', 'balance_amount', 'discount', 'fee', 'note'], 
@@ -240,14 +242,16 @@
                     cellData = cellData == 1 || cellData === true ? 'Yes' : 'No';
                 }
                 
-                // Date format styling
+                // Date format styling (Created_at, Timestamp, etc)
                 if (key === 'timestamp' || key === 'date' || key === 'created_at') {
-                    if (cellData !== '-') cellData = new Date(parseInt(cellData)).toLocaleString();
+                    if (cellData !== '-' && !isNaN(parseInt(cellData))) {
+                        cellData = new Date(parseInt(cellData)).toLocaleString();
+                    }
                 }
 
                 // Highlight Owner Phone
                 if (key === 'userPhone' || key === 'user_phone') {
-                    cellData = `<span class="text-primary fw-bold">${cellData === '-' ? 'Admin / System' : cellData}</span>`;
+                    cellData = `<span class="text-primary fw-bold">${cellData === '-' ? 'System Admin' : cellData}</span>`;
                 }
 
                 tableHTML += `<td>${cellData}</td>`;
@@ -273,6 +277,10 @@
         document.getElementById('v_role').innerText = user.role || '-';
         document.getElementById('v_device').innerText = user.deviceId || '-';
         document.getElementById('v_start').innerText = user.startDate || '-';
+        document.getElementById('v_devices_json').innerText = user.devices || '[]';
+        
+        let createdAt = user.created_at ? new Date(parseInt(user.created_at)).toLocaleString() : '-';
+        document.getElementById('v_created').innerText = createdAt;
 
         // Fill Editable Form
         document.getElementById('m_status').value = user.status || 'on';
