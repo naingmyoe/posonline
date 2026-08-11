@@ -9,6 +9,7 @@
  * - 7-Day Auto Trial Setup on Registration
  * - Expired Account Cleanup & Status check
  * - Up to 5 Devices allowed per account (1 Admin + 4 Cashiers)
+ * - Server Stock Deduction on Voucher Sale
  */
 
 const express = require('express');
@@ -24,7 +25,6 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// 🟢 Web Panel (`public` folder ထဲက HTML ဖိုင်များကို Server တင်ပေးခြင်း)
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Initialize SQLite Database
@@ -547,15 +547,15 @@ app.get('/api/users', async (req, res) => {
   }
 });
 
-// 5. PRODUCTS API (ISOLATED BY USER PHONE)
+// 5. PRODUCTS API (ISOLATED BY USER PHONE & FIXED OWNER PHONE SELECT)
 app.get('/api/products', async (req, res) => {
   try {
     const uPhone = getUserPhone(req);
     let products = [];
     if (uPhone) {
-      products = await dbAll('SELECT id, name, group_name as groupName, purchase_price as purchasePrice, selling_price as sellingPrice, unit, note, track_stock as trackStock, barcode, quantity, alert_quantity as alertQuantity, image_uri as imageUri FROM products WHERE user_phone = ? OR user_phone IS NULL', [uPhone]);
+      products = await dbAll('SELECT id, user_phone as userPhone, name, group_name as groupName, purchase_price as purchasePrice, selling_price as sellingPrice, unit, note, track_stock as trackStock, barcode, quantity, alert_quantity as alertQuantity, image_uri as imageUri FROM products WHERE user_phone = ? OR user_phone IS NULL', [uPhone]);
     } else {
-      products = await dbAll('SELECT id, name, group_name as groupName, purchase_price as purchasePrice, selling_price as sellingPrice, unit, note, track_stock as trackStock, barcode, quantity, alert_quantity as alertQuantity, image_uri as imageUri FROM products');
+      products = await dbAll('SELECT id, user_phone as userPhone, name, group_name as groupName, purchase_price as purchasePrice, selling_price as sellingPrice, unit, note, track_stock as trackStock, barcode, quantity, alert_quantity as alertQuantity, image_uri as imageUri FROM products');
     }
     res.json({ success: true, products });
   } catch (err) {
@@ -741,7 +741,7 @@ app.delete('/api/product-units/:name', async (req, res) => {
   }
 });
 
-// 8. VOUCHERS API (ISOLATED BY USER PHONE - WITHOUT SERVER STOCK DEDUCTION)
+// 8. VOUCHERS API (WITH SERVER STOCK DEDUCTION)
 app.get('/api/vouchers', async (req, res) => {
   try {
     const uPhone = getUserPhone(req);
@@ -779,6 +779,16 @@ app.post('/api/vouchers', async (req, res) => {
            VALUES (?, ?, ?, ?, ?, ?, ?)`,
           [uPhone, v.receiptNo, item.productId || 0, item.productName || '', item.quantity || 1, item.purchasePrice || 0, item.sellingPrice || 0]
         );
+
+        // 🔴 Server ဘက်မှ Product Quantity ကို တိုက်ရိုက် နှုတ်/ပေါင်း ပေးမည့်စနစ်
+        if ((v.isCompleted || v.isCompleted === 1) && item.productId) {
+          const prod = await dbGet('SELECT * FROM products WHERE id = ?', [item.productId]);
+          if (prod && (prod.track_stock === 1 || prod.track_stock === true)) {
+            const qtyDelta = item.quantity || 1;
+            const newQty = v.isPurchase ? (prod.quantity + qtyDelta) : Math.max(0, prod.quantity - qtyDelta);
+            await dbRun('UPDATE products SET quantity = ? WHERE id = ?', [newQty, item.productId]);
+          }
+        }
       }
     }
     res.status(201).json({ success: true });
