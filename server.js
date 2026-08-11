@@ -182,7 +182,7 @@ app.post('/api/register', async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, error: err.message }); }
 });
 
-// LINK CASHIER
+// 👉 LINK CASHIER API 
 app.post('/api/link-cashier', async (req, res) => {
   try {
     const { adminPhone, cashierCode } = req.body;
