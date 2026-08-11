@@ -3,7 +3,8 @@
  * Runtime: Node.js (Express + SQLite3)
  * Default Port: 8082
  * 
- * Features:
+ * Features Included:
+ * - Static Web Panel Serving ('public/index.html')
  * - Multi-tenant isolation by user_phone
  * - 7-Day Auto Trial Setup on Registration
  * - Expired Account Cleanup & Status check
@@ -23,6 +24,7 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+// 🟢 Web Panel (`public` folder ထဲက HTML ဖိုင်များကို Server တင်ပေးခြင်း)
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Initialize SQLite Database
@@ -291,7 +293,7 @@ function parseDevices(user, currentDeviceId) {
 // ----------------------------------------------------
 
 // Root Check
-app.get('/', (req, res) => {
+app.get('/api', (req, res) => {
   res.json({ status: 'online', server: 'POS Backend API', port: PORT });
 });
 
