@@ -1,1208 +1,548 @@
+/**
+ * POS Application Backend API Server
+ * Runtime: Node.js (Express + SQLite3)
+ * Default Port: 8082
+ * 
+ * Instructions to run on VPS:
+ * 1. Install Node.js: sudo apt update && sudo apt install -y nodejs npm
+ * 2. Install dependencies: npm install express cors sqlite3
+ * 3. Start server: node server.js
+ * 4. Or run with PM2: npm install -g pm2 && pm2 start server.js --name "pos-backend"
+ */
+
 const express = require('express');
-const sqlite3 = require('sqlite3').verbose();
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
 const cors = require('cors');
+const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 8082;
-const JWT_SECRET = process.env.JWT_SECRET || 'pos_jwt_secret_key_2026_super_secure';
-const ADMIN_JWT_SECRET = process.env.ADMIN_JWT_SECRET || 'pos_admin_jwt_secret_2026';
-const API_KEY = process.env.API_KEY || 'pos_secret_key_2026';
 
+// Middleware
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Initialize SQLite Database
-const dbPath = path.join(__dirname, 'pos_database.db');
+const dbPath = path.join(__dirname, 'pos_database.sqlite');
 const db = new sqlite3.Database(dbPath, (err) => {
-    if (err) {
-        console.error('Failed to connect to SQLite database:', err.message);
-    } else {
-        console.log('Connected to SQLite database at:', dbPath);
-    }
+  if (err) {
+    console.error('Error opening database:', err.message);
+  } else {
+    console.log('Connected to SQLite database at:', dbPath);
+  }
 });
 
-// Database Initialization & Migrations
-db.serialize(() => {
-    // 0. Admins Table
-    db.run(`CREATE TABLE IF NOT EXISTS admins (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT UNIQUE NOT NULL,
-        passwordHash TEXT NOT NULL,
-        role TEXT DEFAULT 'SUPER_ADMIN',
-        createdAt TEXT DEFAULT CURRENT_TIMESTAMP
-    )`);
-
-    // Seed default admin if missing
-    db.get(`SELECT * FROM admins WHERE username = 'admin'`, [], async (err, row) => {
-        if (!row) {
-            const defaultHash = await bcrypt.hash('admin123', 10);
-            db.run(`INSERT INTO admins (username, passwordHash, role) VALUES ('admin', ?, 'SUPER_ADMIN')`, [defaultHash]);
-            console.log('Default Admin Account created: username="admin", password="admin123"');
-        }
+// Helper for DB queries using Promises
+const dbRun = (sql, params = []) => {
+  return new Promise((resolve, reject) => {
+    db.run(sql, params, function (err) {
+      if (err) reject(err);
+      else resolve(this);
     });
-
-    // 1. Users / Customers Table
-    db.run(`CREATE TABLE IF NOT EXISTS users (
-        phoneNo TEXT PRIMARY KEY,
-        username TEXT NOT NULL,
-        businessName TEXT,
-        businessType TEXT,
-        address TEXT,
-        role TEXT DEFAULT 'ADMIN',
-        passwordHash TEXT NOT NULL,
-        deviceId TEXT,
-        status TEXT DEFAULT 'on',
-        createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
-        updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
-    )`);
-
-    // 2. Licenses Table
-    db.run(`CREATE TABLE IF NOT EXISTS licenses (
-        licenseId INTEGER PRIMARY KEY AUTOINCREMENT,
-        phoneNo TEXT UNIQUE NOT NULL,
-        planName TEXT DEFAULT '7-Day Free Trial',
-        startDate TEXT DEFAULT CURRENT_TIMESTAMP,
-        expireDate TEXT NOT NULL,
-        maxDevices INTEGER DEFAULT 5,
-        status TEXT DEFAULT 'active',
-        createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (phoneNo) REFERENCES users(phoneNo) ON DELETE CASCADE
-    )`);
-
-    // 3. Devices Table
-    db.run(`CREATE TABLE IF NOT EXISTS devices (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        phoneNo TEXT NOT NULL,
-        deviceId TEXT NOT NULL,
-        deviceName TEXT DEFAULT 'Android Device',
-        model TEXT,
-        androidVersion TEXT,
-        appVersion TEXT,
-        lastSeen TEXT DEFAULT CURRENT_TIMESTAMP,
-        status TEXT DEFAULT 'active',
-        createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(phoneNo, deviceId)
-    )`);
-
-    // 4. Products Table (Multi-tenant)
-    db.run(`CREATE TABLE IF NOT EXISTS products (
-        id TEXT NOT NULL,
-        syncId TEXT,
-        phoneNo TEXT NOT NULL,
-        name TEXT NOT NULL,
-        price REAL DEFAULT 0,
-        originalPrice REAL DEFAULT 0,
-        stock INTEGER DEFAULT 0,
-        category TEXT,
-        barcode TEXT,
-        imageUrl TEXT,
-        isDeleted INTEGER DEFAULT 0,
-        updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (id, phoneNo)
-    )`);
-
-    // 5. Vouchers / Sales Table (Multi-tenant)
-    db.run(`CREATE TABLE IF NOT EXISTS vouchers (
-        receiptNo TEXT NOT NULL,
-        syncId TEXT,
-        phoneNo TEXT NOT NULL,
-        customerName TEXT,
-        itemsJson TEXT NOT NULL,
-        subtotal REAL DEFAULT 0,
-        tax REAL DEFAULT 0,
-        discount REAL DEFAULT 0,
-        total REAL DEFAULT 0,
-        paid REAL DEFAULT 0,
-        changeAmount REAL DEFAULT 0,
-        paymentType TEXT DEFAULT 'Cash',
-        dateTime TEXT DEFAULT CURRENT_TIMESTAMP,
-        isDeleted INTEGER DEFAULT 0,
-        updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (receiptNo, phoneNo)
-    )`);
-
-    // 6. Customers Table (Multi-tenant)
-    db.run(`CREATE TABLE IF NOT EXISTS customers (
-        id TEXT NOT NULL,
-        syncId TEXT,
-        phoneNo TEXT NOT NULL,
-        name TEXT NOT NULL,
-        customerPhone TEXT,
-        address TEXT,
-        debt REAL DEFAULT 0,
-        isDeleted INTEGER DEFAULT 0,
-        updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (id, phoneNo)
-    )`);
-
-    // 7. Suppliers Table (Multi-tenant)
-    db.run(`CREATE TABLE IF NOT EXISTS suppliers (
-        id TEXT NOT NULL,
-        syncId TEXT,
-        phoneNo TEXT NOT NULL,
-        name TEXT NOT NULL,
-        supplierPhone TEXT,
-        company TEXT,
-        payable REAL DEFAULT 0,
-        isDeleted INTEGER DEFAULT 0,
-        updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (id, phoneNo)
-    )`);
-
-    // 8. Expenses Table (Multi-tenant)
-    db.run(`CREATE TABLE IF NOT EXISTS expenses (
-        id TEXT NOT NULL,
-        syncId TEXT,
-        phoneNo TEXT NOT NULL,
-        title TEXT NOT NULL,
-        amount REAL DEFAULT 0,
-        category TEXT,
-        date TEXT,
-        note TEXT,
-        isDeleted INTEGER DEFAULT 0,
-        updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (id, phoneNo)
-    )`);
-
-    // 9. System Logs Table
-    db.run(`CREATE TABLE IF NOT EXISTS system_logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        phoneNo TEXT,
-        deviceId TEXT,
-        action TEXT NOT NULL,
-        message TEXT,
-        createdAt TEXT DEFAULT CURRENT_TIMESTAMP
-    )`);
-
-    // 10. App Versions Table
-    db.run(`CREATE TABLE IF NOT EXISTS app_versions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        versionName TEXT NOT NULL,
-        versionCode INTEGER DEFAULT 1,
-        downloadUrl TEXT NOT NULL,
-        forceUpdate INTEGER DEFAULT 0,
-        releaseNotes TEXT,
-        createdAt TEXT DEFAULT CURRENT_TIMESTAMP
-    )`);
-
-    console.log('Database tables verified and ready.');
-});
-
-// Middleware: Route Authentication & Security
-const securityMiddleware = (req, res, next) => {
-    const publicRoutes = [
-        '/api/register',
-        '/api/auth/register',
-        '/api/login',
-        '/api/auth/login',
-        '/api/admin/login',
-        '/api/app/version',
-        '/api/health',
-        '/api/check-status',
-        '/api/license/check'
-    ];
-
-    const reqPath = req.path.toLowerCase();
-    if (publicRoutes.some(route => reqPath.endsWith(route) || reqPath === route)) {
-        return next();
-    }
-
-    const apiKeyHeader = req.headers['x-api-key'];
-    const authHeader = req.headers['authorization'];
-
-    // 1. Allow X-API-KEY / Bearer with API_KEY
-    if (apiKeyHeader === API_KEY || (authHeader && authHeader.includes(API_KEY))) {
-        return next();
-    }
-
-    // 2. Check Admin JWT Token for Admin Routes (/api/admin/*)
-    if (reqPath.startsWith('/api/admin')) {
-        if (authHeader && authHeader.startsWith('Bearer ')) {
-            const token = authHeader.split(' ')[1];
-            try {
-                const decoded = jwt.verify(token, ADMIN_JWT_SECRET);
-                if (decoded && decoded.isAdmin) {
-                    req.admin = decoded;
-                    return next();
-                }
-            } catch (err) {
-                try {
-                    const userDecoded = jwt.verify(token, JWT_SECRET);
-                    if (userDecoded && userDecoded.role === 'SUPER_ADMIN') {
-                        req.user = userDecoded;
-                        return next();
-                    }
-                } catch (e) {}
-            }
-        }
-        return res.status(401).json({ success: false, message: 'Unauthorized: Admin authentication required' });
-    }
-
-    // 3. Regular JWT Token Verification for standard protected APIs
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-        const token = authHeader.split(' ')[1];
-        try {
-            const decoded = jwt.verify(token, JWT_SECRET);
-            req.user = decoded;
-            return next();
-        } catch (err) {
-            return res.status(401).json({ success: false, message: 'Unauthorized: Invalid or expired token' });
-        }
-    }
-
-    // Fallback for mobile app backward compatibility
-    next();
+  });
 };
 
-app.use(securityMiddleware);
+const dbAll = (sql, params = []) => {
+  return new Promise((resolve, reject) => {
+    db.all(sql, params, (err, rows) => {
+      if (err) reject(err);
+      else resolve(rows);
+    });
+  });
+};
 
-// Helper Function: Log Activity
-function logSystemAction(phoneNo, deviceId, action, message) {
-    db.run(
-        `INSERT INTO system_logs (phoneNo, deviceId, action, message) VALUES (?, ?, ?, ?)`,
-        [phoneNo || 'SYSTEM', deviceId || 'N/A', action, message]
-    );
+const dbGet = (sql, params = []) => {
+  return new Promise((resolve, reject) => {
+    db.get(sql, params, (err, row) => {
+      if (err) reject(err);
+      else resolve(row);
+    });
+  });
+};
+
+// Initialize Database Tables
+async function initDatabase() {
+  db.serialize(async () => {
+    // 1. Users
+    await dbRun(`
+      CREATE TABLE IF NOT EXISTS users (
+        phone_no TEXT PRIMARY KEY,
+        username TEXT NOT NULL,
+        business_name TEXT,
+        business_type TEXT,
+        address TEXT,
+        role TEXT NOT NULL DEFAULT 'ADMIN',
+        password_hash TEXT NOT NULL,
+        device_id TEXT,
+        status TEXT DEFAULT 'on',
+        start_date TEXT,
+        end_date TEXT,
+        created_at INTEGER
+      )
+    `);
+
+    // 2. Products
+    await dbRun(`
+      CREATE TABLE IF NOT EXISTS products (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        group_name TEXT,
+        purchase_price REAL DEFAULT 0,
+        selling_price REAL DEFAULT 0,
+        unit TEXT,
+        note TEXT,
+        track_stock INTEGER DEFAULT 1,
+        barcode TEXT,
+        quantity INTEGER DEFAULT 0,
+        alert_quantity INTEGER DEFAULT 0,
+        image_uri TEXT
+      )
+    `);
+
+    // 3. Product Groups
+    await dbRun(`
+      CREATE TABLE IF NOT EXISTS product_groups (
+        name TEXT PRIMARY KEY
+      )
+    `);
+
+    // 4. Product Units
+    await dbRun(`
+      CREATE TABLE IF NOT EXISTS product_units (
+        name TEXT PRIMARY KEY
+      )
+    `);
+
+    // 5. Vouchers
+    await dbRun(`
+      CREATE TABLE IF NOT EXISTS vouchers (
+        receipt_no TEXT PRIMARY KEY,
+        timestamp INTEGER NOT NULL,
+        cashier_name TEXT,
+        total_amount REAL DEFAULT 0,
+        total_items INTEGER DEFAULT 0,
+        customer_name TEXT DEFAULT 'Not Register',
+        payment_method TEXT DEFAULT 'CASH',
+        is_completed INTEGER DEFAULT 1,
+        is_purchase INTEGER DEFAULT 0,
+        paid_amount REAL DEFAULT 0,
+        change_amount REAL DEFAULT 0,
+        balance_amount REAL DEFAULT 0,
+        note TEXT,
+        discount REAL DEFAULT 0,
+        fee REAL DEFAULT 0
+      )
+    `);
+
+    // 6. Voucher Items
+    await dbRun(`
+      CREATE TABLE IF NOT EXISTS voucher_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        voucher_id TEXT NOT NULL,
+        product_id INTEGER,
+        product_name TEXT,
+        quantity INTEGER DEFAULT 1,
+        purchase_price REAL DEFAULT 0,
+        selling_price REAL DEFAULT 0
+      )
+    `);
+
+    // 7. Customers
+    await dbRun(`
+      CREATE TABLE IF NOT EXISTS customers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        phone TEXT,
+        address TEXT,
+        note TEXT
+      )
+    `);
+
+    // 8. Suppliers
+    await dbRun(`
+      CREATE TABLE IF NOT EXISTS suppliers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        phone TEXT,
+        address TEXT,
+        note TEXT
+      )
+    `);
+
+    // 9. Payments
+    await dbRun(`
+      CREATE TABLE IF NOT EXISTS payments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        method TEXT NOT NULL,
+        amount REAL DEFAULT 0,
+        date INTEGER NOT NULL
+      )
+    `);
+
+    // 10. Expense Categories
+    await dbRun(`
+      CREATE TABLE IF NOT EXISTS expense_categories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        icon_name TEXT DEFAULT 'ShoppingCart'
+      )
+    `);
+
+    // 11. Expenses
+    await dbRun(`
+      CREATE TABLE IF NOT EXISTS expenses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        category_name TEXT NOT NULL,
+        description TEXT,
+        amount REAL DEFAULT 0,
+        payment_method TEXT,
+        note TEXT,
+        timestamp INTEGER NOT NULL,
+        date_string TEXT,
+        time_string TEXT
+      )
+    `);
+
+    console.log('Database tables initialized successfully.');
+  });
 }
 
-// Helper Function: Check License Expiry
-function checkAndGetLicense(phoneNo, callback) {
-    db.get(`SELECT * FROM licenses WHERE phoneNo = ?`, [phoneNo], (err, license) => {
-        if (err || !license) return callback(null, { isExpired: true, message: 'License not found' });
-        
-        const now = new Date();
-        const exp = new Date(license.expireDate);
-        if (license.status === 'blocked') {
-            return callback(null, { isExpired: true, isBlocked: true, message: 'á€¡á€€á€±á€¬á€„á€·á€º á€¡á€žá€¯á€¶á€¸á€•á€¼á€¯á€á€½á€„á€·á€ºá€€á€­á€¯ á€•á€­á€á€ºá€‘á€¬á€¸á€•á€«á€žá€Šá€º (Account Blocked)' });
-        }
-        if (now > exp) {
-            return callback(null, { isExpired: true, message: 'á€¡á€€á€±á€¬á€„á€·á€º á€žá€€á€ºá€á€™á€ºá€¸á€€á€¯á€”á€ºá€†á€¯á€¶á€¸á€žá€½á€¬á€¸á€•á€«á€•á€¼á€® (License Expired)' });
-        }
-        return callback(null, { isExpired: false, license });
-    });
-}
+initDatabase();
 
-// ==========================================
-// 1. ADMIN PANEL APIS
-// ==========================================
+// ----------------------------------------------------
+// ROUTES
+// ----------------------------------------------------
 
-// Admin Login
-app.post('/api/admin/login', async (req, res) => {
-    const { username, password } = req.body;
+// Root Check
+app.get('/', (req, res) => {
+  res.json({ status: 'online', server: 'POS Backend API', port: PORT });
+});
 
-    if (!username || !password) {
-        return res.status(400).json({ success: false, message: 'Username and password are required' });
+// 1. REGISTER USER
+app.post('/api/register', async (req, res) => {
+  try {
+    const { phoneNo, username, businessName, businessType, address, role, password, deviceId, startDate, endDate } = req.body;
+
+    if (!phoneNo || !username || !password) {
+      return res.status(400).json({ success: false, message: 'Missing phoneNo, username, or password' });
     }
 
-    db.get(`SELECT * FROM admins WHERE username = ?`, [username], async (err, admin) => {
-        if (err || !admin) {
-            return res.status(401).json({ success: false, message: 'Invalid admin credentials' });
-        }
+    const existing = await dbGet('SELECT * FROM users WHERE phone_no = ?', [phoneNo]);
 
-        const match = await bcrypt.compare(password, admin.passwordHash);
-        if (!match) {
-            return res.status(401).json({ success: false, message: 'Invalid admin credentials' });
-        }
+    if (existing) {
+      await dbRun(
+        `UPDATE users SET username = ?, business_name = ?, business_type = ?, address = ?, role = ?, password_hash = ?, device_id = ?, status = 'on', start_date = ?, end_date = ? WHERE phone_no = ?`,
+        [username, businessName || '', businessType || '', address || '', role || 'ADMIN', password, deviceId || '', startDate || '', endDate || '', phoneNo]
+      );
+      return res.json({
+        success: true,
+        message: 'User updated successfully',
+        status: 'on',
+        user: { phoneNo, username, businessName, businessType, address, role, deviceId, status: 'on', startDate, endDate }
+      });
+    }
 
-        const token = jwt.sign(
-            { id: admin.id, username: admin.username, role: admin.role, isAdmin: true },
-            ADMIN_JWT_SECRET,
-            { expiresIn: '30d' }
+    const now = Date.now();
+    await dbRun(
+      `INSERT INTO users (phone_no, username, business_name, business_type, address, role, password_hash, device_id, status, start_date, end_date, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'on', ?, ?, ?)`,
+      [phoneNo, username, businessName || '', businessType || '', address || '', role || 'ADMIN', password, deviceId || '', startDate || '', endDate || '', now]
+    );
+
+    res.status(201).json({
+      success: true,
+      message: 'Registration successful',
+      status: 'on',
+      user: { phoneNo, username, businessName, businessType, address, role, deviceId, status: 'on', startDate, endDate }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 2. LOGIN USER
+app.post('/api/login', async (req, res) => {
+  try {
+    const { phoneNo, password, deviceId } = req.body;
+
+    const user = await dbGet('SELECT * FROM users WHERE phone_no = ?', [phoneNo]);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'Phone number not registered' });
+    }
+
+    if (user.password_hash !== password) {
+      return res.status(401).json({ success: false, message: 'Incorrect password' });
+    }
+
+    res.json({
+      success: true,
+      status: user.status || 'on',
+      user: {
+        phoneNo: user.phone_no,
+        username: user.username,
+        businessName: user.business_name,
+        businessType: user.business_type,
+        address: user.address,
+        role: user.role,
+        deviceId: user.device_id || deviceId,
+        status: user.status || 'on',
+        startDate: user.start_date || '',
+        endDate: user.end_date || ''
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 3. GET ALL USERS
+app.get('/api/users', async (req, res) => {
+  try {
+    const users = await dbAll('SELECT phone_no as phoneNo, username, business_name as businessName, business_type as businessType, address, role, device_id as deviceId, status, start_date as startDate, end_date as endDate FROM users');
+    res.json({ success: true, users });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 4. PRODUCTS API
+app.get('/api/products', async (req, res) => {
+  try {
+    const products = await dbAll('SELECT id, name, group_name as groupName, purchase_price as purchasePrice, selling_price as sellingPrice, unit, note, track_stock as trackStock, barcode, quantity, alert_quantity as alertQuantity, image_uri as imageUri FROM products');
+    res.json({ success: true, products });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/products', async (req, res) => {
+  try {
+    const p = req.body;
+    const result = await dbRun(
+      `INSERT INTO products (name, group_name, purchase_price, selling_price, unit, note, track_stock, barcode, quantity, alert_quantity, image_uri)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [p.name, p.groupName || '', p.purchasePrice || 0, p.sellingPrice || 0, p.unit || '', p.note || '', p.trackStock ? 1 : 0, p.barcode || '', p.quantity || 0, p.alertQuantity || 0, p.imageUri || '']
+    );
+    res.status(201).json({ success: true, id: result.lastID });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 5. PRODUCT GROUPS
+app.get('/api/product-groups', async (req, res) => {
+  try {
+    const groups = await dbAll('SELECT name FROM product_groups');
+    res.json({ success: true, groups });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/product-groups', async (req, res) => {
+  try {
+    const { name } = req.body;
+    if (name) {
+      await dbRun('INSERT OR IGNORE INTO product_groups (name) VALUES (?)', [name]);
+    }
+    res.status(201).json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 6. PRODUCT UNITS
+app.get('/api/product-units', async (req, res) => {
+  try {
+    const units = await dbAll('SELECT name FROM product_units');
+    res.json({ success: true, units });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/product-units', async (req, res) => {
+  try {
+    const { name } = req.body;
+    if (name) {
+      await dbRun('INSERT OR IGNORE INTO product_units (name) VALUES (?)', [name]);
+    }
+    res.status(201).json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 7. VOUCHERS API
+app.get('/api/vouchers', async (req, res) => {
+  try {
+    const vouchers = await dbAll('SELECT * FROM vouchers ORDER BY timestamp DESC');
+    const voucherItems = await dbAll('SELECT * FROM voucher_items');
+    res.json({ success: true, vouchers, voucherItems });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/vouchers', async (req, res) => {
+  try {
+    const v = req.body;
+    await dbRun(
+      `INSERT OR REPLACE INTO vouchers (receipt_no, timestamp, cashier_name, total_amount, total_items, customer_name, payment_method, is_completed, is_purchase, paid_amount, change_amount, balance_amount, note, discount, fee)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [v.receiptNo, v.timestamp || Date.now(), v.cashierName || '', v.totalAmount || 0, v.totalItems || 0, v.customerName || 'Not Register', v.paymentMethod || 'CASH', v.isCompleted ? 1 : 0, v.isPurchase ? 1 : 0, v.paidAmount || 0, v.changeAmount || 0, v.balanceAmount || 0, v.note || '', v.discount || 0, v.fee || 0]
+    );
+
+    if (v.items && Array.isArray(v.items)) {
+      for (const item of v.items) {
+        await dbRun(
+          `INSERT INTO voucher_items (voucher_id, product_id, product_name, quantity, purchase_price, selling_price)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [v.receiptNo, item.productId || 0, item.productName || '', item.quantity || 1, item.purchasePrice || 0, item.sellingPrice || 0]
         );
-
-        logSystemAction('ADMIN', 'WEB', 'ADMIN_LOGIN', `Admin ${admin.username} logged in`);
-
-        return res.json({
-            success: true,
-            message: 'Admin login successful',
-            token,
-            admin: {
-                id: admin.id,
-                username: admin.username,
-                role: admin.role
-            }
-        });
-    });
-});
-
-// Admin Dashboard Summary API
-app.get('/api/admin/dashboard', (req, res) => {
-    db.get(`SELECT COUNT(*) as totalCustomers FROM users`, [], (err, u) => {
-        db.get(`SELECT COUNT(*) as activeLicenses FROM licenses WHERE status = 'active' AND datetime(expireDate) > datetime('now')`, [], (err, al) => {
-            db.get(`SELECT COUNT(*) as expiredLicenses FROM licenses WHERE status = 'expired' OR datetime(expireDate) <= datetime('now')`, [], (err, el) => {
-                db.get(`SELECT COUNT(*) as blockedAccounts FROM users WHERE status = 'off' OR phoneNo IN (SELECT phoneNo FROM licenses WHERE status = 'blocked')`, [], (err, ba) => {
-                    db.get(`SELECT COUNT(*) as totalDevices FROM devices`, [], (err, td) => {
-                        db.get(`SELECT COALESCE(SUM(total), 0) as todaySales FROM vouchers WHERE date(dateTime) = date('now') AND isDeleted = 0`, [], (err, ts) => {
-                            db.get(`SELECT COALESCE(SUM(total), 0) as monthlySales FROM vouchers WHERE strftime('%Y-%m', dateTime) = strftime('%Y-%m', 'now') AND isDeleted = 0`, [], (err, ms) => {
-                                res.json({
-                                    success: true,
-                                    totalCustomers: u ? u.totalCustomers : 0,
-                                    activeLicenses: al ? al.activeLicenses : 0,
-                                    expiredLicenses: el ? el.expiredLicenses : 0,
-                                    blockedAccounts: ba ? ba.blockedAccounts : 0,
-                                    totalDevices: td ? td.totalDevices : 0,
-                                    todaySales: ts ? ts.todaySales : 0,
-                                    monthlySales: ms ? ms.monthlySales : 0
-                                });
-                            });
-                        });
-                    });
-                });
-            });
-        });
-    });
-});
-
-// GET /api/admin/users (List all customers with license and device counts)
-app.get(['/api/admin/users', '/api/admin/customers'], (req, res) => {
-    db.all(
-        `SELECT u.phoneNo, u.username, u.businessName, u.businessType, u.address, u.role, u.status as accountStatus, u.createdAt,
-                l.planName, l.expireDate, l.maxDevices, l.status as licenseStatus,
-                (SELECT COUNT(*) FROM devices d WHERE d.phoneNo = u.phoneNo) as deviceCount,
-                (SELECT COALESCE(SUM(v.total), 0) FROM vouchers v WHERE v.phoneNo = u.phoneNo AND v.isDeleted = 0) as totalSales
-         FROM users u 
-         LEFT JOIN licenses l ON u.phoneNo = l.phoneNo 
-         ORDER BY u.createdAt DESC`,
-        [],
-        (err, rows) => {
-            if (err) return res.status(500).json({ success: false, message: err.message });
-            res.json({ success: true, users: rows || [], customers: rows || [] });
-        }
-    );
-});
-
-// GET /api/admin/users/:phoneNo (Customer Details)
-app.get('/api/admin/users/:phoneNo', (req, res) => {
-    const phoneNo = req.params.phoneNo;
-    db.get(`SELECT u.phoneNo, u.username, u.businessName, u.businessType, u.address, u.role, u.status as accountStatus, u.createdAt, l.planName, l.expireDate, l.maxDevices, l.status as licenseStatus FROM users u LEFT JOIN licenses l ON u.phoneNo = l.phoneNo WHERE u.phoneNo = ?`, [phoneNo], (err, user) => {
-        if (err || !user) return res.status(404).json({ success: false, message: 'Customer not found' });
-
-        db.all(`SELECT * FROM devices WHERE phoneNo = ?`, [phoneNo], (err, devices) => {
-            db.get(`SELECT COUNT(*) as totalVouchers, COALESCE(SUM(total), 0) as totalRevenue FROM vouchers WHERE phoneNo = ? AND isDeleted = 0`, [phoneNo], (err, sales) => {
-                res.json({
-                    success: true,
-                    user,
-                    devices: devices || [],
-                    salesStats: sales || { totalVouchers: 0, totalRevenue: 0 }
-                });
-            });
-        });
-    });
-});
-
-// POST /api/admin/users/block
-app.post(['/api/admin/users/block', '/api/admin/license/block', '/api/license/block'], (req, res) => {
-    const { phoneNo } = req.body;
-    if (!phoneNo) return res.status(400).json({ success: false, message: 'phoneNo is required' });
-
-    db.run(`UPDATE users SET status = 'off' WHERE phoneNo = ?`, [phoneNo]);
-    db.run(`UPDATE licenses SET status = 'blocked' WHERE phoneNo = ?`, [phoneNo], (err) => {
-        logSystemAction(phoneNo, '', 'BLOCK_ACCOUNT', 'Account and license blocked by Admin');
-        res.json({ success: true, message: `Account ${phoneNo} has been blocked successfully` });
-    });
-});
-
-// POST /api/admin/users/unblock
-app.post(['/api/admin/users/unblock', '/api/admin/license/unblock'], (req, res) => {
-    const { phoneNo } = req.body;
-    if (!phoneNo) return res.status(400).json({ success: false, message: 'phoneNo is required' });
-
-    db.run(`UPDATE users SET status = 'on' WHERE phoneNo = ?`, [phoneNo]);
-    db.run(`UPDATE licenses SET status = 'active' WHERE phoneNo = ?`, [phoneNo], (err) => {
-        logSystemAction(phoneNo, '', 'UNBLOCK_ACCOUNT', 'Account and license unblocked by Admin');
-        res.json({ success: true, message: `Account ${phoneNo} has been unblocked/activated successfully` });
-    });
-});
-
-// DELETE /api/admin/users/:phoneNo
-app.delete('/api/admin/users/:phoneNo', (req, res) => {
-    const phoneNo = req.params.phoneNo;
-    if (!phoneNo) return res.status(400).json({ success: false, message: 'phoneNo is required' });
-
-    db.run(`DELETE FROM users WHERE phoneNo = ?`, [phoneNo]);
-    db.run(`DELETE FROM licenses WHERE phoneNo = ?`, [phoneNo]);
-    db.run(`DELETE FROM devices WHERE phoneNo = ?`, [phoneNo]);
-    db.run(`DELETE FROM products WHERE phoneNo = ?`, [phoneNo]);
-    db.run(`DELETE FROM vouchers WHERE phoneNo = ?`, [phoneNo]);
-    db.run(`DELETE FROM customers WHERE phoneNo = ?`, [phoneNo]);
-    db.run(`DELETE FROM suppliers WHERE phoneNo = ?`, [phoneNo]);
-    db.run(`DELETE FROM expenses WHERE phoneNo = ?`, [phoneNo]);
-
-    logSystemAction(phoneNo, '', 'DELETE_CUSTOMER', `Customer account ${phoneNo} and all associated data deleted by Admin`);
-    res.json({ success: true, message: `Customer ${phoneNo} and all data deleted successfully` });
-});
-
-// POST /api/admin/license/extend
-app.post(['/api/admin/license/extend', '/api/license/extend'], (req, res) => {
-    const { phoneNo, days, daysToAdd, planName, maxDevices } = req.body;
-    const daysNum = parseInt(days || daysToAdd) || 30;
-
-    db.get(`SELECT * FROM licenses WHERE phoneNo = ?`, [phoneNo], (err, license) => {
-        let baseDate = new Date();
-        if (license && new Date(license.expireDate) > baseDate) {
-            baseDate = new Date(license.expireDate);
-        }
-        baseDate.setDate(baseDate.getDate() + daysNum);
-
-        const newExpire = baseDate.toISOString();
-        const plan = planName || (license ? license.planName : 'VIP License');
-        const maxDev = maxDevices || (license ? license.maxDevices : 5);
-
-        db.run(
-            `INSERT OR REPLACE INTO licenses (phoneNo, planName, startDate, expireDate, maxDevices, status)
-             VALUES (?, ?, CURRENT_TIMESTAMP, ?, ?, 'active')`,
-            [phoneNo, plan, newExpire, maxDev],
-            (err) => {
-                if (err) return res.status(500).json({ success: false, message: err.message });
-                logSystemAction(phoneNo, '', 'LICENSE_EXTEND', `License extended by ${daysNum} days until ${newExpire}`);
-                res.json({ success: true, message: `License extended until ${newExpire}`, expireDate: newExpire });
-            }
-        );
-    });
-});
-
-// POST /api/admin/license/change-plan
-app.post('/api/admin/license/change-plan', (req, res) => {
-    const { phoneNo, planName, days, maxDevices } = req.body;
-    if (!phoneNo || !planName) return res.status(400).json({ success: false, message: 'phoneNo and planName required' });
-
-    let addDays = parseInt(days) || 30;
-    if (planName.toLowerCase().includes('trial')) addDays = 7;
-    if (planName.toLowerCase().includes('monthly')) addDays = 30;
-    if (planName.toLowerCase().includes('yearly')) addDays = 365;
-    if (planName.toLowerCase().includes('lifetime')) addDays = 36500; // 100 years
-
-    const expireDate = new Date();
-    expireDate.setDate(expireDate.getDate() + addDays);
-
-    db.run(
-        `INSERT OR REPLACE INTO licenses (phoneNo, planName, startDate, expireDate, maxDevices, status)
-         VALUES (?, ?, CURRENT_TIMESTAMP, ?, ?, 'active')`,
-        [phoneNo, planName, expireDate.toISOString(), maxDevices || 5],
-        (err) => {
-            if (err) return res.status(500).json({ success: false, message: err.message });
-            logSystemAction(phoneNo, '', 'CHANGE_PLAN', `License plan changed to ${planName} expiring ${expireDate.toISOString()}`);
-            res.json({ success: true, message: `Plan changed to ${planName}`, expireDate: expireDate.toISOString() });
-        }
-    );
-});
-
-// Device Management
-app.get('/api/admin/devices', (req, res) => {
-    db.all(`SELECT * FROM devices ORDER BY lastSeen DESC`, [], (err, rows) => {
-        res.json({ success: true, devices: rows || [] });
-    });
-});
-
-app.get('/api/admin/devices/:phoneNo', (req, res) => {
-    const phoneNo = req.params.phoneNo;
-    db.all(`SELECT * FROM devices WHERE phoneNo = ? ORDER BY lastSeen DESC`, [phoneNo], (err, rows) => {
-        res.json({ success: true, devices: rows || [] });
-    });
-});
-
-app.delete('/api/admin/devices/:id', (req, res) => {
-    const id = req.params.id;
-    db.run(`DELETE FROM devices WHERE id = ?`, [id], (err) => {
-        logSystemAction('ADMIN', '', 'REMOVE_DEVICE', `Device ID ${id} removed by admin`);
-        res.json({ success: true, message: 'Device removed successfully' });
-    });
-});
-
-// Admin Inspection APIs (View Customer POS Data)
-app.get('/api/admin/users/:phoneNo/products', (req, res) => {
-    db.all(`SELECT * FROM products WHERE phoneNo = ? AND isDeleted = 0`, [req.params.phoneNo], (err, rows) => {
-        res.json({ success: true, products: rows || [] });
-    });
-});
-
-app.get('/api/admin/users/:phoneNo/vouchers', (req, res) => {
-    db.all(`SELECT * FROM vouchers WHERE phoneNo = ? AND isDeleted = 0 ORDER BY dateTime DESC`, [req.params.phoneNo], (err, rows) => {
-        res.json({ success: true, vouchers: rows || [] });
-    });
-});
-
-app.get('/api/admin/users/:phoneNo/customers', (req, res) => {
-    db.all(`SELECT * FROM customers WHERE phoneNo = ? AND isDeleted = 0`, [req.params.phoneNo], (err, rows) => {
-        res.json({ success: true, customers: rows || [] });
-    });
-});
-
-app.get('/api/admin/users/:phoneNo/expenses', (req, res) => {
-    db.all(`SELECT * FROM expenses WHERE phoneNo = ? AND isDeleted = 0 ORDER BY date DESC`, [req.params.phoneNo], (err, rows) => {
-        res.json({ success: true, expenses: rows || [] });
-    });
-});
-
-// System Logs API
-app.get('/api/admin/logs', (req, res) => {
-    const { phoneNo, action } = req.query;
-    let query = `SELECT * FROM system_logs`;
-    let params = [];
-    
-    if (phoneNo && action) {
-        query += ` WHERE phoneNo = ? AND action = ?`;
-        params.push(phoneNo, action);
-    } else if (phoneNo) {
-        query += ` WHERE phoneNo = ?`;
-        params.push(phoneNo);
-    } else if (action) {
-        query += ` WHERE action = ?`;
-        params.push(action);
+      }
     }
-
-    query += ` ORDER BY createdAt DESC LIMIT 300`;
-
-    db.all(query, params, (err, rows) => {
-        res.json({ success: true, logs: rows || [] });
-    });
+    res.status(201).json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
-// App Version Management
-app.post('/api/admin/app/version', (req, res) => {
-    const { versionName, versionCode, downloadUrl, forceUpdate, releaseNotes } = req.body;
-    db.run(
-        `INSERT INTO app_versions (versionName, versionCode, downloadUrl, forceUpdate, releaseNotes) VALUES (?, ?, ?, ?, ?)`,
-        [versionName, versionCode || 1, downloadUrl, forceUpdate ? 1 : 0, releaseNotes || ''],
-        (err) => {
-            logSystemAction('ADMIN', '', 'NEW_APP_VERSION', `Published new app version ${versionName}`);
-            res.json({ success: true, message: 'App version updated successfully' });
-        }
+// 8. CUSTOMERS
+app.get('/api/customers', async (req, res) => {
+  try {
+    const customers = await dbAll('SELECT * FROM customers');
+    res.json({ success: true, customers });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/customers', async (req, res) => {
+  try {
+    const c = req.body;
+    const result = await dbRun(
+      `INSERT INTO customers (name, phone, address, note) VALUES (?, ?, ?, ?)`,
+      [c.name || '', c.phone || '', c.address || '', c.note || '']
     );
+    res.status(201).json({ success: true, id: result.lastID });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
-// ==========================================
-// 2. MOBILE APP AUTH & USER APIS
-// ==========================================
-
-app.post(['/api/register', '/api/auth/register'], async (req, res) => {
-    const { phoneNo, phone, username, businessName, businessType, address, role, password, deviceId, deviceName } = req.body;
-    const userPhone = (phoneNo || phone || '').trim();
-    const rawPass = password || '123456';
-    
-    if (!userPhone) {
-        return res.status(400).json({ success: false, message: 'Phone number is required' });
-    }
-
-    db.get(`SELECT * FROM users WHERE phoneNo = ?`, [userPhone], async (err, existing) => {
-        if (existing) {
-            return res.status(400).json({ 
-                success: false, 
-                message: 'á€¤á€–á€¯á€”á€ºá€¸á€”á€¶á€•á€«á€á€ºá€–á€¼á€„á€·á€º á€¡á€€á€±á€¬á€„á€·á€ºá€•á€¼á€¯á€œá€¯á€•á€ºá€•á€¼á€®á€¸á€žá€¬á€¸á€–á€¼á€…á€ºá€•á€«á€žá€Šá€º (Phone number already registered)' 
-            });
-        }
-
-        const hash = await bcrypt.hash(rawPass, 10);
-        const devId = deviceId || 'DEV_' + Date.now();
-
-        db.run(
-            `INSERT INTO users (phoneNo, username, businessName, businessType, address, role, passwordHash, deviceId, status)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'on')`,
-            [userPhone, username || 'User', businessName || '', businessType || '', address || '', role || 'ADMIN', hash, devId],
-            function (err) {
-                if (err) {
-                    return res.status(500).json({ success: false, message: 'Failed to create user account: ' + err.message });
-                }
-
-                const startDate = new Date();
-                const expireDate = new Date();
-                expireDate.setDate(startDate.getDate() + 7);
-
-                db.run(
-                    `INSERT INTO licenses (phoneNo, planName, startDate, expireDate, maxDevices, status)
-                     VALUES (?, '7-Day Free Trial', ?, ?, 5, 'active')`,
-                    [userPhone, startDate.toISOString(), expireDate.toISOString()]
-                );
-
-                db.run(
-                    `INSERT OR REPLACE INTO devices (phoneNo, deviceId, deviceName, status, lastSeen)
-                     VALUES (?, ?, ?, 'active', CURRENT_TIMESTAMP)`,
-                    [userPhone, devId, deviceName || 'Android POS Device']
-                );
-
-                logSystemAction(userPhone, devId, 'REGISTER', 'User registered with 7-day trial license');
-
-                const token = jwt.sign({ phoneNo: userPhone, role: role || 'ADMIN' }, JWT_SECRET, { expiresIn: '365d' });
-
-                return res.json({
-                    success: true,
-                    message: 'á€¡á€€á€±á€¬á€„á€·á€ºá€žá€…á€º á€¡á€±á€¬á€„á€ºá€™á€¼á€„á€ºá€…á€½á€¬ á€•á€¼á€¯á€œá€¯á€•á€ºá€•á€¼á€®á€¸á€•á€«á€•á€¼á€® (á‡ á€›á€€á€º á€¡á€á€™á€²á€· á€…á€™á€ºá€¸á€žá€•á€ºá€á€½á€„á€·á€º á€›á€›á€¾á€­á€•á€«á€žá€Šá€º)',
-                    token,
-                    user: {
-                        phoneNo: userPhone,
-                        username: username || 'User',
-                        businessName: businessName || '',
-                        businessType: businessType || '',
-                        address: address || '',
-                        role: role || 'ADMIN',
-                        deviceId: devId,
-                        status: 'on',
-                        expireDate: expireDate.toISOString()
-                    }
-                });
-            }
-        );
-    });
+// 9. SUPPLIERS
+app.get('/api/suppliers', async (req, res) => {
+  try {
+    const suppliers = await dbAll('SELECT * FROM suppliers');
+    res.json({ success: true, suppliers });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
-app.post(['/api/login', '/api/auth/login'], async (req, res) => {
-    const { phoneNo, phone, password, deviceId, deviceName } = req.body;
-    const userPhone = (phoneNo || phone || '').trim();
-
-    if (!userPhone) {
-        return res.status(400).json({ success: false, status: 'not_found', message: 'Phone number is required' });
-    }
-
-    db.get(`SELECT * FROM users WHERE phoneNo = ?`, [userPhone], async (err, user) => {
-        if (err || !user) {
-            return res.status(404).json({
-                success: false,
-                status: 'not_found',
-                message: 'á€¤á€–á€¯á€”á€ºá€¸á€”á€¶á€•á€«á€á€ºá€–á€¼á€„á€·á€º á€¡á€€á€±á€¬á€„á€·á€ºá€–á€½á€„á€·á€ºá€‘á€¬á€¸á€á€¼á€„á€ºá€¸ á€™á€›á€¾á€­á€•á€« (Account not registered)'
-            });
-        }
-
-        const match = await bcrypt.compare(password || '', user.passwordHash) || (password === user.passwordHash);
-        if (!match) {
-            return res.status(401).json({
-                success: false,
-                status: 'invalid_password',
-                message: 'Password á€™á€¾á€¬á€¸á€šá€½á€„á€ºá€¸á€”á€±á€•á€«á€žá€Šá€º (Incorrect password)'
-            });
-        }
-
-        checkAndGetLicense(userPhone, (err, licResult) => {
-            if (licResult.isExpired) {
-                return res.status(403).json({
-                    success: false,
-                    status: 'expired',
-                    message: licResult.message
-                });
-            }
-
-            const currentDeviceId = deviceId || user.deviceId || 'DEV_' + Date.now();
-
-            db.all(`SELECT * FROM devices WHERE phoneNo = ? AND status = 'active'`, [userPhone], (err, activeDevices) => {
-                const deviceExists = activeDevices.some(d => d.deviceId === currentDeviceId);
-                const maxDevices = licResult.license ? licResult.license.maxDevices : 5;
-
-                if (!deviceExists && activeDevices.length >= maxDevices) {
-                    return res.status(403).json({
-                        success: false,
-                        status: 'device_limit_exceeded',
-                        message: `á€á€„á€ºá€›á€±á€¬á€€á€ºá€á€½á€„á€·á€ºá€•á€¼á€¯á€‘á€¬á€¸á€žá€±á€¬ Device á€¡á€›á€±á€¡á€á€½á€€á€º (${maxDevices}) á€œá€¯á€¶á€¸ á€•á€¼á€Šá€·á€ºá€žá€½á€¬á€¸á€•á€«á€•á€¼á€®`
-                    });
-                }
-
-                db.run(
-                    `INSERT OR REPLACE INTO devices (phoneNo, deviceId, deviceName, status, lastSeen)
-                     VALUES (?, ?, ?, 'active', CURRENT_TIMESTAMP)`,
-                    [userPhone, currentDeviceId, deviceName || 'Android POS Device']
-                );
-
-                logSystemAction(userPhone, currentDeviceId, 'LOGIN', 'User logged in successfully');
-
-                const token = jwt.sign({ phoneNo: userPhone, role: user.role }, JWT_SECRET, { expiresIn: '365d' });
-
-                return res.json({
-                    success: true,
-                    status: 'on',
-                    message: 'Login á€¡á€±á€¬á€„á€ºá€™á€¼á€„á€ºá€•á€«á€žá€Šá€º',
-                    token,
-                    user: {
-                        phoneNo: user.phoneNo,
-                        username: user.username,
-                        businessName: user.businessName,
-                        businessType: user.businessType,
-                        address: user.address,
-                        role: user.role,
-                        deviceId: currentDeviceId,
-                        status: 'on',
-                        expireDate: licResult.license ? licResult.license.expireDate : ''
-                    }
-                });
-            });
-        });
-    });
-});
-
-app.post(['/api/check-status', '/api/license/check'], (req, res) => {
-    const { phoneNo, phone } = req.body;
-    const userPhone = (phoneNo || phone || '').trim();
-
-    if (!userPhone) {
-        return res.json({ success: false, status: 'off', message: 'Phone number missing' });
-    }
-
-    db.get(`SELECT * FROM users WHERE phoneNo = ?`, [userPhone], (err, user) => {
-        if (!user) {
-            return res.json({ success: false, status: 'not_found', message: 'User not found' });
-        }
-
-        checkAndGetLicense(userPhone, (err, licResult) => {
-            if (licResult.isExpired) {
-                return res.json({
-                    success: false,
-                    status: 'expired',
-                    message: licResult.message,
-                    user: { ...user, status: 'expired' }
-                });
-            }
-
-            return res.json({
-                success: true,
-                status: 'on',
-                message: 'Account is active',
-                user: {
-                    phoneNo: user.phoneNo,
-                    username: user.username,
-                    businessName: user.businessName,
-                    businessType: user.businessType,
-                    address: user.address,
-                    role: user.role,
-                    deviceId: user.deviceId,
-                    status: 'on',
-                    expireDate: licResult.license ? licResult.license.expireDate : ''
-                }
-            });
-        });
-    });
-});
-
-app.post('/api/change-password', async (req, res) => {
-    const { phoneNo, phone, oldPassword, newPassword } = req.body;
-    const userPhone = (phoneNo || phone || '').trim();
-
-    db.get(`SELECT * FROM users WHERE phoneNo = ?`, [userPhone], async (err, user) => {
-        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
-
-        const match = await bcrypt.compare(oldPassword || '', user.passwordHash) || (oldPassword === user.passwordHash);
-        if (!match) return res.status(400).json({ success: false, message: 'Old password is incorrect' });
-
-        const newHash = await bcrypt.hash(newPassword, 10);
-        db.run(`UPDATE users SET passwordHash = ? WHERE phoneNo = ?`, [newHash, userPhone], (err) => {
-            logSystemAction(userPhone, user.deviceId, 'PASSWORD_CHANGE', 'Password changed');
-            return res.json({ success: true, message: 'Password changed successfully' });
-        });
-    });
-});
-
-app.post('/api/delete-user', async (req, res) => {
-    const { phoneNo, phone, password } = req.body;
-    const userPhone = (phoneNo || phone || '').trim();
-
-    db.get(`SELECT * FROM users WHERE phoneNo = ?`, [userPhone], async (err, user) => {
-        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
-
-        const match = await bcrypt.compare(password || '', user.passwordHash) || (password === user.passwordHash);
-        if (!match) return res.status(400).json({ success: false, message: 'Password incorrect' });
-
-        db.run(`DELETE FROM users WHERE phoneNo = ?`, [userPhone]);
-        db.run(`DELETE FROM licenses WHERE phoneNo = ?`, [userPhone]);
-        db.run(`DELETE FROM devices WHERE phoneNo = ?`, [userPhone]);
-        logSystemAction(userPhone, '', 'DELETE_ACCOUNT', 'User account deleted');
-
-        return res.json({ success: true, message: 'Account deleted successfully' });
-    });
-});
-
-// ==========================================
-// 3. DEVICE MANAGEMENT APIS
-// ==========================================
-
-app.post('/api/device/register', (req, res) => {
-    const { phoneNo, deviceId, deviceName, model, androidVersion, appVersion } = req.body;
-    db.run(
-        `INSERT OR REPLACE INTO devices (phoneNo, deviceId, deviceName, model, androidVersion, appVersion, status, lastSeen)
-         VALUES (?, ?, ?, ?, ?, ?, 'active', CURRENT_TIMESTAMP)`,
-        [phoneNo, deviceId, deviceName || 'Android POS', model || '', androidVersion || '', appVersion || '1.0'],
-        (err) => {
-            if (err) return res.status(500).json({ success: false, message: err.message });
-            logSystemAction(phoneNo, deviceId, 'DEVICE_REGISTER', 'Device registered/updated');
-            res.json({ success: true, message: 'Device registered successfully' });
-        }
+app.post('/api/suppliers', async (req, res) => {
+  try {
+    const s = req.body;
+    const result = await dbRun(
+      `INSERT INTO suppliers (name, phone, address, note) VALUES (?, ?, ?, ?)`,
+      [s.name || '', s.phone || '', s.address || '', s.note || '']
     );
+    res.status(201).json({ success: true, id: result.lastID });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
-app.post('/api/device/heartbeat', (req, res) => {
-    const { phoneNo, deviceId } = req.body;
-    db.run(
-        `UPDATE devices SET lastSeen = CURRENT_TIMESTAMP WHERE phoneNo = ? AND deviceId = ?`,
-        [phoneNo, deviceId],
-        (err) => {
-            res.json({ success: true, message: 'Heartbeat received' });
-        }
+// 10. EXPENSES & CATEGORIES
+app.get('/api/expenses', async (req, res) => {
+  try {
+    const expenses = await dbAll('SELECT * FROM expenses ORDER BY timestamp DESC');
+    res.json({ success: true, expenses });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/expenses', async (req, res) => {
+  try {
+    const e = req.body;
+    const result = await dbRun(
+      `INSERT INTO expenses (category_name, description, amount, payment_method, note, timestamp, date_string, time_string)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [e.categoryName || '', e.description || '', e.amount || 0, e.paymentMethod || '', e.note || '', e.timestamp || Date.now(), e.dateString || '', e.timeString || '']
     );
+    res.status(201).json({ success: true, id: result.lastID });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
-app.get('/api/devices', (req, res) => {
-    const phoneNo = req.query.phoneNo;
-    db.all(`SELECT * FROM devices WHERE phoneNo = ?`, [phoneNo], (err, rows) => {
-        res.json({ success: true, devices: rows || [] });
-    });
+// 11. PAYMENTS
+app.get('/api/payments', async (req, res) => {
+  try {
+    const payments = await dbAll('SELECT * FROM payments');
+    res.json({ success: true, payments });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
-app.post('/api/device/block', (req, res) => {
-    const { phoneNo, deviceId } = req.body;
-    db.run(`UPDATE devices SET status = 'blocked' WHERE phoneNo = ? AND deviceId = ?`, [phoneNo, deviceId], (err) => {
-        logSystemAction(phoneNo, deviceId, 'DEVICE_BLOCK', 'Device blocked by admin');
-        res.json({ success: true, message: 'Device blocked' });
-    });
-});
-
-app.post('/api/device/unblock', (req, res) => {
-    const { phoneNo, deviceId } = req.body;
-    db.run(`UPDATE devices SET status = 'active' WHERE phoneNo = ? AND deviceId = ?`, [phoneNo, deviceId], (err) => {
-        logSystemAction(phoneNo, deviceId, 'DEVICE_UNBLOCK', 'Device unblocked by admin');
-        res.json({ success: true, message: 'Device unblocked' });
-    });
-});
-
-// ==========================================
-// 4. MULTI-TENANT POS DATA SYNC & REST APIS
-// ==========================================
-
-// PRODUCTS
-app.get('/api/products', (req, res) => {
-    const phoneNo = req.query.phoneNo || req.query.phone;
-    if (!phoneNo) return res.status(400).json({ error: 'phoneNo parameter required for multi-tenant isolation' });
-
-    db.all(`SELECT * FROM products WHERE phoneNo = ? AND isDeleted = 0`, [phoneNo], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
-        res.json(rows || []);
-    });
-});
-
-app.post('/api/products', (req, res) => {
-    const item = req.body;
-    const phoneNo = item.phoneNo || req.query.phoneNo;
-    if (!phoneNo) return res.status(400).json({ error: 'phoneNo required' });
-
-    db.run(
-        `INSERT OR REPLACE INTO products (id, syncId, phoneNo, name, price, originalPrice, stock, category, barcode, imageUrl, isDeleted, updatedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP)`,
-        [item.id, item.syncId || item.id, phoneNo, item.name, item.price || 0, item.originalPrice || 0, item.stock || 0, item.category || '', item.barcode || '', item.imageUrl || ''],
-        (err) => {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json({ success: true, message: 'Product saved' });
-        }
+app.post('/api/payments', async (req, res) => {
+  try {
+    const p = req.body;
+    const result = await dbRun(
+      `INSERT INTO payments (method, amount, date) VALUES (?, ?, ?)`,
+      [p.method || '', p.amount || 0, p.date || Date.now()]
     );
+    res.status(201).json({ success: true, id: result.lastID });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
-app.delete('/api/products/:id', (req, res) => {
-    const phoneNo = req.query.phoneNo;
-    const id = req.params.id;
-    db.run(`UPDATE products SET isDeleted = 1, updatedAt = CURRENT_TIMESTAMP WHERE id = ? AND phoneNo = ?`, [id, phoneNo], (err) => {
-        res.json({ success: true, message: 'Product marked as deleted' });
+// 12. FULL SYNC ALL
+app.get('/api/sync/all', async (req, res) => {
+  try {
+    const users = await dbAll('SELECT * FROM users');
+    const products = await dbAll('SELECT * FROM products');
+    const productGroups = await dbAll('SELECT * FROM product_groups');
+    const productUnits = await dbAll('SELECT * FROM product_units');
+    const vouchers = await dbAll('SELECT * FROM vouchers');
+    const voucherItems = await dbAll('SELECT * FROM voucher_items');
+    const customers = await dbAll('SELECT * FROM customers');
+    const suppliers = await dbAll('SELECT * FROM suppliers');
+    const expenses = await dbAll('SELECT * FROM expenses');
+    const expenseCategories = await dbAll('SELECT * FROM expense_categories');
+    const payments = await dbAll('SELECT * FROM payments');
+
+    res.json({
+      success: true,
+      data: {
+        users,
+        products,
+        productGroups,
+        productUnits,
+        vouchers,
+        voucherItems,
+        customers,
+        suppliers,
+        expenses,
+        expenseCategories,
+        payments
+      }
     });
-});
-
-// VOUCHERS
-app.get('/api/vouchers', (req, res) => {
-    const phoneNo = req.query.phoneNo || req.query.phone;
-    if (!phoneNo) return res.status(400).json({ error: 'phoneNo parameter required' });
-
-    db.all(`SELECT * FROM vouchers WHERE phoneNo = ? AND isDeleted = 0`, [phoneNo], (err, rows) => {
-        res.json(rows || []);
-    });
-});
-
-app.post('/api/vouchers', (req, res) => {
-    const item = req.body;
-    const phoneNo = item.phoneNo || req.query.phoneNo;
-    if (!phoneNo) return res.status(400).json({ error: 'phoneNo required' });
-
-    db.run(
-        `INSERT OR REPLACE INTO vouchers (receiptNo, syncId, phoneNo, customerName, itemsJson, subtotal, tax, discount, total, paid, changeAmount, paymentType, dateTime, isDeleted, updatedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP)`,
-        [item.receiptNo, item.syncId || item.receiptNo, phoneNo, item.customerName || '', item.itemsJson || '[]', item.subtotal || 0, item.tax || 0, item.discount || 0, item.total || 0, item.paid || 0, item.changeAmount || 0, item.paymentType || 'Cash', item.dateTime || new Date().toISOString()],
-        (err) => {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json({ success: true, message: 'Voucher saved' });
-        }
-    );
-});
-
-app.delete('/api/vouchers/:receiptNo', (req, res) => {
-    const phoneNo = req.query.phoneNo;
-    const receiptNo = req.params.receiptNo;
-    db.run(`UPDATE vouchers SET isDeleted = 1, updatedAt = CURRENT_TIMESTAMP WHERE receiptNo = ? AND phoneNo = ?`, [receiptNo, phoneNo], (err) => {
-        res.json({ success: true, message: 'Voucher deleted' });
-    });
-});
-
-// CUSTOMERS
-app.get('/api/customers', (req, res) => {
-    const phoneNo = req.query.phoneNo;
-    db.all(`SELECT * FROM customers WHERE phoneNo = ? AND isDeleted = 0`, [phoneNo], (err, rows) => {
-        res.json(rows || []);
-    });
-});
-
-app.post('/api/customers', (req, res) => {
-    const item = req.body;
-    const phoneNo = item.phoneNo || req.query.phoneNo;
-    db.run(
-        `INSERT OR REPLACE INTO customers (id, syncId, phoneNo, name, customerPhone, address, debt, isDeleted, updatedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP)`,
-        [item.id, item.syncId || item.id, phoneNo, item.name, item.customerPhone || '', item.address || '', item.debt || 0],
-        (err) => { res.json({ success: true }); }
-    );
-});
-
-app.delete('/api/customers/:id', (req, res) => {
-    db.run(`UPDATE customers SET isDeleted = 1, updatedAt = CURRENT_TIMESTAMP WHERE id = ? AND phoneNo = ?`, [req.params.id, req.query.phoneNo], (err) => {
-        res.json({ success: true });
-    });
-});
-
-// SUPPLIERS
-app.get('/api/suppliers', (req, res) => {
-    const phoneNo = req.query.phoneNo;
-    db.all(`SELECT * FROM suppliers WHERE phoneNo = ? AND isDeleted = 0`, [phoneNo], (err, rows) => {
-        res.json(rows || []);
-    });
-});
-
-app.post('/api/suppliers', (req, res) => {
-    const item = req.body;
-    const phoneNo = item.phoneNo || req.query.phoneNo;
-    db.run(
-        `INSERT OR REPLACE INTO suppliers (id, syncId, phoneNo, name, supplierPhone, company, payable, isDeleted, updatedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP)`,
-        [item.id, item.syncId || item.id, phoneNo, item.name, item.supplierPhone || '', item.company || '', item.payable || 0],
-        (err) => { res.json({ success: true }); }
-    );
-});
-
-app.delete('/api/suppliers/:id', (req, res) => {
-    db.run(`UPDATE suppliers SET isDeleted = 1, updatedAt = CURRENT_TIMESTAMP WHERE id = ? AND phoneNo = ?`, [req.params.id, req.query.phoneNo], (err) => {
-        res.json({ success: true });
-    });
-});
-
-// EXPENSES
-app.get('/api/expenses', (req, res) => {
-    const phoneNo = req.query.phoneNo;
-    db.all(`SELECT * FROM expenses WHERE phoneNo = ? AND isDeleted = 0`, [phoneNo], (err, rows) => {
-        res.json(rows || []);
-    });
-});
-
-app.post('/api/expenses', (req, res) => {
-    const item = req.body;
-    const phoneNo = item.phoneNo || req.query.phoneNo;
-    db.run(
-        `INSERT OR REPLACE INTO expenses (id, syncId, phoneNo, title, amount, category, date, note, isDeleted, updatedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP)`,
-        [item.id, item.syncId || item.id, phoneNo, item.title, item.amount || 0, item.category || '', item.date || '', item.note || ''],
-        (err) => { res.json({ success: true }); }
-    );
-});
-
-app.delete('/api/expenses/:id', (req, res) => {
-    db.run(`UPDATE expenses SET isDeleted = 1, updatedAt = CURRENT_TIMESTAMP WHERE id = ? AND phoneNo = ?`, [req.params.id, req.query.phoneNo], (err) => {
-        res.json({ success: true });
-    });
-});
-
-// ==========================================
-// 5. BULK OFFLINE SYNC APIS (UPLOAD & DOWNLOAD)
-// ==========================================
-
-app.post('/api/sync/upload', (req, res) => {
-    const { phoneNo, deviceId, products, vouchers, customers, suppliers, expenses } = req.body;
-
-    if (!phoneNo) return res.status(400).json({ success: false, message: 'phoneNo is required for sync upload' });
-
-    db.serialize(() => {
-        db.run('BEGIN TRANSACTION');
-
-        // 1. Products Sync
-        if (Array.isArray(products)) {
-            const stmt = db.prepare(`
-                INSERT INTO products (id, syncId, phoneNo, name, price, originalPrice, stock, category, barcode, imageUrl, isDeleted, updatedAt)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                ON CONFLICT(id, phoneNo) DO UPDATE SET
-                    syncId = excluded.syncId,
-                    name = excluded.name,
-                    price = excluded.price,
-                    originalPrice = excluded.originalPrice,
-                    stock = excluded.stock,
-                    category = excluded.category,
-                    barcode = excluded.barcode,
-                    imageUrl = excluded.imageUrl,
-                    isDeleted = excluded.isDeleted,
-                    updatedAt = CURRENT_TIMESTAMP
-            `);
-            products.forEach(p => {
-                stmt.run(p.id, p.syncId || p.id, phoneNo, p.name, p.price || 0, p.originalPrice || 0, p.stock || 0, p.category || '', p.barcode || '', p.imageUrl || '', p.isDeleted || 0);
-            });
-            stmt.finalize();
-        }
-
-        // 2. Vouchers Sync
-        if (Array.isArray(vouchers)) {
-            const stmt = db.prepare(`
-                INSERT INTO vouchers (receiptNo, syncId, phoneNo, customerName, itemsJson, subtotal, tax, discount, total, paid, changeAmount, paymentType, dateTime, isDeleted, updatedAt)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                ON CONFLICT(receiptNo, phoneNo) DO UPDATE SET
-                    syncId = excluded.syncId,
-                    customerName = excluded.customerName,
-                    itemsJson = excluded.itemsJson,
-                    subtotal = excluded.subtotal,
-                    tax = excluded.tax,
-                    discount = excluded.discount,
-                    total = excluded.total,
-                    paid = excluded.paid,
-                    changeAmount = excluded.changeAmount,
-                    paymentType = excluded.paymentType,
-                    dateTime = excluded.dateTime,
-                    isDeleted = excluded.isDeleted,
-                    updatedAt = CURRENT_TIMESTAMP
-            `);
-            vouchers.forEach(v => {
-                stmt.run(v.receiptNo, v.syncId || v.receiptNo, phoneNo, v.customerName || '', v.itemsJson || '[]', v.subtotal || 0, v.tax || 0, v.discount || 0, v.total || 0, v.paid || 0, v.changeAmount || 0, v.paymentType || 'Cash', v.dateTime || new Date().toISOString(), v.isDeleted || 0);
-            });
-            stmt.finalize();
-        }
-
-        // 3. Customers Sync
-        if (Array.isArray(customers)) {
-            const stmt = db.prepare(`
-                INSERT INTO customers (id, syncId, phoneNo, name, customerPhone, address, debt, isDeleted, updatedAt)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                ON CONFLICT(id, phoneNo) DO UPDATE SET
-                    syncId = excluded.syncId,
-                    name = excluded.name,
-                    customerPhone = excluded.customerPhone,
-                    address = excluded.address,
-                    debt = excluded.debt,
-                    isDeleted = excluded.isDeleted,
-                    updatedAt = CURRENT_TIMESTAMP
-            `);
-            customers.forEach(c => {
-                stmt.run(c.id, c.syncId || c.id, phoneNo, c.name, c.customerPhone || '', c.address || '', c.debt || 0, c.isDeleted || 0);
-            });
-            stmt.finalize();
-        }
-
-        // 4. Suppliers Sync
-        if (Array.isArray(suppliers)) {
-            const stmt = db.prepare(`
-                INSERT INTO suppliers (id, syncId, phoneNo, name, supplierPhone, company, payable, isDeleted, updatedAt)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                ON CONFLICT(id, phoneNo) DO UPDATE SET
-                    syncId = excluded.syncId,
-                    name = excluded.name,
-                    supplierPhone = excluded.supplierPhone,
-                    company = excluded.company,
-                    payable = excluded.payable,
-                    isDeleted = excluded.isDeleted,
-                    updatedAt = CURRENT_TIMESTAMP
-            `);
-            suppliers.forEach(s => {
-                stmt.run(s.id, s.syncId || s.id, phoneNo, s.name, s.supplierPhone || '', s.company || '', s.payable || 0, s.isDeleted || 0);
-            });
-            stmt.finalize();
-        }
-
-        // 5. Expenses Sync
-        if (Array.isArray(expenses)) {
-            const stmt = db.prepare(`
-                INSERT INTO expenses (id, syncId, phoneNo, title, amount, category, date, note, isDeleted, updatedAt)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                ON CONFLICT(id, phoneNo) DO UPDATE SET
-                    syncId = excluded.syncId,
-                    title = excluded.title,
-                    amount = excluded.amount,
-                    category = excluded.category,
-                    date = excluded.date,
-                    note = excluded.note,
-                    isDeleted = excluded.isDeleted,
-                    updatedAt = CURRENT_TIMESTAMP
-            `);
-            expenses.forEach(e => {
-                stmt.run(e.id, e.syncId || e.id, phoneNo, e.title, e.amount || 0, e.category || '', e.date || '', e.note || '', e.isDeleted || 0);
-            });
-            stmt.finalize();
-        }
-
-        db.run('COMMIT', (err) => {
-            if (err) return res.status(500).json({ success: false, message: 'Sync upload failed: ' + err.message });
-            logSystemAction(phoneNo, deviceId, 'SYNC_UPLOAD', 'Data successfully uploaded and merged');
-            res.json({ success: true, message: 'Sync upload completed', serverTime: new Date().toISOString() });
-        });
-    });
-});
-
-app.post('/api/sync/download', (req, res) => {
-    const { phoneNo, lastSyncTime } = req.body;
-    if (!phoneNo) return res.status(400).json({ success: false, message: 'phoneNo is required for sync download' });
-
-    const timeFilter = lastSyncTime ? lastSyncTime : '1970-01-01T00:00:00.000Z';
-
-    db.all(`SELECT * FROM products WHERE phoneNo = ? AND updatedAt > ?`, [phoneNo, timeFilter], (err, products) => {
-        db.all(`SELECT * FROM vouchers WHERE phoneNo = ? AND updatedAt > ?`, [phoneNo, timeFilter], (err, vouchers) => {
-            db.all(`SELECT * FROM customers WHERE phoneNo = ? AND updatedAt > ?`, [phoneNo, timeFilter], (err, customers) => {
-                db.all(`SELECT * FROM suppliers WHERE phoneNo = ? AND updatedAt > ?`, [phoneNo, timeFilter], (err, suppliers) => {
-                    db.all(`SELECT * FROM expenses WHERE phoneNo = ? AND updatedAt > ?`, [phoneNo, timeFilter], (err, expenses) => {
-                        res.json({
-                            success: true,
-                            serverTime: new Date().toISOString(),
-                            products: products || [],
-                            vouchers: vouchers || [],
-                            customers: customers || [],
-                            suppliers: suppliers || [],
-                            expenses: expenses || []
-                        });
-                    });
-                });
-            });
-        });
-    });
-});
-
-// ==========================================
-// 6. APK VERSION CONTROL API
-// ==========================================
-
-app.get('/api/app/version', (req, res) => {
-    db.get(`SELECT * FROM app_versions ORDER BY id DESC LIMIT 1`, [], (err, row) => {
-        if (row) {
-            res.json({
-                success: true,
-                versionName: row.versionName,
-                versionCode: row.versionCode,
-                downloadUrl: row.downloadUrl,
-                forceUpdate: row.forceUpdate === 1,
-                releaseNotes: row.releaseNotes
-            });
-        } else {
-            res.json({
-                success: true,
-                versionName: '1.0.0',
-                versionCode: 1,
-                downloadUrl: 'http://74.81.63.87:8082/app-release.apk',
-                forceUpdate: false,
-                releaseNotes: 'Initial release'
-            });
-        }
-    });
-});
-
-// Health check endpoint
-app.get('/api/health', (req, res) => {
-    res.json({ status: 'OK', serverPort: PORT, timestamp: new Date().toISOString() });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // Start Server
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`===================================================`);
-    console.log(`ðŸš€ Offline POS SaaS Express Server running on Port ${PORT}`);
-    console.log(`URL: http://74.81.63.87:${PORT}/api`);
-    console.log(`===================================================`);
+  console.log(`========================================`);
+  console.log(`POS Express Backend API is running!`);
+  console.log(`Port: ${PORT}`);
+  console.log(`Host: http://0.0.0.0:${PORT}`);
+  console.log(`========================================`);
 });
