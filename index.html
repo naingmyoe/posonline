@@ -36,9 +36,17 @@
     </div>
     <div class="offcanvas-body p-0">
         <div class="list-group list-group-flush border-0">
+            <!-- 🟢 API အားလုံးကို အပြည့်အစုံ ပြန်ထည့်ထားပါသည် -->
             <a href="#" class="list-group-item list-group-item-action list-group-item-dark" onclick="fetchAndDisplay('users', 'Users Management')">👥 /api/users</a>
             <a href="#" class="list-group-item list-group-item-action list-group-item-dark" onclick="fetchAndDisplay('products', 'Products List')">📦 /api/products</a>
-            <!-- အခြား မီနူးများ ဆက်လက်ပါဝင်သည် -->
+            <a href="#" class="list-group-item list-group-item-action list-group-item-dark" onclick="fetchAndDisplay('product-groups', 'Product Groups')">📂 /api/product-groups</a>
+            <a href="#" class="list-group-item list-group-item-action list-group-item-dark" onclick="fetchAndDisplay('product-units', 'Product Units')">⚖️ /api/product-units</a>
+            <a href="#" class="list-group-item list-group-item-action list-group-item-dark" onclick="fetchAndDisplay('vouchers', 'Sales Vouchers')">🧾 /api/vouchers</a>
+            <a href="#" class="list-group-item list-group-item-action list-group-item-dark" onclick="fetchAndDisplay('customers', 'Customers')">🤝 /api/customers</a>
+            <a href="#" class="list-group-item list-group-item-action list-group-item-dark" onclick="fetchAndDisplay('suppliers', 'Suppliers')">🏢 /api/suppliers</a>
+            <a href="#" class="list-group-item list-group-item-action list-group-item-dark" onclick="fetchAndDisplay('expenses', 'Expenses')">💸 /api/expenses</a>
+            <a href="#" class="list-group-item list-group-item-action list-group-item-dark" onclick="fetchAndDisplay('payments', 'Payments')">💳 /api/payments</a>
+            <a href="#" class="list-group-item list-group-item-action bg-primary text-white border-top border-secondary mt-3" onclick="syncAll()">🔄 /api/sync/all (Test JSON)</a>
         </div>
     </div>
 </div>
@@ -49,8 +57,10 @@
         <div class="col-12 col-lg-10">
             <div id="content-area">
                 <h3 id="page-title" class="text-secondary">Welcome!</h3>
-                <p class="text-muted" id="page-desc">Please open the menu drawer and select an API.</p>
-                <div id="table-container" class="table-responsive"></div>
+                <p class="text-muted" id="page-desc">Please open the menu drawer on the top left and select an API to view its data.</p>
+                <div id="table-container" class="table-responsive">
+                    <!-- Dynamic Table or JSON will be injected here -->
+                </div>
             </div>
         </div>
     </div>
@@ -102,14 +112,20 @@
     // Global variable to keep track of selected user
     let selectedUserPhone = '';
 
-    // API Config updated to include endDate and Actions for users
+    // 🟢 API Configurations အားလုံး အပြည့်အစုံ
     const apiConfig = {
         'users': { 
             keys: ['phoneNo', 'username', 'role', 'status', 'endDate', 'action'], 
             headers: ['Phone', 'Username', 'Role', 'Status', 'Expire Date', 'Action'] 
         },
         'products': { keys: ['id', 'name', 'groupName', 'sellingPrice', 'quantity'], headers: ['ID', 'Name', 'Group', 'Price', 'Stock'] },
-        // အခြား API Config များကို မူလအတိုင်းထားပါ
+        'product-groups': { keys: ['name'], headers: ['Group Name'] },
+        'product-units': { keys: ['name'], headers: ['Unit Name'] },
+        'vouchers': { keys: ['receipt_no', 'cashier_name', 'total_amount', 'payment_method', 'timestamp'], headers: ['Receipt No', 'Cashier', 'Total Amount', 'Payment', 'Date/Time'] },
+        'customers': { keys: ['id', 'name', 'phone', 'address'], headers: ['ID', 'Name', 'Phone', 'Address'] },
+        'suppliers': { keys: ['id', 'name', 'phone', 'address'], headers: ['ID', 'Name', 'Phone', 'Address'] },
+        'expenses': { keys: ['id', 'category_name', 'amount', 'timestamp'], headers: ['ID', 'Category', 'Amount', 'Date'] },
+        'payments': { keys: ['id', 'method', 'amount', 'date'], headers: ['ID', 'Method', 'Amount', 'Date'] }
     };
 
     async function fetchAndDisplay(endpoint, title) {
@@ -126,7 +142,14 @@
 
             if (data.success) {
                 document.getElementById('page-desc').innerText = `Data loaded successfully.`;
-                generateTable(endpoint, data[endpoint] || data.groups || data.units);
+                
+                // 🟢 JSON Data Array ကို မှန်ကန်စွာ ခွဲထုတ်ခြင်း
+                let dataArray = [];
+                if (endpoint === 'product-groups') dataArray = data.groups;
+                else if (endpoint === 'product-units') dataArray = data.units;
+                else dataArray = data[endpoint]; 
+
+                generateTable(endpoint, dataArray);
             } else {
                 document.getElementById('table-container').innerHTML = `<div class="alert alert-danger">Error fetching data.</div>`;
             }
@@ -138,7 +161,7 @@
     function generateTable(endpoint, items) {
         const container = document.getElementById('table-container');
         if (!items || items.length === 0) {
-            container.innerHTML = `<div class="alert alert-warning">No data found.</div>`;
+            container.innerHTML = `<div class="alert alert-warning">No data found in this table.</div>`;
             return;
         }
 
@@ -165,8 +188,13 @@
                 
                 // Color badges for user status
                 if (key === 'status' && endpoint === 'users') {
-                    let badgeColor = cellData === 'on' ? 'bg-success' : 'bg-danger';
+                    let badgeColor = cellData === 'on' ? 'bg-success' : (cellData === 'banned' ? 'bg-danger' : 'bg-warning text-dark');
                     cellData = `<span class="badge ${badgeColor} status-badge">${cellData}</span>`;
+                }
+                
+                // Format Timestamp
+                if (key === 'timestamp' || key === 'date') {
+                    cellData = new Date(parseInt(cellData)).toLocaleString();
                 }
 
                 tableHTML += `<td>${cellData}</td>`;
@@ -238,6 +266,28 @@
             }
         } catch (error) {
             alert("API connection error.");
+        }
+    }
+
+    // 🟢 Sync All (Test API Dump)
+    async function syncAll() {
+        const offcanvas = bootstrap.Offcanvas.getInstance(document.getElementById('apiDrawer'));
+        if(offcanvas) offcanvas.hide();
+
+        document.getElementById('page-title').innerText = "Sync All Data";
+        document.getElementById('page-desc').innerText = "Fetching everything from /api/sync/all...";
+        document.getElementById('table-container').innerHTML = '<div class="spinner-border text-primary"></div> Loading...';
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/sync/all`);
+            const data = await response.json();
+            
+            if (data.success) {
+                document.getElementById('page-desc').innerText = "JSON response received successfully.";
+                document.getElementById('table-container').innerHTML = `<pre class="bg-dark text-light p-3 rounded" style="max-height: 500px; overflow-y: auto;">${JSON.stringify(data.data, null, 2)}</pre>`;
+            }
+        } catch (error) {
+            document.getElementById('table-container').innerHTML = `<div class="alert alert-danger">Error connecting to server.</div>`;
         }
     }
 </script>
