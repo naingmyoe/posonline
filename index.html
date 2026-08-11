@@ -13,38 +13,32 @@
         .list-group-item-dark:hover { background-color: #495057; color: white; }
         #content-area { padding: 20px; background: white; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); margin-top: 20px; min-height: 70vh; }
         .table-responsive { margin-top: 15px; }
+        .status-badge { text-transform: uppercase; font-size: 0.8rem; }
     </style>
 </head>
 <body>
 
-<!-- Navbar with Hamburger Menu -->
+<!-- Navbar -->
 <nav class="navbar navbar-dark bg-dark shadow-sm">
     <div class="container-fluid">
-        <button class="navbar-toggler" type="button" data-bs-toggle="offcanvas" data-bs-target="#apiDrawer" aria-controls="apiDrawer">
+        <button class="navbar-toggler" type="button" data-bs-toggle="offcanvas" data-bs-target="#apiDrawer">
             <span class="navbar-toggler-icon"></span>
         </button>
         <span class="navbar-brand ms-3 me-auto">POS Admin Dashboard (VPS)</span>
     </div>
 </nav>
 
-<!-- Menu Drawer (Offcanvas) -->
-<div class="offcanvas offcanvas-start bg-dark text-white" tabindex="-1" id="apiDrawer" aria-labelledby="apiDrawerLabel">
+<!-- Menu Drawer -->
+<div class="offcanvas offcanvas-start bg-dark text-white" tabindex="-1" id="apiDrawer">
     <div class="offcanvas-header border-bottom border-secondary">
-        <h5 class="offcanvas-title" id="apiDrawerLabel">API Endpoints</h5>
-        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+        <h5 class="offcanvas-title">API Endpoints</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas"></button>
     </div>
     <div class="offcanvas-body p-0">
         <div class="list-group list-group-flush border-0">
-            <a href="#" class="list-group-item list-group-item-action list-group-item-dark" onclick="fetchAndDisplay('users', 'Users List')">👥 /api/users</a>
+            <a href="#" class="list-group-item list-group-item-action list-group-item-dark" onclick="fetchAndDisplay('users', 'Users Management')">👥 /api/users</a>
             <a href="#" class="list-group-item list-group-item-action list-group-item-dark" onclick="fetchAndDisplay('products', 'Products List')">📦 /api/products</a>
-            <a href="#" class="list-group-item list-group-item-action list-group-item-dark" onclick="fetchAndDisplay('product-groups', 'Product Groups')">📂 /api/product-groups</a>
-            <a href="#" class="list-group-item list-group-item-action list-group-item-dark" onclick="fetchAndDisplay('product-units', 'Product Units')">⚖️ /api/product-units</a>
-            <a href="#" class="list-group-item list-group-item-action list-group-item-dark" onclick="fetchAndDisplay('vouchers', 'Sales Vouchers')">🧾 /api/vouchers</a>
-            <a href="#" class="list-group-item list-group-item-action list-group-item-dark" onclick="fetchAndDisplay('customers', 'Customers')">🤝 /api/customers</a>
-            <a href="#" class="list-group-item list-group-item-action list-group-item-dark" onclick="fetchAndDisplay('suppliers', 'Suppliers')">🏢 /api/suppliers</a>
-            <a href="#" class="list-group-item list-group-item-action list-group-item-dark" onclick="fetchAndDisplay('expenses', 'Expenses')">💸 /api/expenses</a>
-            <a href="#" class="list-group-item list-group-item-action list-group-item-dark" onclick="fetchAndDisplay('payments', 'Payments')">💳 /api/payments</a>
-            <a href="#" class="list-group-item list-group-item-action bg-primary text-white border-top border-secondary mt-3" onclick="syncAll()">🔄 /api/sync/all (Test JSON)</a>
+            <!-- အခြား မီနူးများ ဆက်လက်ပါဝင်သည် -->
         </div>
     </div>
 </div>
@@ -55,77 +49,103 @@
         <div class="col-12 col-lg-10">
             <div id="content-area">
                 <h3 id="page-title" class="text-secondary">Welcome!</h3>
-                <p class="text-muted" id="page-desc">Please open the menu drawer on the top left and select an API to view its data.</p>
-                <div id="table-container" class="table-responsive">
-                    <!-- Dynamic Table will be injected here -->
-                </div>
+                <p class="text-muted" id="page-desc">Please open the menu drawer and select an API.</p>
+                <div id="table-container" class="table-responsive"></div>
             </div>
         </div>
     </div>
+</div>
+
+<!-- 🔴 User Management Modal -->
+<div class="modal fade" id="userManageModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-warning">
+        <h5 class="modal-title">Manage User Data</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p><strong>Phone Number:</strong> <span id="m_phone" class="text-primary fw-bold"></span></p>
+        <p><strong>Username:</strong> <span id="m_username"></span></p>
+        
+        <div class="mb-3">
+          <label class="form-label fw-bold">Account Status</label>
+          <select id="m_status" class="form-select">
+            <option value="on">Active (On)</option>
+            <option value="banned">Banned</option>
+            <option value="blocked">Blocked</option>
+          </select>
+        </div>
+        
+        <div class="mb-3">
+          <label class="form-label fw-bold">Expire Date</label>
+          <input type="date" id="m_end_date" class="form-control">
+          <small class="text-muted">Current stored format (YYYY-MM-DD)</small>
+        </div>
+
+        <div class="d-flex justify-content-between mt-4">
+            <button class="btn btn-danger" onclick="deleteUser()">🗑 Delete User</button>
+            <button class="btn btn-success" onclick="updateUser()">💾 Save Changes</button>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- Bootstrap JS -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
 <script>
-    // 👉 Updated to match your VPS IP 
+    // VPS IP Configuration
     const API_BASE_URL = 'http://74.81.63.87:8082/api';
+    
+    // Global variable to keep track of selected user
+    let selectedUserPhone = '';
 
+    // API Config updated to include endDate and Actions for users
     const apiConfig = {
-        'users': { keys: ['phoneNo', 'username', 'role', 'status'], headers: ['Phone', 'Username', 'Role', 'Status'] },
+        'users': { 
+            keys: ['phoneNo', 'username', 'role', 'status', 'endDate', 'action'], 
+            headers: ['Phone', 'Username', 'Role', 'Status', 'Expire Date', 'Action'] 
+        },
         'products': { keys: ['id', 'name', 'groupName', 'sellingPrice', 'quantity'], headers: ['ID', 'Name', 'Group', 'Price', 'Stock'] },
-        'product-groups': { keys: ['name'], headers: ['Group Name'] },
-        'product-units': { keys: ['name'], headers: ['Unit Name'] },
-        'vouchers': { keys: ['receipt_no', 'cashier_name', 'total_amount', 'payment_method', 'timestamp'], headers: ['Receipt No', 'Cashier', 'Total Amount', 'Payment', 'Date/Time'] },
-        'customers': { keys: ['id', 'name', 'phone', 'address'], headers: ['ID', 'Name', 'Phone', 'Address'] },
-        'suppliers': { keys: ['id', 'name', 'phone', 'address'], headers: ['ID', 'Name', 'Phone', 'Address'] },
-        'expenses': { keys: ['id', 'category_name', 'amount', 'timestamp'], headers: ['ID', 'Category', 'Amount', 'Date'] },
-        'payments': { keys: ['id', 'method', 'amount', 'date'], headers: ['ID', 'Method', 'Amount', 'Date'] }
+        // အခြား API Config များကို မူလအတိုင်းထားပါ
     };
 
     async function fetchAndDisplay(endpoint, title) {
-        const drawerEl = document.getElementById('apiDrawer');
-        const offcanvas = bootstrap.Offcanvas.getInstance(drawerEl);
+        const offcanvas = bootstrap.Offcanvas.getInstance(document.getElementById('apiDrawer'));
         if(offcanvas) offcanvas.hide();
 
         document.getElementById('page-title').innerText = title;
         document.getElementById('page-desc').innerText = `Fetching data from /api/${endpoint}...`;
-        document.getElementById('table-container').innerHTML = '<div class="spinner-border text-primary" role="status"></div> Loading...';
+        document.getElementById('table-container').innerHTML = '<div class="spinner-border text-primary"></div> Loading...';
 
         try {
             const response = await fetch(`${API_BASE_URL}/${endpoint}`);
             const data = await response.json();
 
             if (data.success) {
-                document.getElementById('page-desc').innerText = `Data loaded from /api/${endpoint}`;
-                
-                let dataArray = [];
-                if (endpoint === 'product-groups') dataArray = data.groups;
-                else if (endpoint === 'product-units') dataArray = data.units;
-                else dataArray = data[endpoint]; 
-
-                generateTable(endpoint, dataArray);
+                document.getElementById('page-desc').innerText = `Data loaded successfully.`;
+                generateTable(endpoint, data[endpoint] || data.groups || data.units);
             } else {
                 document.getElementById('table-container').innerHTML = `<div class="alert alert-danger">Error fetching data.</div>`;
             }
         } catch (error) {
-            console.error('Fetch Error:', error);
-            document.getElementById('table-container').innerHTML = `<div class="alert alert-danger">Cannot connect to API Server at ${API_BASE_URL}</div>`;
+            document.getElementById('table-container').innerHTML = `<div class="alert alert-danger">Cannot connect to API Server.</div>`;
         }
     }
 
     function generateTable(endpoint, items) {
         const container = document.getElementById('table-container');
-        
         if (!items || items.length === 0) {
-            container.innerHTML = `<div class="alert alert-warning">No data found in this table.</div>`;
+            container.innerHTML = `<div class="alert alert-warning">No data found.</div>`;
             return;
         }
 
         const config = apiConfig[endpoint];
         if (!config) return;
 
-        let tableHTML = `<table class="table table-striped table-bordered table-hover">`;
+        let tableHTML = `<table class="table table-striped table-bordered table-hover align-middle">`;
         tableHTML += `<thead class="table-dark"><tr>`;
         config.headers.forEach(h => { tableHTML += `<th>${h}</th>`; });
         tableHTML += `</tr></thead><tbody>`;
@@ -133,10 +153,22 @@
         items.forEach(item => {
             tableHTML += `<tr>`;
             config.keys.forEach(key => {
-                let cellData = item[key] !== undefined && item[key] !== null ? item[key] : '-';
-                if (key === 'timestamp' || key === 'date') {
-                    cellData = new Date(parseInt(cellData)).toLocaleString();
+                // 🔴 Action Column For Users
+                if (key === 'action' && endpoint === 'users') {
+                    // Safe stringify for HTML onClick event
+                    const userJson = encodeURIComponent(JSON.stringify(item));
+                    tableHTML += `<td><button class="btn btn-sm btn-primary" onclick="openManageModal('${userJson}')">⚙️ Manage</button></td>`;
+                    return; // Skip normal cell processing
                 }
+
+                let cellData = item[key] !== undefined && item[key] !== null ? item[key] : '-';
+                
+                // Color badges for user status
+                if (key === 'status' && endpoint === 'users') {
+                    let badgeColor = cellData === 'on' ? 'bg-success' : 'bg-danger';
+                    cellData = `<span class="badge ${badgeColor} status-badge">${cellData}</span>`;
+                }
+
                 tableHTML += `<td>${cellData}</td>`;
             });
             tableHTML += `</tr>`;
@@ -146,25 +178,66 @@
         container.innerHTML = tableHTML;
     }
 
-    async function syncAll() {
-        const drawerEl = document.getElementById('apiDrawer');
-        const offcanvas = bootstrap.Offcanvas.getInstance(drawerEl);
-        if(offcanvas) offcanvas.hide();
+    // 🔴 Open User Modal with Data
+    function openManageModal(encodedUserJson) {
+        const user = JSON.parse(decodeURIComponent(encodedUserJson));
+        selectedUserPhone = user.phoneNo;
+        
+        document.getElementById('m_phone').innerText = user.phoneNo;
+        document.getElementById('m_username').innerText = user.username;
+        document.getElementById('m_status').value = user.status || 'on';
+        document.getElementById('m_end_date').value = user.endDate || '';
 
-        document.getElementById('page-title').innerText = "Sync All Data";
-        document.getElementById('page-desc').innerText = "Fetching everything from /api/sync/all...";
-        document.getElementById('table-container').innerHTML = '<div class="spinner-border text-primary"></div>';
+        const modal = new bootstrap.Modal(document.getElementById('userManageModal'));
+        modal.show();
+    }
+
+    // 🔴 Update User (Save Changes)
+    async function updateUser() {
+        const status = document.getElementById('m_status').value;
+        const endDate = document.getElementById('m_end_date').value;
 
         try {
-            const response = await fetch(`${API_BASE_URL}/sync/all`);
-            const data = await response.json();
+            const res = await fetch(`${API_BASE_URL}/users/${selectedUserPhone}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: status, endDate: endDate })
+            });
+            const data = await res.json();
             
             if (data.success) {
-                document.getElementById('page-desc').innerText = "JSON response received successfully.";
-                document.getElementById('table-container').innerHTML = `<pre class="bg-dark text-light p-3 rounded" style="max-height: 500px; overflow-y: auto;">${JSON.stringify(data.data, null, 2)}</pre>`;
+                alert("User details updated successfully!");
+                bootstrap.Modal.getInstance(document.getElementById('userManageModal')).hide();
+                fetchAndDisplay('users', 'Users Management'); // Refresh table
+            } else {
+                alert("Failed to update user.");
             }
         } catch (error) {
-            document.getElementById('table-container').innerHTML = `<div class="alert alert-danger">Error connecting to server.</div>`;
+            alert("API connection error.");
+        }
+    }
+
+    // 🔴 Delete User
+    async function deleteUser() {
+        if (!confirm(`Are you sure you want to permanently DELETE user ${selectedUserPhone}?`)) {
+            return;
+        }
+
+        try {
+            const res = await fetch(`${API_BASE_URL}/users/${selectedUserPhone}`, {
+                method: 'DELETE'
+            });
+            const data = await res.json();
+            
+            if (data.success) {
+                alert("User deleted successfully!");
+                bootstrap.Modal.getInstance(document.getElementById('userManageModal')).hide();
+                fetchAndDisplay('users', 'Users Management'); // Refresh table
+            } else {
+                alert("Failed to delete user.");
+            }
+        } catch (error) {
+            alert("API connection error.");
         }
     }
 </script>
