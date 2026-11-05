@@ -429,6 +429,21 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+        // Serve admin.html for root or /admin.html
+    if ((pathname === '/' || pathname === '/admin.html') && method === 'GET') {
+      const htmlPath = path.join(__dirname, 'admin.html');
+      if (fs.existsSync(htmlPath)) {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        fs.createReadStream(htmlPath).pipe(res);
+        return;
+      } else {
+        res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('admin.html file not found on server');
+        return;
+      }
+    }
+
+
     // 11. Fallback 404
     return sendJson(res, 404, { success: false, message: 'Endpoint not found' });
 
