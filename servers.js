@@ -35,6 +35,11 @@ let db = {
   cloud_voucher_items: {}, // userPhone -> [ items ]
   cloud_products: {},  // userPhone -> { productId -> product }
   cloud_customers: {}, // userPhone -> { customerName -> customer }
+  cloud_product_groups: {}, // userPhone -> [ groupNames ]
+  cloud_product_units: {},  // userPhone -> [ unitNames ]
+  cloud_payments: {},  // userPhone -> [ payments ]
+  cloud_suppliers: {}, // userPhone -> { supplierName -> supplier }
+  cloud_expense_categories: {}, // userPhone -> [ expenseCategories ]
   cloud_expenses: {}   // userPhone -> [ expenses ]
 };
 
@@ -253,6 +258,7 @@ const server = http.createServer(async (req, res) => {
     // ==========================================
 
     // 5. Sync Single Voucher (POST /api/sync/voucher) - Instant upload on sale
+    // 5. Sync Single Voucher (POST /api/sync/voucher)
     if (pathname === '/api/sync/voucher' && method === 'POST') {
       const body = await parseJsonBody(req);
       const { userPhone, voucher, items } = body;
@@ -280,6 +286,23 @@ const server = http.createServer(async (req, res) => {
             purchase_price: it.purchasePrice,
             selling_price: it.sellingPrice
           });
+
+          // Automatically adjust product stock on server for this user
+          if (db.cloud_products[userPhone]) {
+            for (const key of Object.keys(db.cloud_products[userPhone])) {
+              const p = db.cloud_products[userPhone][key];
+              if ((it.productId && p.id == it.productId) || (it.productName && p.name === it.productName)) {
+                const qtyChange = Number(it.quantity) || 1;
+                const currentQty = typeof p.quantity === 'number' ? p.quantity : Number(p.quantity) || 0;
+                if (voucher.isPurchase) {
+                  p.quantity = currentQty + qtyChange;
+                } else {
+                  p.quantity = Math.max(0, currentQty - qtyChange);
+                }
+                break;
+              }
+            }
+          }
         }
       }
 
@@ -323,6 +346,23 @@ const server = http.createServer(async (req, res) => {
             purchase_price: it.purchasePrice,
             selling_price: it.sellingPrice
           });
+
+          // Adjust product stock on server
+          if (db.cloud_products[userPhone]) {
+            for (const key of Object.keys(db.cloud_products[userPhone])) {
+              const p = db.cloud_products[userPhone][key];
+              if ((it.productId && p.id == it.productId) || (it.productName && p.name === it.productName)) {
+                const qtyChange = Number(it.quantity) || 1;
+                const currentQty = typeof p.quantity === 'number' ? p.quantity : Number(p.quantity) || 0;
+                if (v.isPurchase) {
+                  p.quantity = currentQty + qtyChange;
+                } else {
+                  p.quantity = Math.max(0, currentQty - qtyChange);
+                }
+                break;
+              }
+            }
+          }
         }
         count++;
       }
@@ -349,7 +389,22 @@ const server = http.createServer(async (req, res) => {
       if (!db.cloud_products[userPhone]) db.cloud_products[userPhone] = {};
 
       for (const p of products) {
-        db.cloud_products[userPhone][p.id || p.name] = p;
+        // Find existing key by ID or Name to update rather than creating duplicates
+        let targetKey = null;
+        for (const k of Object.keys(db.cloud_products[userPhone])) {
+          const ex = db.cloud_products[userPhone][k];
+          if ((p.id && ex.id == p.id) || (p.name && ex.name === p.name)) {
+            targetKey = k;
+            break;
+          }
+        }
+
+        if (targetKey) {
+          db.cloud_products[userPhone][targetKey] = Object.assign(db.cloud_products[userPhone][targetKey], p);
+        } else {
+          const newKey = p.id ? String(p.id) : p.name;
+          db.cloud_products[userPhone][newKey] = p;
+        }
       }
 
       saveDatabase();
@@ -359,6 +414,147 @@ const server = http.createServer(async (req, res) => {
         success: true,
         message: `${products.length} products synced successfully`,
         count: products.length
+      });
+    }
+
+    // 7b. Delete Single Product (POST /api/sync/delete-product)
+    if (pathname === '/api/sync/delete-product' && method === 'POST') {
+      const body = await parseJsonBody(req);
+      const { userPhone, productId, productName } = body;
+      if (userPhone && db.cloud_products[userPhone]) {
+        for (const key of Object.keys(db.cloud_products[userPhone])) {
+          const p = db.cloud_products[userPhone][key];
+          if ((productId && p.id == productId) || (productName && p.name === productName)) {
+            delete db.cloud_products[userPhone][key];
+          }
+        }
+        saveDatabase();
+        console.log(`[SYNC] Deleted product on cloud: id=${productId}, name=${productName} for ${userPhone}`);
+      }
+      return sendJson(res, 200, { success: true, message: 'Product deleted from cloud' });
+    }
+
+    // 7c. Batch Delete Products (POST /api/sync/delete-products)
+    if (pathname === '/api/sync/delete-products' && method === 'POST') {
+      const body = await parseJsonBody(req);
+      const { userPhone, productIds, productNames } = body;
+      if (userPhone && db.cloud_products[userPhone]) {
+        const ids = Array.isArray(productIds) ? productIds.map(String) : [];
+        const names = Array.isArray(productNames) ? productNames : [];
+        for (const key of Object.keys(db.cloud_products[userPhone])) {
+          const p = db.cloud_products[userPhone][key];
+          if (ids.includes(String(key)) || ids.includes(String(p.id)) || names.includes(p.name)) {
+            delete db.cloud_products[userPhone][key];
+          }
+        }
+        saveDatabase();
+        console.log(`[SYNC] Batch products deleted on cloud for ${userPhone}`);
+      }
+      return sendJson(res, 200, { success: true, message: 'Products deleted from cloud' });
+    }
+
+    // 7d. Delete Single Voucher (POST /api/sync/delete-voucher)
+    if (pathname === '/api/sync/delete-voucher' && method === 'POST') {
+      const body = await parseJsonBody(req);
+      const { userPhone, receiptNo } = body;
+      if (userPhone && receiptNo) {
+        if (db.cloud_vouchers[userPhone]) {
+          delete db.cloud_vouchers[userPhone][receiptNo];
+        }
+        if (db.cloud_voucher_items[userPhone]) {
+          db.cloud_voucher_items[userPhone] = db.cloud_voucher_items[userPhone].filter(it => it.voucher_id !== receiptNo);
+        }
+        saveDatabase();
+        console.log(`[SYNC] Voucher deleted on cloud for ${userPhone}: ${receiptNo}`);
+      }
+      return sendJson(res, 200, { success: true, message: 'Voucher deleted from cloud' });
+    }
+
+    // 7e. Full Exact Mirror Sync (POST /api/sync/mirror)
+    // Atomically mirrors the entire local database state to the cloud
+    if (pathname === '/api/sync/mirror' && method === 'POST') {
+      const body = await parseJsonBody(req);
+      const { userPhone, products, vouchers, voucherItems, customers, groups, units, payments, suppliers, expenseCategories, expenses } = body;
+
+      if (!userPhone) {
+        return sendJson(res, 400, { success: false, message: 'Missing userPhone' });
+      }
+
+      // 1. Mirror products
+      if (Array.isArray(products)) {
+        db.cloud_products[userPhone] = {};
+        for (const p of products) {
+          const k = p.id ? String(p.id) : p.name;
+          db.cloud_products[userPhone][k] = p;
+        }
+      }
+
+      // 2. Mirror vouchers (both sales and purchases)
+      if (Array.isArray(vouchers)) {
+        db.cloud_vouchers[userPhone] = {};
+        for (const v of vouchers) {
+          db.cloud_vouchers[userPhone][v.receiptNo] = v;
+        }
+      }
+
+      // 3. Mirror voucher items
+      if (Array.isArray(voucherItems)) {
+        db.cloud_voucher_items[userPhone] = voucherItems.map(it => ({
+          voucher_id: it.voucherId || it.voucher_id,
+          product_id: it.productId || it.product_id,
+          product_name: it.productName || it.product_name,
+          quantity: it.quantity,
+          purchase_price: it.purchasePrice || it.purchase_price,
+          selling_price: it.sellingPrice || it.selling_price
+        }));
+      }
+
+      // 4. Mirror customers
+      if (Array.isArray(customers)) {
+        db.cloud_customers[userPhone] = {};
+        for (const c of customers) {
+          db.cloud_customers[userPhone][c.name] = c;
+        }
+      }
+
+      // 5. Mirror groups & units
+      if (Array.isArray(groups)) {
+        db.cloud_product_groups[userPhone] = groups;
+      }
+      if (Array.isArray(units)) {
+        db.cloud_product_units[userPhone] = units;
+      }
+
+      // 6. Mirror payments & suppliers
+      if (Array.isArray(payments)) {
+        db.cloud_payments[userPhone] = payments;
+      }
+      if (Array.isArray(suppliers)) {
+        db.cloud_suppliers[userPhone] = {};
+        for (const s of suppliers) {
+          db.cloud_suppliers[userPhone][s.name] = s;
+        }
+      }
+
+      // 7. Mirror expense categories & expenses
+      if (Array.isArray(expenseCategories)) {
+        db.cloud_expense_categories[userPhone] = expenseCategories;
+      }
+      if (Array.isArray(expenses)) {
+        db.cloud_expenses[userPhone] = expenses;
+      }
+
+      saveDatabase();
+      console.log(`[MIRROR SYNC] 100% exact local mirror saved for ${userPhone}: ${products?.length || 0} products, ${vouchers?.length || 0} vouchers, ${customers?.length || 0} customers, ${suppliers?.length || 0} suppliers, ${expenses?.length || 0} expenses`);
+
+      return sendJson(res, 200, {
+        success: true,
+        message: 'Cloud data 100% mirrored with local database successfully',
+        productsCount: products?.length || 0,
+        vouchersCount: vouchers?.length || 0,
+        customersCount: customers?.length || 0,
+        suppliersCount: suppliers?.length || 0,
+        expensesCount: expenses?.length || 0
       });
     }
 
@@ -387,10 +583,75 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    // 9. Pull All Cloud Data for User (POST /api/sync/pull)
-    if (pathname === '/api/sync/pull' && method === 'POST') {
+    // 8a. Sync Groups (POST /api/sync/groups)
+    if (pathname === '/api/sync/groups' && method === 'POST') {
       const body = await parseJsonBody(req);
-      const { userPhone } = body;
+      const { userPhone, groups } = body;
+      if (userPhone && Array.isArray(groups)) {
+        if (!db.cloud_product_groups[userPhone]) db.cloud_product_groups[userPhone] = [];
+        for (const g of groups) {
+          if (!db.cloud_product_groups[userPhone].includes(g)) {
+            db.cloud_product_groups[userPhone].push(g);
+          }
+        }
+        saveDatabase();
+      }
+      return sendJson(res, 200, { success: true, message: 'Groups synced successfully' });
+    }
+
+    // 8b. Sync Units (POST /api/sync/units)
+    if (pathname === '/api/sync/units' && method === 'POST') {
+      const body = await parseJsonBody(req);
+      const { userPhone, units } = body;
+      if (userPhone && Array.isArray(units)) {
+        if (!db.cloud_product_units[userPhone]) db.cloud_product_units[userPhone] = [];
+        for (const u of units) {
+          if (!db.cloud_product_units[userPhone].includes(u)) {
+            db.cloud_product_units[userPhone].push(u);
+          }
+        }
+        saveDatabase();
+      }
+      return sendJson(res, 200, { success: true, message: 'Units synced successfully' });
+    }
+
+    // 8c. Sync Payments (POST /api/sync/payments)
+    if (pathname === '/api/sync/payments' && method === 'POST') {
+      const body = await parseJsonBody(req);
+      const { userPhone, payments } = body;
+      if (userPhone && Array.isArray(payments)) {
+        if (!db.cloud_payments[userPhone]) db.cloud_payments[userPhone] = [];
+        for (const p of payments) {
+          const idx = db.cloud_payments[userPhone].findIndex(it => it.method === p.method);
+          if (idx >= 0) db.cloud_payments[userPhone][idx] = p;
+          else db.cloud_payments[userPhone].push(p);
+        }
+        saveDatabase();
+      }
+      return sendJson(res, 200, { success: true, message: 'Payments synced successfully' });
+    }
+
+    // 8d. Sync Suppliers (POST /api/sync/suppliers)
+    if (pathname === '/api/sync/suppliers' && method === 'POST') {
+      const body = await parseJsonBody(req);
+      const { userPhone, suppliers } = body;
+      if (userPhone && Array.isArray(suppliers)) {
+        if (!db.cloud_suppliers[userPhone]) db.cloud_suppliers[userPhone] = {};
+        for (const s of suppliers) {
+          db.cloud_suppliers[userPhone][s.name] = s;
+        }
+        saveDatabase();
+      }
+      return sendJson(res, 200, { success: true, message: 'Suppliers synced successfully' });
+    }
+
+    // 9. Pull All Cloud Data for User (GET or POST /api/sync/pull)
+    if (pathname === '/api/sync/pull' && (method === 'POST' || method === 'GET')) {
+      let userPhone = parsedUrl.query.phoneNo || parsedUrl.query.userPhone;
+      if (method === 'POST') {
+        const body = await parseJsonBody(req);
+        if (body.userPhone) userPhone = body.userPhone;
+      }
 
       if (!userPhone) {
         return sendJson(res, 400, { success: false, message: 'Missing userPhone' });
@@ -400,8 +661,14 @@ const server = http.createServer(async (req, res) => {
       const userItems = db.cloud_voucher_items[userPhone] || [];
       const userProducts = Object.values(db.cloud_products[userPhone] || {});
       const userCustomers = Object.values(db.cloud_customers[userPhone] || {});
+      const userGroups = db.cloud_product_groups[userPhone] || [];
+      const userUnits = db.cloud_product_units[userPhone] || [];
+      const userPayments = db.cloud_payments[userPhone] || [];
+      const userSuppliers = Object.values(db.cloud_suppliers[userPhone] || {});
+      const userExpenseCategories = db.cloud_expense_categories[userPhone] || [];
+      const userExpenses = db.cloud_expenses[userPhone] || [];
 
-      console.log(`[PULL] Pulled data for ${userPhone}: ${userVouchers.length} vouchers, ${userProducts.length} prods, ${userCustomers.length} custs`);
+      console.log(`[PULL] Pulled data for ${userPhone}: ${userVouchers.length} vouchers, ${userProducts.length} prods, ${userCustomers.length} custs, ${userGroups.length} groups, ${userUnits.length} units, ${userSuppliers.length} suppliers, ${userExpenses.length} expenses`);
 
       return sendJson(res, 200, {
         success: true,
@@ -409,40 +676,42 @@ const server = http.createServer(async (req, res) => {
         vouchers: userVouchers,
         voucherItems: userItems,
         products: userProducts,
-        customers: userCustomers
+        customers: userCustomers,
+        groups: userGroups,
+        units: userUnits,
+        payments: userPayments,
+        suppliers: userSuppliers,
+        expenseCategories: userExpenseCategories,
+        expenses: userExpenses
       });
     }
 
     // 10. Sync Status (GET /api/sync/status)
     if (pathname === '/api/sync/status' && method === 'GET') {
       const userPhone = parsedUrl.query.phoneNo || '';
-      const vCount = Object.keys(db.cloud_vouchers[userPhone] || {}).length;
+      const userVouchers = Object.values(db.cloud_vouchers[userPhone] || {});
+      const salesCount = userVouchers.filter(v => !v.isPurchase).length;
+      const purchasesCount = userVouchers.filter(v => v.isPurchase).length;
+      const debtsCount = userVouchers.filter(v => (v.balanceAmount || 0) > 0).length;
+      const vCount = userVouchers.length;
       const pCount = Object.keys(db.cloud_products[userPhone] || {}).length;
       const cCount = Object.keys(db.cloud_customers[userPhone] || {}).length;
+      const sCount = Object.keys(db.cloud_suppliers[userPhone] || {}).length;
+      const expCount = (db.cloud_expenses[userPhone] || []).length;
 
       return sendJson(res, 200, {
         success: true,
         userPhone,
         vouchersCount: vCount,
+        salesCount: salesCount,
+        purchasesCount: purchasesCount,
+        debtsCount: debtsCount,
         productsCount: pCount,
-        customersCount: cCount
+        customersCount: cCount,
+        suppliersCount: sCount,
+        expensesCount: expCount
       });
     }
-
-        // Serve admin.html for root or /admin.html
-    if ((pathname === '/' || pathname === '/admin.html') && method === 'GET') {
-      const htmlPath = path.join(__dirname, 'admin.html');
-      if (fs.existsSync(htmlPath)) {
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        fs.createReadStream(htmlPath).pipe(res);
-        return;
-      } else {
-        res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-        res.end('admin.html file not found on server');
-        return;
-      }
-    }
-
 
     // 11. Fallback 404
     return sendJson(res, 404, { success: false, message: 'Endpoint not found' });
