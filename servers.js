@@ -493,20 +493,63 @@ const server = http.createServer(async (req, res) => {
       if (Array.isArray(vouchers)) {
         db.cloud_vouchers[userPhone] = {};
         for (const v of vouchers) {
-          db.cloud_vouchers[userPhone][v.receiptNo] = v;
+          const rNo = v.receiptNo || v.receipt_no;
+          if (rNo) {
+            db.cloud_vouchers[userPhone][rNo] = {
+              receiptNo: rNo,
+              receipt_no: rNo,
+              timestamp: v.timestamp || Date.now(),
+              cashierName: v.cashierName || v.cashier_name || 'Cashier',
+              cashier_name: v.cashierName || v.cashier_name || 'Cashier',
+              totalAmount: Number(v.totalAmount !== undefined ? v.totalAmount : v.total_amount) || 0,
+              total_amount: Number(v.totalAmount !== undefined ? v.totalAmount : v.total_amount) || 0,
+              totalItems: Number(v.totalItems !== undefined ? v.totalItems : v.total_items) || 0,
+              total_items: Number(v.totalItems !== undefined ? v.totalItems : v.total_items) || 0,
+              customerName: v.customerName || v.customer_name || 'Not Register',
+              customer_name: v.customerName || v.customer_name || 'Not Register',
+              paymentMethod: v.paymentMethod || v.payment_method || 'CASH',
+              payment_method: v.paymentMethod || v.payment_method || 'CASH',
+              isCompleted: (v.isCompleted === true || v.isCompleted === 1 || v.is_completed === 1),
+              is_completed: (v.isCompleted === true || v.isCompleted === 1 || v.is_completed === 1) ? 1 : 0,
+              isPurchase: (v.isPurchase === true || v.isPurchase === 1 || v.is_purchase === 1),
+              is_purchase: (v.isPurchase === true || v.isPurchase === 1 || v.is_purchase === 1) ? 1 : 0,
+              paidAmount: Number(v.paidAmount !== undefined ? v.paidAmount : v.paid_amount) || 0,
+              paid_amount: Number(v.paidAmount !== undefined ? v.paidAmount : v.paid_amount) || 0,
+              changeAmount: Number(v.changeAmount !== undefined ? v.changeAmount : v.change_amount) || 0,
+              change_amount: Number(v.changeAmount !== undefined ? v.changeAmount : v.change_amount) || 0,
+              balanceAmount: Number(v.balanceAmount !== undefined ? v.balanceAmount : v.balance_amount) || 0,
+              balance_amount: Number(v.balanceAmount !== undefined ? v.balanceAmount : v.balance_amount) || 0,
+              discount: Number(v.discount) || 0,
+              fee: Number(v.fee) || 0,
+              note: v.note || ''
+            };
+          }
         }
       }
 
       // 3. Mirror voucher items
       if (Array.isArray(voucherItems)) {
-        db.cloud_voucher_items[userPhone] = voucherItems.map(it => ({
-          voucher_id: it.voucherId || it.voucher_id,
-          product_id: it.productId || it.product_id,
-          product_name: it.productName || it.product_name,
-          quantity: it.quantity,
-          purchase_price: it.purchasePrice || it.purchase_price,
-          selling_price: it.sellingPrice || it.selling_price
-        }));
+        db.cloud_voucher_items[userPhone] = voucherItems.map(it => {
+          const vId = it.voucherId || it.voucher_id;
+          const pId = it.productId !== undefined ? it.productId : it.product_id;
+          const pName = it.productName || it.product_name || '';
+          const qty = Number(it.quantity) || 1;
+          const pPrice = Number(it.purchasePrice !== undefined ? it.purchasePrice : it.purchase_price) || 0;
+          const sPrice = Number(it.sellingPrice !== undefined ? it.sellingPrice : it.selling_price) || 0;
+          return {
+            voucherId: vId,
+            voucher_id: vId,
+            productId: pId,
+            product_id: pId,
+            productName: pName,
+            product_name: pName,
+            quantity: qty,
+            purchasePrice: pPrice,
+            purchase_price: pPrice,
+            sellingPrice: sPrice,
+            selling_price: sPrice
+          };
+        });
       }
 
       // 4. Mirror customers
@@ -525,9 +568,23 @@ const server = http.createServer(async (req, res) => {
         db.cloud_product_units[userPhone] = units;
       }
 
-      // 6. Mirror payments & suppliers
+      // 6. Mirror payments & suppliers (with strict payment deduplication)
       if (Array.isArray(payments)) {
-        db.cloud_payments[userPhone] = payments;
+        const uniquePayments = [];
+        const seenPay = new Set();
+        for (const p of payments) {
+          const m = (p.method || p.payment_method || '').trim();
+          const norm = m.toLowerCase();
+          if (m && !seenPay.has(norm)) {
+            seenPay.add(norm);
+            uniquePayments.push({
+              method: m,
+              amount: Number(p.amount) || 0,
+              date: Number(p.date) || Date.now()
+            });
+          }
+        }
+        db.cloud_payments[userPhone] = uniquePayments;
       }
       if (Array.isArray(suppliers)) {
         db.cloud_suppliers[userPhone] = {};
@@ -538,10 +595,32 @@ const server = http.createServer(async (req, res) => {
 
       // 7. Mirror expense categories & expenses
       if (Array.isArray(expenseCategories)) {
-        db.cloud_expense_categories[userPhone] = expenseCategories;
+        const uniqueCats = [];
+        const seenCats = new Set();
+        for (const ec of expenseCategories) {
+          const name = (ec.name || ec.category_name || '').trim();
+          const norm = name.toLowerCase();
+          if (name && !seenCats.has(norm)) {
+            seenCats.add(norm);
+            uniqueCats.push({
+              name: name,
+              iconName: ec.iconName || ec.icon_name || 'ShoppingCart'
+            });
+          }
+        }
+        db.cloud_expense_categories[userPhone] = uniqueCats;
       }
       if (Array.isArray(expenses)) {
-        db.cloud_expenses[userPhone] = expenses;
+        db.cloud_expenses[userPhone] = expenses.map(e => ({
+          categoryName: e.categoryName || e.category_name || '',
+          description: e.description || '',
+          amount: Number(e.amount) || 0,
+          paymentMethod: e.paymentMethod || e.payment_method || 'CASH',
+          note: e.note || '',
+          timestamp: Number(e.timestamp) || Date.now(),
+          dateString: e.dateString || e.date_string || '',
+          timeString: e.timeString || e.time_string || ''
+        }));
       }
 
       saveDatabase();
