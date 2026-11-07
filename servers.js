@@ -112,6 +112,70 @@ const server = http.createServer(async (req, res) => {
   const method = req.method;
 
   try {
+    const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+
+    function evaluateUserAccess(u, clientDeviceId) {
+      const now = Date.now();
+      // Initialize devices array if not present
+      if (!Array.isArray(u.devices)) {
+        u.devices = [];
+        if (u.device_id) u.devices.push(u.device_id);
+      }
+
+      // Initialize trial/expires_at if not present
+      if (!u.created_at) u.created_at = now;
+      if (!u.expires_at) {
+        u.expires_at = u.created_at + SEVEN_DAYS_MS;
+      }
+
+      // Check max 5 devices limit
+      if (clientDeviceId) {
+        if (!u.devices.includes(clientDeviceId)) {
+          if (u.devices.length >= 5) {
+            return {
+              allowed: false,
+              status: 'device_limit_reached',
+              message: 'ဤအကောင့်ကို အများဆုံး စက် ၅ လုံးအထိသာ သုံးခွင့်ပြုထားပါသည် (Device limit of 5 reached)',
+              expiresAt: u.expires_at,
+              daysLeft: Math.max(0, Math.ceil((u.expires_at - now) / (24 * 60 * 60 * 1000))),
+              deviceCount: u.devices.length,
+              maxDevices: 5
+            };
+          }
+          u.devices.push(clientDeviceId);
+          u.device_id = clientDeviceId;
+          saveDatabase();
+        }
+      }
+
+      // Check expiration
+      if (now > u.expires_at) {
+        u.status = 'expired';
+        saveDatabase();
+        return {
+          allowed: false,
+          status: 'expired',
+          message: 'အကောင့် သက်တမ်းကုန်ဆုံးသွားပါပြီ။ သက်တမ်းတိုးရန် ဆက်သွယ်ပါ (Account Expired)',
+          expiresAt: u.expires_at,
+          daysLeft: 0,
+          deviceCount: u.devices.length,
+          maxDevices: 5
+        };
+      }
+
+      const daysLeft = Math.max(0, Math.ceil((u.expires_at - now) / (24 * 60 * 60 * 1000)));
+      return {
+        allowed: u.status !== 'off',
+        status: u.status === 'off' ? 'off' : 'on',
+        message: 'Active',
+        expiresAt: u.expires_at,
+        daysLeft: daysLeft,
+        isTrial: true,
+        deviceCount: u.devices.length,
+        maxDevices: 5
+      };
+    }
+
     // 1. Healthcheck & Check Status (GET or POST /api/check-status)
     if (pathname === '/api/check-status') {
       let phoneNo = parsedUrl.query.phoneNo;
@@ -125,12 +189,21 @@ const server = http.createServer(async (req, res) => {
 
       if (phoneNo && db.users[phoneNo]) {
         const u = db.users[phoneNo];
+        const evalResult = evaluateUserAccess(u, deviceId);
         return sendJson(res, 200, {
-          success: true,
-          status: u.status || 'on',
+          success: evalResult.allowed,
+          status: evalResult.status,
+          message: evalResult.message,
           phoneNo: u.phone_no,
           username: u.username,
-          deviceId: u.device_id
+          businessName: u.business_name,
+          deviceId: deviceId || u.device_id,
+          devices: u.devices,
+          deviceCount: evalResult.deviceCount,
+          maxDevices: 5,
+          expiresAt: evalResult.expiresAt,
+          daysLeft: evalResult.daysLeft,
+          isTrial: evalResult.isTrial
         });
       }
 
@@ -155,6 +228,8 @@ const server = http.createServer(async (req, res) => {
       }
 
       const now = Date.now();
+      const initialDevices = deviceId ? [deviceId] : [];
+
       db.users[phoneNo] = {
         phone_no: phoneNo,
         username,
@@ -164,17 +239,23 @@ const server = http.createServer(async (req, res) => {
         role: role || 'ADMIN',
         password_hash: password,
         device_id: deviceId || '',
-        status: 'on', // auto-active for simplicity on private VPS
-        created_at: now
+        devices: initialDevices,
+        status: 'on', // 7 days trial is active immediately!
+        created_at: now,
+        expires_at: now + SEVEN_DAYS_MS,
+        trial_days: 7
       };
 
       saveDatabase();
-      console.log(`[USER] Registered/Updated user: ${phoneNo} (${businessName})`);
+      console.log(`[USER] Registered user with 7 days trial: ${phoneNo} (${businessName})`);
 
       return sendJson(res, 200, {
         success: true,
-        message: 'အကောင့် အောင်မြင်စွာ ပြုလုပ်ပြီးပါပြီ',
+        message: 'အကောင့် အောင်မြင်စွာ ပြုလုပ်ပြီးပါပြီ (၇ ရက် အခမဲ့ စမ်းသပ်ခွင့် ရရှိပါသည်)',
         status: 'on',
+        expiresAt: db.users[phoneNo].expires_at,
+        daysLeft: 7,
+        maxDevices: 5,
         user: db.users[phoneNo]
       });
     }
@@ -191,6 +272,7 @@ const server = http.createServer(async (req, res) => {
       const user = db.users[phoneNo];
       if (!user) {
         // Auto-register convenience on private VPS if first time
+        const now = Date.now();
         const newUser = {
           phone_no: phoneNo,
           username: 'Admin',
@@ -200,15 +282,21 @@ const server = http.createServer(async (req, res) => {
           role: 'ADMIN',
           password_hash: password,
           device_id: deviceId || '',
+          devices: deviceId ? [deviceId] : [],
           status: 'on',
-          created_at: Date.now()
+          created_at: now,
+          expires_at: now + SEVEN_DAYS_MS,
+          trial_days: 7
         };
         db.users[phoneNo] = newUser;
         saveDatabase();
         return sendJson(res, 200, {
           success: true,
           status: 'on',
-          message: 'Login successful',
+          message: 'Login successful (၇ ရက် အခမဲ့ စမ်းသပ်ခွင့်)',
+          expiresAt: newUser.expires_at,
+          daysLeft: 7,
+          maxDevices: 5,
           user: newUser
         });
       }
@@ -217,15 +305,35 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 401, { success: false, status: 'invalid_password', message: 'Password မှားယွင်းနေပါသည်' });
       }
 
-      if (deviceId && !user.device_id) {
-        user.device_id = deviceId;
-        saveDatabase();
+      const evalResult = evaluateUserAccess(user, deviceId);
+      if (!evalResult.allowed) {
+        return sendJson(res, 200, {
+          success: false,
+          status: evalResult.status, // 'expired' or 'device_limit_reached' or 'off'
+          message: evalResult.message,
+          expiresAt: evalResult.expiresAt,
+          daysLeft: evalResult.daysLeft,
+          deviceCount: evalResult.deviceCount,
+          maxDevices: 5,
+          user: {
+            phoneNo: user.phone_no,
+            username: user.username,
+            businessName: user.business_name,
+            status: evalResult.status,
+            expiresAt: evalResult.expiresAt
+          }
+        });
       }
 
       return sendJson(res, 200, {
         success: true,
-        status: 'on',
+        status: evalResult.status,
         message: 'Login successful',
+        expiresAt: evalResult.expiresAt,
+        daysLeft: evalResult.daysLeft,
+        isTrial: evalResult.isTrial,
+        deviceCount: evalResult.deviceCount,
+        maxDevices: 5,
         user: {
           phoneNo: user.phone_no,
           username: user.username,
@@ -233,9 +341,43 @@ const server = http.createServer(async (req, res) => {
           businessType: user.business_type,
           address: user.address,
           role: user.role,
-          deviceId: user.device_id || deviceId,
-          status: 'on'
+          deviceId: deviceId || user.device_id,
+          devices: user.devices,
+          status: evalResult.status,
+          expiresAt: evalResult.expiresAt,
+          daysLeft: evalResult.daysLeft
         }
+      });
+    }
+
+    // 3b. Renew Subscription (POST /api/renew or /api/admin/renew)
+    if ((pathname === '/api/renew' || pathname === '/api/admin/renew') && method === 'POST') {
+      const body = await parseJsonBody(req);
+      const { phoneNo, days, action } = body;
+      const user = db.users[phoneNo];
+      if (!user) {
+        return sendJson(res, 404, { success: false, message: 'User not found' });
+      }
+
+      if (action === 'reset_devices') {
+        user.devices = [];
+        saveDatabase();
+        return sendJson(res, 200, { success: true, message: 'Devices reset successfully' });
+      }
+
+      const extendDays = Number(days) || 30;
+      const now = Date.now();
+      const currentExpiry = user.expires_at && user.expires_at > now ? user.expires_at : now;
+      user.expires_at = currentExpiry + (extendDays * 24 * 60 * 60 * 1000);
+      user.status = 'on';
+      saveDatabase();
+
+      const daysLeft = Math.ceil((user.expires_at - now) / (24 * 60 * 60 * 1000));
+      return sendJson(res, 200, {
+        success: true,
+        message: `အကောင့်ကို ${extendDays} ရက် သက်တမ်းတိုးပြီးပါပြီ`,
+        expiresAt: user.expires_at,
+        daysLeft
       });
     }
 
