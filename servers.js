@@ -2,7 +2,7 @@
  * UN POS Backend Server for VPS (Linux / Ubuntu / Debian / Windows)
  * Runs on pure Node.js (NO npm install required!)
  *
- * HOW TO RUN ON YOUR VPS:
+ * HOW TO RUN ON YOUR VPS:ss
  * 1. Install Node.js on your VPS (if not installed):
  *    sudo apt update && sudo apt install -y nodejs npm
  *
@@ -118,9 +118,23 @@ const server = http.createServer(async (req, res) => {
       const htmlContent = fs.readFileSync(adminHtmlPath, 'utf8');
       res.writeHead(200, {
         'Content-Type': 'text/html; charset=utf-8',
-        ...CORS_HEADERS
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Cache-Control': 'no-cache, no-store, must-revalidate'
       });
       res.end(htmlContent);
+      return;
+    } else {
+      res.writeHead(404, {
+        'Content-Type': 'text/html; charset=utf-8'
+      });
+      res.end(`
+        <div style="font-family: sans-serif; text-align: center; padding: 50px;">
+          <h2 style="color: #e11d48;">admin.html ဖိုင် ရှာမတွေ့ပါ</h2>
+          <p>server.js တည်ရှိသော Folder ထဲတွင် <b>admin.html</b> ဖိုင်ကို ထည့်သွင်းထားပေးပါရန် လိုအပ်ပါသည်။</p>
+        </div>
+      `);
       return;
     }
   }
