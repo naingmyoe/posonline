@@ -2,7 +2,7 @@
  * UN POS Backend Server for VPS (Linux / Ubuntu / Debian / Windows)
  * Runs on pure Node.js (NO npm install required!)
  *
- * HOW TO RUN ON YOUR VPS:sss
+ * HOW TO RUN ON YOUR VPS:
  * 1. Install Node.js on your VPS (if not installed):
  *    sudo apt update && sudo apt install -y nodejs npm
  *
@@ -371,6 +371,46 @@ const server = http.createServer(async (req, res) => {
     // ADMIN PORTAL API ENDPOINTS
     // ==========================================
 
+    // Admin: Login Authentication (POST /api/admin/login)
+    if (pathname === '/api/admin/login' && method === 'POST') {
+      const body = await parseJsonBody(req);
+      const { username, password } = body;
+      const adminUser = process.env.ADMIN_USER || 'admin';
+      const adminPass = db.admin_password || process.env.ADMIN_PASS || 'unposadmin';
+
+      if (username === adminUser && password === adminPass) {
+        return sendJson(res, 200, {
+          success: true,
+          message: 'Admin Login အောင်မြင်ပါသည်',
+          token: 'admin_token_' + Date.now(),
+          username: adminUser
+        });
+      } else {
+        return sendJson(res, 401, {
+          success: false,
+          message: 'Admin အမည် သို့မဟုတ် စကားဝှက် မှားယွင်းနေပါသည်'
+        });
+      }
+    }
+
+    // Admin: Change Admin Password (POST /api/admin/change-admin-password)
+    if (pathname === '/api/admin/change-admin-password' && method === 'POST') {
+      const body = await parseJsonBody(req);
+      const { oldPassword, newPassword } = body;
+      const currentAdminPass = db.admin_password || process.env.ADMIN_PASS || 'unposadmin';
+
+      if (oldPassword !== currentAdminPass) {
+        return sendJson(res, 400, { success: false, message: 'လက်ရှိ Admin စကားဝှက် မှားယွင်းနေပါသည်' });
+      }
+      if (!newPassword || newPassword.length < 4) {
+        return sendJson(res, 400, { success: false, message: 'စကားဝှက်အသစ်သည် အနည်းဆုံး ၄ လုံး ရှိရပါမည်' });
+      }
+
+      db.admin_password = newPassword;
+      saveDatabase();
+      return sendJson(res, 200, { success: true, message: 'Admin စကားဝှက်ကို အောင်မြင်စွာ ပြောင်းလဲပြီးပါပြီ' });
+    }
+
     // Admin: Get all registered users (GET /api/admin/users)
     if (pathname === '/api/admin/users' && method === 'GET') {
       const now = Date.now();
@@ -590,6 +630,51 @@ const server = http.createServer(async (req, res) => {
       delete db.users[phoneNo];
       saveDatabase();
       return sendJson(res, 200, { success: true, message: 'အကောင့်ကို ဖျက်ပြီးပါပြီ' });
+    }
+
+    // Admin: Get recent vouchers across users or for specific user (GET /api/admin/vouchers)
+    if (pathname === '/api/admin/vouchers' && method === 'GET') {
+      const userPhone = parsedUrl.query.phoneNo;
+      const list = [];
+      if (userPhone && db.cloud_vouchers[userPhone]) {
+        Object.values(db.cloud_vouchers[userPhone]).forEach(v => {
+          list.push({ ...v, ownerPhone: userPhone, ownerShop: db.users[userPhone]?.business_name || '' });
+        });
+      } else {
+        Object.entries(db.cloud_vouchers).forEach(([ph, vouchersMap]) => {
+          Object.values(vouchersMap || {}).forEach(v => {
+            list.push({ ...v, ownerPhone: ph, ownerShop: db.users[ph]?.business_name || '' });
+          });
+        });
+      }
+      list.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      return sendJson(res, 200, {
+        success: true,
+        total: list.length,
+        vouchers: list.slice(0, 200)
+      });
+    }
+
+    // Admin: Get products and stock inventory across users (GET /api/admin/products)
+    if (pathname === '/api/admin/products' && method === 'GET') {
+      const userPhone = parsedUrl.query.phoneNo;
+      const list = [];
+      if (userPhone && db.cloud_products[userPhone]) {
+        Object.values(db.cloud_products[userPhone]).forEach(p => {
+          list.push({ ...p, ownerPhone: userPhone, ownerShop: db.users[userPhone]?.business_name || '' });
+        });
+      } else {
+        Object.entries(db.cloud_products).forEach(([ph, productsMap]) => {
+          Object.values(productsMap || {}).forEach(p => {
+            list.push({ ...p, ownerPhone: ph, ownerShop: db.users[ph]?.business_name || '' });
+          });
+        });
+      }
+      return sendJson(res, 200, {
+        success: true,
+        total: list.length,
+        products: list
+      });
     }
 
     // 4. Change Password (POST /api/change-password)
