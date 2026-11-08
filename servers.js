@@ -2,7 +2,7 @@
  * UN POS Backend Server for VPS (Linux / Ubuntu / Debian / Windows)
  * Runs on pure Node.js (NO npm install required!)
  *
- * HOW TO RUN ON YOUR VPS:ss
+ * HOW TO RUN ON YOUR VPS:sss
  * 1. Install Node.js on your VPS (if not installed):
  *    sudo apt update && sudo apt install -y nodejs npm
  *
