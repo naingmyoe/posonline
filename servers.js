@@ -111,6 +111,20 @@ const server = http.createServer(async (req, res) => {
   const pathname = parsedUrl.pathname;
   const method = req.method;
 
+  // Serve Admin Dashboard (GET / or /admin or /admin.html)
+  if (method === 'GET' && (pathname === '/' || pathname === '/admin' || pathname === '/admin.html')) {
+    const adminHtmlPath = path.join(__dirname, 'admin.html');
+    if (fs.existsSync(adminHtmlPath)) {
+      const htmlContent = fs.readFileSync(adminHtmlPath, 'utf8');
+      res.writeHead(200, {
+        'Content-Type': 'text/html; charset=utf-8',
+        ...CORS_HEADERS
+      });
+      res.end(htmlContent);
+      return;
+    }
+  }
+
   try {
     const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -227,6 +241,14 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
+      if (db.users[phoneNo]) {
+        return sendJson(res, 409, {
+          success: false,
+          status: 'already_exists',
+          message: 'ဤဖုန်းနံပါတ်ဖြင့် အကောင့်ဖွင့်ပြီးသား ဖြစ်ပါသည် (Phone number already registered)'
+        });
+      }
+
       const now = Date.now();
       const initialDevices = deviceId ? [deviceId] : [];
 
@@ -240,14 +262,14 @@ const server = http.createServer(async (req, res) => {
         password_hash: password,
         device_id: deviceId || '',
         devices: initialDevices,
-        status: 'on', // 7 days trial is active immediately!
+        status: 'on', // 7 days trial is active immediately upon registration!
         created_at: now,
         expires_at: now + SEVEN_DAYS_MS,
         trial_days: 7
       };
 
       saveDatabase();
-      console.log(`[USER] Registered user with 7 days trial: ${phoneNo} (${businessName})`);
+      console.log(`[USER] Registered new user with 7-day trial: ${phoneNo} (${businessName || username})`);
 
       return sendJson(res, 200, {
         success: true,
@@ -260,7 +282,7 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    // 3. Login (POST /api/login)
+    // 3. Login (POST /api/login) - Strictly verify from database, NO auto-register!
     if (pathname === '/api/login' && method === 'POST') {
       const body = await parseJsonBody(req);
       const { phoneNo, password, deviceId } = body;
@@ -271,38 +293,19 @@ const server = http.createServer(async (req, res) => {
 
       const user = db.users[phoneNo];
       if (!user) {
-        // Auto-register convenience on private VPS if first time
-        const now = Date.now();
-        const newUser = {
-          phone_no: phoneNo,
-          username: 'Admin',
-          business_name: 'UN POS Store',
-          business_type: 'Retail',
-          address: '',
-          role: 'ADMIN',
-          password_hash: password,
-          device_id: deviceId || '',
-          devices: deviceId ? [deviceId] : [],
-          status: 'on',
-          created_at: now,
-          expires_at: now + SEVEN_DAYS_MS,
-          trial_days: 7
-        };
-        db.users[phoneNo] = newUser;
-        saveDatabase();
-        return sendJson(res, 200, {
-          success: true,
-          status: 'on',
-          message: 'Login successful (၇ ရက် အခမဲ့ စမ်းသပ်ခွင့်)',
-          expiresAt: newUser.expires_at,
-          daysLeft: 7,
-          maxDevices: 5,
-          user: newUser
+        return sendJson(res, 404, {
+          success: false,
+          status: 'not_found',
+          message: 'ဤဖုန်းနံပါတ်ဖြင့် အကောင့်ဖွင့်ထားခြင်း မရှိပါ (Account not registered)။ ကျေးဇူးပြု၍ အကောင့်အသစ်ဖွင့်ပါ။'
         });
       }
 
       if (user.password_hash !== password) {
-        return sendJson(res, 401, { success: false, status: 'invalid_password', message: 'Password မှားယွင်းနေပါသည်' });
+        return sendJson(res, 401, {
+          success: false,
+          status: 'invalid_password',
+          message: 'စကားဝှက် (Password) မှားယွင်းနေပါသည်'
+        });
       }
 
       const evalResult = evaluateUserAccess(user, deviceId);
@@ -350,24 +353,141 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    // 3b. Renew Subscription (POST /api/renew or /api/admin/renew)
+    // ==========================================
+    // ADMIN PORTAL API ENDPOINTS
+    // ==========================================
+
+    // Admin: Get all registered users (GET /api/admin/users)
+    if (pathname === '/api/admin/users' && method === 'GET') {
+      const now = Date.now();
+      const usersList = Object.values(db.users).map(u => {
+        const devCount = Array.isArray(u.devices) ? u.devices.length : (u.device_id ? 1 : 0);
+        const expiresAt = u.expires_at || (u.created_at ? u.created_at + SEVEN_DAYS_MS : now + SEVEN_DAYS_MS);
+        const daysLeft = Math.ceil((expiresAt - now) / (24 * 60 * 60 * 1000));
+        const isExpired = now > expiresAt;
+        const currentStatus = isExpired ? 'expired' : (u.status || 'on');
+        const vouchersCount = Object.keys(db.cloud_vouchers[u.phone_no] || {}).length;
+        const productsCount = Object.keys(db.cloud_products[u.phone_no] || {}).length;
+
+        return {
+          phone_no: u.phone_no,
+          username: u.username || 'User',
+          business_name: u.business_name || '',
+          business_type: u.business_type || '',
+          address: u.address || '',
+          role: u.role || 'ADMIN',
+          password_hash: u.password_hash || '',
+          devices: u.devices || (u.device_id ? [u.device_id] : []),
+          deviceCount: devCount,
+          maxDevices: 5,
+          status: currentStatus,
+          created_at: u.created_at || now,
+          expires_at: expiresAt,
+          daysLeft: Math.max(0, daysLeft),
+          isExpired: isExpired,
+          isTrial: !!u.trial_days,
+          vouchersCount,
+          productsCount
+        };
+      });
+
+      return sendJson(res, 200, {
+        success: true,
+        total: usersList.length,
+        users: usersList
+      });
+    }
+
+    // Admin: Overall Stats (GET /api/admin/stats)
+    if (pathname === '/api/admin/stats' && method === 'GET') {
+      const now = Date.now();
+      const allUsers = Object.values(db.users);
+      let activeCount = 0;
+      let expiredCount = 0;
+      let offCount = 0;
+      allUsers.forEach(u => {
+        const exp = u.expires_at || 0;
+        if (exp > 0 && now > exp) expiredCount++;
+        else if (u.status === 'off' || u.status === 'pending') offCount++;
+        else activeCount++;
+      });
+
+      let totalVouchers = 0;
+      Object.values(db.cloud_vouchers).forEach(obj => {
+        totalVouchers += Object.keys(obj || {}).length;
+      });
+
+      let totalProducts = 0;
+      Object.values(db.cloud_products).forEach(obj => {
+        totalProducts += Object.keys(obj || {}).length;
+      });
+
+      return sendJson(res, 200, {
+        success: true,
+        totalUsers: allUsers.length,
+        activeUsers: activeCount,
+        expiredUsers: expiredCount,
+        offUsers: offCount,
+        totalVouchers,
+        totalProducts,
+        serverTime: now
+      });
+    }
+
+    // Admin: Renew / Extend Subscription / Reset Devices / Set Expiration (POST /api/renew or /api/admin/renew)
     if ((pathname === '/api/renew' || pathname === '/api/admin/renew') && method === 'POST') {
       const body = await parseJsonBody(req);
-      const { phoneNo, days, action } = body;
+      const { phoneNo, days, action, newStatus, customExpiry } = body;
       const user = db.users[phoneNo];
       if (!user) {
-        return sendJson(res, 404, { success: false, message: 'User not found' });
+        return sendJson(res, 404, { success: false, message: 'အကောင့် ရှာမတွေ့ပါ (User not found)' });
       }
 
+      const now = Date.now();
+
+      // Action: Reset devices (စက် ၅ လုံး စာရင်း ရှင်းမည်)
       if (action === 'reset_devices') {
         user.devices = [];
+        user.device_id = '';
         saveDatabase();
-        return sendJson(res, 200, { success: true, message: 'Devices reset successfully' });
+        return sendJson(res, 200, {
+          success: true,
+          message: 'စက်စာရင်း (Devices) များကို အောင်မြင်စွာ Reset ပြုလုပ်ပြီးပါပြီ'
+        });
       }
 
+      // Action: Set status directly
+      if (action === 'set_status' && newStatus) {
+        user.status = newStatus;
+        if (newStatus === 'on' && user.expires_at && user.expires_at < now) {
+          user.expires_at = now + (30 * 24 * 60 * 60 * 1000); // Give 30 days if reviving expired user
+        }
+        saveDatabase();
+        return sendJson(res, 200, {
+          success: true,
+          message: `အကောင့် Status ကို ${newStatus.toUpperCase()} သို့ ပြောင်းလဲပြီးပါပြီ`,
+          status: user.status,
+          expiresAt: user.expires_at
+        });
+      }
+
+      // Action: Custom expiry date
+      if (customExpiry) {
+        user.expires_at = Number(customExpiry);
+        user.status = 'on';
+        saveDatabase();
+        const daysLeft = Math.ceil((user.expires_at - now) / (24 * 60 * 60 * 1000));
+        return sendJson(res, 200, {
+          success: true,
+          message: 'သက်တမ်း သတ်မှတ်ခြင်း အောင်မြင်ပါသည်',
+          expiresAt: user.expires_at,
+          daysLeft: Math.max(0, daysLeft)
+        });
+      }
+
+      // Action: Extend subscription by N days
       const extendDays = Number(days) || 30;
-      const now = Date.now();
-      const currentExpiry = user.expires_at && user.expires_at > now ? user.expires_at : now;
+      const currentExpiry = (user.expires_at && user.expires_at > now) ? user.expires_at : now;
       user.expires_at = currentExpiry + (extendDays * 24 * 60 * 60 * 1000);
       user.status = 'on';
       saveDatabase();
@@ -375,10 +495,87 @@ const server = http.createServer(async (req, res) => {
       const daysLeft = Math.ceil((user.expires_at - now) / (24 * 60 * 60 * 1000));
       return sendJson(res, 200, {
         success: true,
-        message: `အကောင့်ကို ${extendDays} ရက် သက်တမ်းတိုးပြီးပါပြီ`,
+        message: `အကောင့်ကို ${extendDays} ရက် သက်တမ်းတိုးပြီးပါပြီ (Subscription Extended)`,
         expiresAt: user.expires_at,
-        daysLeft
+        daysLeft: Math.max(0, daysLeft),
+        status: 'on'
       });
+    }
+
+    // Admin: Update User Info (POST /api/admin/user/update)
+    if (pathname === '/api/admin/user/update' && method === 'POST') {
+      const body = await parseJsonBody(req);
+      const { phoneNo, username, businessName, businessType, address, role, password, status, expiresAt } = body;
+      const user = db.users[phoneNo];
+      if (!user) {
+        return sendJson(res, 404, { success: false, message: 'အကောင့် ရှာမတွေ့ပါ' });
+      }
+
+      if (username) user.username = username;
+      if (businessName !== undefined) user.business_name = businessName;
+      if (businessType !== undefined) user.business_type = businessType;
+      if (address !== undefined) user.address = address;
+      if (role) user.role = role;
+      if (password) user.password_hash = password;
+      if (status) user.status = status;
+      if (expiresAt) user.expires_at = Number(expiresAt);
+
+      saveDatabase();
+      return sendJson(res, 200, {
+        success: true,
+        message: 'အချက်အလက်များ အောင်မြင်စွာ ပြင်ဆင်ပြီးပါပြီ',
+        user
+      });
+    }
+
+    // Admin: Create User directly (POST /api/admin/user/create)
+    if (pathname === '/api/admin/user/create' && method === 'POST') {
+      const body = await parseJsonBody(req);
+      const { phoneNo, username, businessName, password, days } = body;
+      if (!phoneNo || !username || !password) {
+        return sendJson(res, 400, { success: false, message: 'ဖုန်းနံပါတ်၊ အမည် နှင့် Password ဖြည့်ပါ' });
+      }
+      if (db.users[phoneNo]) {
+        return sendJson(res, 409, { success: false, message: 'ဤဖုန်းနံပါတ်ဖြင့် အကောင့်ရှိပြီးသားဖြစ်ပါသည်' });
+      }
+
+      const now = Date.now();
+      const trialDays = Number(days) || 7;
+      db.users[phoneNo] = {
+        phone_no: phoneNo,
+        username,
+        business_name: businessName || '',
+        business_type: '',
+        address: '',
+        role: 'ADMIN',
+        password_hash: password,
+        device_id: '',
+        devices: [],
+        status: 'on',
+        created_at: now,
+        expires_at: now + (trialDays * 24 * 60 * 60 * 1000),
+        trial_days: trialDays
+      };
+      saveDatabase();
+
+      return sendJson(res, 200, {
+        success: true,
+        message: 'အကောင့်အသစ် အောင်မြင်စွာ ဖန်တီးပြီးပါပြီ',
+        user: db.users[phoneNo]
+      });
+    }
+
+    // Admin: Delete User (POST /api/admin/user/delete)
+    if (pathname === '/api/admin/user/delete' && method === 'POST') {
+      const body = await parseJsonBody(req);
+      const { phoneNo } = body;
+      if (!phoneNo || !db.users[phoneNo]) {
+        return sendJson(res, 404, { success: false, message: 'အကောင့် ရှာမတွေ့ပါ' });
+      }
+
+      delete db.users[phoneNo];
+      saveDatabase();
+      return sendJson(res, 200, { success: true, message: 'အကောင့်ကို ဖျက်ပြီးပါပြီ' });
     }
 
     // 4. Change Password (POST /api/change-password)
