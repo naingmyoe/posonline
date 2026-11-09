@@ -34,6 +34,7 @@ let db = {
   cloud_vouchers: {},  // userPhone -> { receiptNo -> voucher }
   cloud_voucher_items: {}, // userPhone -> [ items ]
   cloud_products: {},  // userPhone -> { productId -> product }
+  cloud_initial_stock: {}, // userPhone -> { productId/productName -> initialStock }
   cloud_customers: {}, // userPhone -> { customerName -> customer }
   cloud_product_groups: {}, // userPhone -> [ groupNames ]
   cloud_product_units: {},  // userPhone -> [ unitNames ]
@@ -42,6 +43,71 @@ let db = {
   cloud_expense_categories: {}, // userPhone -> [ expenseCategories ]
   cloud_expenses: {}   // userPhone -> [ expenses ]
 };
+
+// Absolute Stock Reduction / Delta Sync Engine
+// Recomputes exact stock = Baseline Initial Stock + Total Purchases - Total Sales
+function recalculateUserProductStock(userPhone) {
+  if (!userPhone || !db.cloud_products[userPhone]) return;
+  if (!db.cloud_initial_stock) db.cloud_initial_stock = {};
+  if (!db.cloud_initial_stock[userPhone]) db.cloud_initial_stock[userPhone] = {};
+
+  const vouchersMap = db.cloud_vouchers[userPhone] || {};
+  const allVoucherItems = db.cloud_voucher_items[userPhone] || [];
+  const initialStockMap = db.cloud_initial_stock[userPhone] || {};
+
+  // Compute total sales and total purchases delta for each product
+  const salesQtyMap = {};    // key -> total sold
+  const purchaseQtyMap = {}; // key -> total purchased
+
+  for (const it of allVoucherItems) {
+    const v = vouchersMap[it.voucher_id];
+    const isCompleted = v ? (v.isCompleted === true || v.isCompleted === 1 || v.is_completed === 1) : true;
+    if (!isCompleted) continue; // Only count completed transactions
+
+    const isPurchase = v ? (v.isPurchase === true || v.isPurchase === 1 || v.is_purchase === 1) : false;
+    const qty = Number(it.quantity) || 1;
+
+    // Keys to match by ID and Name
+    const pIdKey = it.product_id !== undefined && it.product_id !== null ? String(it.product_id) : null;
+    const pNameKey = it.product_name ? String(it.product_name).trim().toLowerCase() : null;
+
+    if (pIdKey) {
+      if (isPurchase) purchaseQtyMap[pIdKey] = (purchaseQtyMap[pIdKey] || 0) + qty;
+      else salesQtyMap[pIdKey] = (salesQtyMap[pIdKey] || 0) + qty;
+    }
+    if (pNameKey) {
+      if (isPurchase) purchaseQtyMap[pNameKey] = (purchaseQtyMap[pNameKey] || 0) + qty;
+      else salesQtyMap[pNameKey] = (salesQtyMap[pNameKey] || 0) + qty;
+    }
+  }
+
+  // Update every product in cloud_products
+  for (const key of Object.keys(db.cloud_products[userPhone])) {
+    const p = db.cloud_products[userPhone][key];
+    const pId = p.id !== undefined && p.id !== null ? String(p.id) : null;
+    const pName = p.name ? String(p.name).trim().toLowerCase() : null;
+
+    // Determine initial baseline stock
+    let baseline = 0;
+    if (pId && initialStockMap[pId] !== undefined) {
+      baseline = Number(initialStockMap[pId]) || 0;
+    } else if (pName && initialStockMap[pName] !== undefined) {
+      baseline = Number(initialStockMap[pName]) || 0;
+    } else {
+      // First time registered: record current quantity as initial baseline
+      baseline = Number(p.quantity) || 0;
+      if (pId) initialStockMap[pId] = baseline;
+      if (pName) initialStockMap[pName] = baseline;
+    }
+
+    const sold = (pId && salesQtyMap[pId] !== undefined) ? salesQtyMap[pId] : (pName && salesQtyMap[pName] !== undefined ? salesQtyMap[pName] : 0);
+    const purchased = (pId && purchaseQtyMap[pId] !== undefined) ? purchaseQtyMap[pId] : (pName && purchaseQtyMap[pName] !== undefined ? purchaseQtyMap[pName] : 0);
+
+    // Absolute Stock Reduction / Relative Delta Sync formula
+    const finalStock = Math.max(0, baseline + purchased - sold);
+    p.quantity = finalStock;
+  }
+}
 
 // Load database from file
 function loadDatabase() {
@@ -724,25 +790,11 @@ const server = http.createServer(async (req, res) => {
             purchase_price: it.purchasePrice,
             selling_price: it.sellingPrice
           });
-
-          // Automatically adjust product stock on server for this user
-          if (db.cloud_products[userPhone]) {
-            for (const key of Object.keys(db.cloud_products[userPhone])) {
-              const p = db.cloud_products[userPhone][key];
-              if ((it.productId && p.id == it.productId) || (it.productName && p.name === it.productName)) {
-                const qtyChange = Number(it.quantity) || 1;
-                const currentQty = typeof p.quantity === 'number' ? p.quantity : Number(p.quantity) || 0;
-                if (voucher.isPurchase) {
-                  p.quantity = currentQty + qtyChange;
-                } else {
-                  p.quantity = Math.max(0, currentQty - qtyChange);
-                }
-                break;
-              }
-            }
-          }
         }
       }
+
+      // Absolute Stock Reduction / Relative Delta Sync: recompute exact stock from baseline + purchases - sales
+      recalculateUserProductStock(userPhone);
 
       saveDatabase();
       console.log(`[SYNC] Single voucher synced for ${userPhone}: ${voucher.receiptNo} (${voucher.totalAmount} Ks)`);
@@ -784,26 +836,12 @@ const server = http.createServer(async (req, res) => {
             purchase_price: it.purchasePrice,
             selling_price: it.sellingPrice
           });
-
-          // Adjust product stock on server
-          if (db.cloud_products[userPhone]) {
-            for (const key of Object.keys(db.cloud_products[userPhone])) {
-              const p = db.cloud_products[userPhone][key];
-              if ((it.productId && p.id == it.productId) || (it.productName && p.name === it.productName)) {
-                const qtyChange = Number(it.quantity) || 1;
-                const currentQty = typeof p.quantity === 'number' ? p.quantity : Number(p.quantity) || 0;
-                if (v.isPurchase) {
-                  p.quantity = currentQty + qtyChange;
-                } else {
-                  p.quantity = Math.max(0, currentQty - qtyChange);
-                }
-                break;
-              }
-            }
-          }
         }
         count++;
       }
+
+      // Absolute Stock Reduction: recompute exact stock for all products of this tenant
+      recalculateUserProductStock(userPhone);
 
       saveDatabase();
       console.log(`[SYNC] Batch vouchers synced for ${userPhone}: ${count} vouchers`);
@@ -825,9 +863,11 @@ const server = http.createServer(async (req, res) => {
       }
 
       if (!db.cloud_products[userPhone]) db.cloud_products[userPhone] = {};
+      if (!db.cloud_initial_stock) db.cloud_initial_stock = {};
+      if (!db.cloud_initial_stock[userPhone]) db.cloud_initial_stock[userPhone] = {};
 
       for (const p of products) {
-        // Find existing key by ID or Name to update rather than creating duplicates
+        // Find existing key by ID or Name
         let targetKey = null;
         for (const k of Object.keys(db.cloud_products[userPhone])) {
           const ex = db.cloud_products[userPhone][k];
@@ -837,13 +877,26 @@ const server = http.createServer(async (req, res) => {
           }
         }
 
+        const pId = p.id !== undefined && p.id !== null ? String(p.id) : null;
+        const pName = p.name ? String(p.name).trim().toLowerCase() : null;
+
         if (targetKey) {
+          // Preserve server's computed quantity; update metadata (price, barcode, group, unit, name)
+          const currentQty = db.cloud_products[userPhone][targetKey].quantity;
           db.cloud_products[userPhone][targetKey] = Object.assign(db.cloud_products[userPhone][targetKey], p);
+          db.cloud_products[userPhone][targetKey].quantity = currentQty;
         } else {
+          // Brand new product: establish initial baseline stock
           const newKey = p.id ? String(p.id) : p.name;
           db.cloud_products[userPhone][newKey] = p;
+          const initialQty = Number(p.quantity) || 0;
+          if (pId) db.cloud_initial_stock[userPhone][pId] = initialQty;
+          if (pName) db.cloud_initial_stock[userPhone][pName] = initialQty;
         }
       }
+
+      // Recompute exact stock based on baseline and all completed transaction deltas
+      recalculateUserProductStock(userPhone);
 
       saveDatabase();
       console.log(`[SYNC] Products synced for ${userPhone}: ${products.length} products`);
@@ -994,7 +1047,10 @@ const server = http.createServer(async (req, res) => {
       if (Array.isArray(customers)) {
         db.cloud_customers[userPhone] = {};
         for (const c of customers) {
-          db.cloud_customers[userPhone][c.name] = c;
+          const cName = (c.name || '').trim();
+          if (cName) {
+            db.cloud_customers[userPhone][cName] = { ...c, name: cName };
+          }
         }
       }
 
@@ -1027,7 +1083,10 @@ const server = http.createServer(async (req, res) => {
       if (Array.isArray(suppliers)) {
         db.cloud_suppliers[userPhone] = {};
         for (const s of suppliers) {
-          db.cloud_suppliers[userPhone][s.name] = s;
+          const sName = (s.name || '').trim();
+          if (sName) {
+            db.cloud_suppliers[userPhone][sName] = { ...s, name: sName };
+          }
         }
       }
 
@@ -1061,6 +1120,9 @@ const server = http.createServer(async (req, res) => {
         }));
       }
 
+      // Recompute exact relative stock deltas after mirroring
+      recalculateUserProductStock(userPhone);
+
       saveDatabase();
       console.log(`[MIRROR SYNC] 100% exact local mirror saved for ${userPhone}: ${products?.length || 0} products, ${vouchers?.length || 0} vouchers, ${customers?.length || 0} customers, ${suppliers?.length || 0} suppliers, ${expenses?.length || 0} expenses`);
 
@@ -1087,7 +1149,10 @@ const server = http.createServer(async (req, res) => {
       if (!db.cloud_customers[userPhone]) db.cloud_customers[userPhone] = {};
 
       for (const c of customers) {
-        db.cloud_customers[userPhone][c.name] = c;
+        const cName = (c.name || '').trim();
+        if (cName) {
+          db.cloud_customers[userPhone][cName] = { ...c, name: cName };
+        }
       }
 
       saveDatabase();
@@ -1155,7 +1220,10 @@ const server = http.createServer(async (req, res) => {
       if (userPhone && Array.isArray(suppliers)) {
         if (!db.cloud_suppliers[userPhone]) db.cloud_suppliers[userPhone] = {};
         for (const s of suppliers) {
-          db.cloud_suppliers[userPhone][s.name] = s;
+          const sName = (s.name || '').trim();
+          if (sName) {
+            db.cloud_suppliers[userPhone][sName] = { ...s, name: sName };
+          }
         }
         saveDatabase();
       }
@@ -1173,6 +1241,9 @@ const server = http.createServer(async (req, res) => {
       if (!userPhone) {
         return sendJson(res, 400, { success: false, message: 'Missing userPhone' });
       }
+
+      // Ensure all product stocks reflect exact relative deltas (Baseline + Purchases - Sales)
+      recalculateUserProductStock(userPhone);
 
       const userVouchers = Object.values(db.cloud_vouchers[userPhone] || {});
       const userItems = db.cloud_voucher_items[userPhone] || [];
