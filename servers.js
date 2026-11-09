@@ -55,53 +55,72 @@ function recalculateUserProductStock(userPhone) {
   const allVoucherItems = db.cloud_voucher_items[userPhone] || [];
   const initialStockMap = db.cloud_initial_stock[userPhone] || {};
 
-  // Compute total sales and total purchases delta for each product
-  const salesQtyMap = {};    // key -> total sold
-  const purchaseQtyMap = {}; // key -> total purchased
+  // 1. Build canonical product index from cloud_products (by id and lowercase name)
+  const productById = {};
+  const productByName = {};
+  for (const key of Object.keys(db.cloud_products[userPhone])) {
+    const p = db.cloud_products[userPhone][key];
+    const pid = (p.id !== undefined && p.id !== null) ? String(p.id) : null;
+    const pname = p.name ? String(p.name).trim().toLowerCase() : null;
+    if (pid) productById[pid] = p;
+    if (pname) productByName[pname] = p;
+  }
+
+  // 2. Compute total sales and total purchases delta for each canonical product
+  const salesQtyMap = {};    // canonicalKey -> total sold
+  const purchaseQtyMap = {}; // canonicalKey -> total purchased
 
   for (const it of allVoucherItems) {
-    const v = vouchersMap[it.voucher_id];
+    const vId = it.voucher_id || it.voucherId;
+    const v = vId ? vouchersMap[vId] : null;
     const isCompleted = v ? (v.isCompleted === true || v.isCompleted === 1 || v.is_completed === 1) : true;
     if (!isCompleted) continue; // Only count completed transactions
 
     const isPurchase = v ? (v.isPurchase === true || v.isPurchase === 1 || v.is_purchase === 1) : false;
     const qty = Number(it.quantity) || 1;
 
-    // Keys to match by ID and Name
-    const pIdKey = it.product_id !== undefined && it.product_id !== null ? String(it.product_id) : null;
-    const pNameKey = it.product_name ? String(it.product_name).trim().toLowerCase() : null;
+    // Resolve canonical product
+    const itPid = (it.product_id !== undefined && it.product_id !== null) ? String(it.product_id) : (it.productId !== undefined && it.productId !== null ? String(it.productId) : null);
+    const itPname = (it.product_name || it.productName) ? String(it.product_name || it.productName).trim().toLowerCase() : null;
 
-    if (pIdKey) {
-      if (isPurchase) purchaseQtyMap[pIdKey] = (purchaseQtyMap[pIdKey] || 0) + qty;
-      else salesQtyMap[pIdKey] = (salesQtyMap[pIdKey] || 0) + qty;
-    }
-    if (pNameKey) {
-      if (isPurchase) purchaseQtyMap[pNameKey] = (purchaseQtyMap[pNameKey] || 0) + qty;
-      else salesQtyMap[pNameKey] = (salesQtyMap[pNameKey] || 0) + qty;
+    const canonicalProd = (itPid && productById[itPid]) || (itPname && productByName[itPname]);
+    if (canonicalProd) {
+      const canonicalKey = canonicalProd.id ? String(canonicalProd.id) : canonicalProd.name;
+      if (isPurchase) {
+        purchaseQtyMap[canonicalKey] = (purchaseQtyMap[canonicalKey] || 0) + qty;
+      } else {
+        salesQtyMap[canonicalKey] = (salesQtyMap[canonicalKey] || 0) + qty;
+      }
     }
   }
 
-  // Update every product in cloud_products
+  // 3. Update every product in cloud_products using Absolute Stock Reduction
   for (const key of Object.keys(db.cloud_products[userPhone])) {
     const p = db.cloud_products[userPhone][key];
-    const pId = p.id !== undefined && p.id !== null ? String(p.id) : null;
+    const canonicalKey = p.id ? String(p.id) : p.name;
+    const pId = (p.id !== undefined && p.id !== null) ? String(p.id) : null;
     const pName = p.name ? String(p.name).trim().toLowerCase() : null;
+
+    const sold = salesQtyMap[canonicalKey] || 0;
+    const purchased = purchaseQtyMap[canonicalKey] || 0;
 
     // Determine initial baseline stock
     let baseline = 0;
-    if (pId && initialStockMap[pId] !== undefined) {
+    if (initialStockMap[canonicalKey] !== undefined) {
+      baseline = Number(initialStockMap[canonicalKey]) || 0;
+    } else if (pId && initialStockMap[pId] !== undefined) {
       baseline = Number(initialStockMap[pId]) || 0;
     } else if (pName && initialStockMap[pName] !== undefined) {
       baseline = Number(initialStockMap[pName]) || 0;
     } else {
-      // First time registered: record current quantity as initial baseline
-      baseline = Number(p.quantity) || 0;
+      // First time registered:
+      // If sold is already > 0, then initial baseline was (current quantity + sold - purchased)
+      const currentQty = Number(p.quantity) || 0;
+      baseline = Math.max(0, currentQty + sold - purchased);
+      initialStockMap[canonicalKey] = baseline;
       if (pId) initialStockMap[pId] = baseline;
       if (pName) initialStockMap[pName] = baseline;
     }
-
-    const sold = (pId && salesQtyMap[pId] !== undefined) ? salesQtyMap[pId] : (pName && salesQtyMap[pName] !== undefined ? salesQtyMap[pName] : 0);
-    const purchased = (pId && purchaseQtyMap[pId] !== undefined) ? purchaseQtyMap[pId] : (pName && purchaseQtyMap[pName] !== undefined ? purchaseQtyMap[pName] : 0);
 
     // Absolute Stock Reduction / Relative Delta Sync formula
     const finalStock = Math.max(0, baseline + purchased - sold);
@@ -971,18 +990,29 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 400, { success: false, message: 'Missing userPhone' });
       }
 
-      // 1. Mirror products
+      // 1. Mirror products (merge metadata, preserve server quantity & baseline)
       if (Array.isArray(products)) {
-        db.cloud_products[userPhone] = {};
+        if (!db.cloud_products[userPhone]) db.cloud_products[userPhone] = {};
         for (const p of products) {
           const k = p.id ? String(p.id) : p.name;
-          db.cloud_products[userPhone][k] = p;
+          if (db.cloud_products[userPhone][k]) {
+            const currentSrvQty = db.cloud_products[userPhone][k].quantity;
+            db.cloud_products[userPhone][k] = Object.assign(db.cloud_products[userPhone][k], p);
+            db.cloud_products[userPhone][k].quantity = currentSrvQty;
+          } else {
+            db.cloud_products[userPhone][k] = p;
+            const initialQty = Number(p.quantity) || 0;
+            if (!db.cloud_initial_stock[userPhone]) db.cloud_initial_stock[userPhone] = {};
+            if (db.cloud_initial_stock[userPhone][k] === undefined) {
+              db.cloud_initial_stock[userPhone][k] = initialQty;
+            }
+          }
         }
       }
 
-      // 2. Mirror vouchers (both sales and purchases)
+      // 2. Mirror vouchers (MERGE by receiptNo, NEVER wipe other devices' vouchers)
       if (Array.isArray(vouchers)) {
-        db.cloud_vouchers[userPhone] = {};
+        if (!db.cloud_vouchers[userPhone]) db.cloud_vouchers[userPhone] = {};
         for (const v of vouchers) {
           const rNo = v.receiptNo || v.receipt_no;
           if (rNo) {
@@ -1018,9 +1048,12 @@ const server = http.createServer(async (req, res) => {
         }
       }
 
-      // 3. Mirror voucher items
+      // 3. Mirror voucher items (MERGE without wiping items from other devices)
       if (Array.isArray(voucherItems)) {
-        db.cloud_voucher_items[userPhone] = voucherItems.map(it => {
+        if (!db.cloud_voucher_items[userPhone]) db.cloud_voucher_items[userPhone] = [];
+        const incomingVoucherIds = new Set(voucherItems.map(it => it.voucherId || it.voucher_id).filter(Boolean));
+        const retained = db.cloud_voucher_items[userPhone].filter(it => !incomingVoucherIds.has(it.voucher_id || it.voucherId));
+        const mappedIncoming = voucherItems.map(it => {
           const vId = it.voucherId || it.voucher_id;
           const pId = it.productId !== undefined ? it.productId : it.product_id;
           const pName = it.productName || it.product_name || '';
@@ -1041,6 +1074,7 @@ const server = http.createServer(async (req, res) => {
             selling_price: sPrice
           };
         });
+        db.cloud_voucher_items[userPhone] = retained.concat(mappedIncoming);
       }
 
       // 4. Mirror customers
