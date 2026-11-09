@@ -900,10 +900,42 @@ const server = http.createServer(async (req, res) => {
         const pName = p.name ? String(p.name).trim().toLowerCase() : null;
 
         if (targetKey) {
-          // Preserve server's computed quantity; update metadata (price, barcode, group, unit, name)
-          const currentQty = db.cloud_products[userPhone][targetKey].quantity;
+          const oldQty = Number(db.cloud_products[userPhone][targetKey].quantity) || 0;
+          const incomingQty = (p.quantity !== undefined && p.quantity !== null) ? Number(p.quantity) : oldQty;
+
+          // Update metadata
           db.cloud_products[userPhone][targetKey] = Object.assign(db.cloud_products[userPhone][targetKey], p);
-          db.cloud_products[userPhone][targetKey].quantity = currentQty;
+
+          // If the user explicitly adjusted or edited the stock quantity:
+          if (incomingQty !== oldQty && !isNaN(incomingQty)) {
+            // Find total sales and purchases delta so far for this product
+            let soldSoFar = 0;
+            let purchasedSoFar = 0;
+            const vouchersMap = db.cloud_vouchers[userPhone] || {};
+            const allItems = db.cloud_voucher_items[userPhone] || [];
+            for (const it of allItems) {
+              const vId = it.voucher_id || it.voucherId;
+              const v = vId ? vouchersMap[vId] : null;
+              const isComp = v ? (v.isCompleted === true || v.isCompleted === 1 || v.is_completed === 1) : true;
+              if (!isComp) continue;
+              const isPurch = v ? (v.isPurchase === true || v.isPurchase === 1 || v.is_purchase === 1) : false;
+              const itPid = (it.product_id !== undefined && it.product_id !== null) ? String(it.product_id) : (it.productId !== undefined && it.productId !== null ? String(it.productId) : null);
+              const itPname = (it.product_name || it.productName) ? String(it.product_name || it.productName).trim().toLowerCase() : null;
+
+              if ((pId && itPid === pId) || (pName && itPname === pName)) {
+                const q = Number(it.quantity) || 1;
+                if (isPurch) purchasedSoFar += q;
+                else soldSoFar += q;
+              }
+            }
+            const adjustedBaseline = Math.max(0, incomingQty + soldSoFar - purchasedSoFar);
+            if (pId) db.cloud_initial_stock[userPhone][pId] = adjustedBaseline;
+            if (pName) db.cloud_initial_stock[userPhone][pName] = adjustedBaseline;
+            if (targetKey) db.cloud_initial_stock[userPhone][targetKey] = adjustedBaseline;
+            db.cloud_products[userPhone][targetKey].quantity = incomingQty;
+          } else {
+            db.cloud_products[userPhone][targetKey].quantity = oldQty;
+          }
         } else {
           // Brand new product: establish initial baseline stock
           const newKey = p.id ? String(p.id) : p.name;
@@ -911,6 +943,7 @@ const server = http.createServer(async (req, res) => {
           const initialQty = Number(p.quantity) || 0;
           if (pId) db.cloud_initial_stock[userPhone][pId] = initialQty;
           if (pName) db.cloud_initial_stock[userPhone][pName] = initialQty;
+          db.cloud_initial_stock[userPhone][newKey] = initialQty;
         }
       }
 
@@ -936,6 +969,13 @@ const server = http.createServer(async (req, res) => {
           const p = db.cloud_products[userPhone][key];
           if ((productId && p.id == productId) || (productName && p.name === productName)) {
             delete db.cloud_products[userPhone][key];
+          }
+        }
+        if (db.cloud_initial_stock && db.cloud_initial_stock[userPhone]) {
+          if (productId) delete db.cloud_initial_stock[userPhone][String(productId)];
+          if (productName) {
+            delete db.cloud_initial_stock[userPhone][productName];
+            delete db.cloud_initial_stock[userPhone][String(productName).trim().toLowerCase()];
           }
         }
         saveDatabase();
