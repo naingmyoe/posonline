@@ -2,7 +2,7 @@
  * UN POS Backend Server for VPS (Linux / Ubuntu / Debian / Windows)
  * Runs on pure Node.js (NO npm install required!)
  *
- * HOW TO RUN ON YOUR VPS:
+ * HOW TO RUN ON YOUR VPS:t
  * 1. Install Node.js on your VPS (if not installed):
  *    sudo apt update && sudo apt install -y nodejs npm
  *
@@ -86,10 +86,16 @@ function recalculateUserProductStock(userPhone) {
     const canonicalProd = (itPid && productById[itPid]) || (itPname && productByName[itPname]);
     if (canonicalProd) {
       const canonicalKey = canonicalProd.id ? String(canonicalProd.id) : canonicalProd.name;
+      const cId = canonicalProd.id ? String(canonicalProd.id) : null;
+      const cName = canonicalProd.name ? String(canonicalProd.name).trim().toLowerCase() : null;
       if (isPurchase) {
         purchaseQtyMap[canonicalKey] = (purchaseQtyMap[canonicalKey] || 0) + qty;
+        if (cId) purchaseQtyMap[cId] = purchaseQtyMap[canonicalKey];
+        if (cName) purchaseQtyMap[cName] = purchaseQtyMap[canonicalKey];
       } else {
         salesQtyMap[canonicalKey] = (salesQtyMap[canonicalKey] || 0) + qty;
+        if (cId) salesQtyMap[cId] = salesQtyMap[canonicalKey];
+        if (cName) salesQtyMap[cName] = salesQtyMap[canonicalKey];
       }
     }
   }
@@ -101,28 +107,36 @@ function recalculateUserProductStock(userPhone) {
     const pId = (p.id !== undefined && p.id !== null) ? String(p.id) : null;
     const pName = p.name ? String(p.name).trim().toLowerCase() : null;
 
-    const sold = salesQtyMap[canonicalKey] || 0;
-    const purchased = purchaseQtyMap[canonicalKey] || 0;
+    const sold = salesQtyMap[canonicalKey] || (pId && salesQtyMap[pId]) || (pName && salesQtyMap[pName]) || 0;
+    const purchased = purchaseQtyMap[canonicalKey] || (pId && purchaseQtyMap[pId]) || (pName && purchaseQtyMap[pName]) || 0;
 
-    // Determine initial baseline stock
+    // Determine initial baseline stock (MUST NOT re-add sold deltas to already reduced stock)
     let baseline = 0;
-    if (initialStockMap[canonicalKey] !== undefined) {
+    if (p.initial_quantity !== undefined && p.initial_quantity !== null && !isNaN(p.initial_quantity)) {
+      baseline = Number(p.initial_quantity) || 0;
+    } else if (initialStockMap[canonicalKey] !== undefined) {
       baseline = Number(initialStockMap[canonicalKey]) || 0;
     } else if (pId && initialStockMap[pId] !== undefined) {
       baseline = Number(initialStockMap[pId]) || 0;
     } else if (pName && initialStockMap[pName] !== undefined) {
       baseline = Number(initialStockMap[pName]) || 0;
     } else {
-      // First time registered:
-      // If sold is already > 0, then initial baseline was (current quantity + sold - purchased)
+      // First time registered: baseline is the product initial stock
       const currentQty = Number(p.quantity) || 0;
-      baseline = Math.max(0, currentQty + sold - purchased);
+      baseline = Math.max(0, currentQty);
       initialStockMap[canonicalKey] = baseline;
       if (pId) initialStockMap[pId] = baseline;
       if (pName) initialStockMap[pName] = baseline;
     }
 
-    // Absolute Stock Reduction / Relative Delta Sync formula
+    // Persist baseline on the product and in the map so it is never lost or recalculated incorrectly
+    p.initial_quantity = baseline;
+    initialStockMap[canonicalKey] = baseline;
+    if (pId) initialStockMap[pId] = baseline;
+    if (pName) initialStockMap[pName] = baseline;
+
+    // Absolute Stock Reduction / Relative Delta Sync formula:
+    // exact stock = baseline + all purchases - all sales
     const finalStock = Math.max(0, baseline + purchased - sold);
     p.quantity = finalStock;
   }
@@ -929,6 +943,7 @@ const server = http.createServer(async (req, res) => {
               }
             }
             const adjustedBaseline = Math.max(0, incomingQty + soldSoFar - purchasedSoFar);
+            db.cloud_products[userPhone][targetKey].initial_quantity = adjustedBaseline;
             if (pId) db.cloud_initial_stock[userPhone][pId] = adjustedBaseline;
             if (pName) db.cloud_initial_stock[userPhone][pName] = adjustedBaseline;
             if (targetKey) db.cloud_initial_stock[userPhone][targetKey] = adjustedBaseline;
@@ -939,8 +954,9 @@ const server = http.createServer(async (req, res) => {
         } else {
           // Brand new product: establish initial baseline stock
           const newKey = p.id ? String(p.id) : p.name;
-          db.cloud_products[userPhone][newKey] = p;
           const initialQty = Number(p.quantity) || 0;
+          p.initial_quantity = initialQty;
+          db.cloud_products[userPhone][newKey] = p;
           if (pId) db.cloud_initial_stock[userPhone][pId] = initialQty;
           if (pName) db.cloud_initial_stock[userPhone][pName] = initialQty;
           db.cloud_initial_stock[userPhone][newKey] = initialQty;
@@ -1014,6 +1030,7 @@ const server = http.createServer(async (req, res) => {
         if (db.cloud_voucher_items[userPhone]) {
           db.cloud_voucher_items[userPhone] = db.cloud_voucher_items[userPhone].filter(it => it.voucher_id !== receiptNo);
         }
+        recalculateUserProductStock(userPhone);
         saveDatabase();
         console.log(`[SYNC] Voucher deleted on cloud for ${userPhone}: ${receiptNo}`);
       }
@@ -1037,15 +1054,20 @@ const server = http.createServer(async (req, res) => {
           const k = p.id ? String(p.id) : p.name;
           if (db.cloud_products[userPhone][k]) {
             const currentSrvQty = db.cloud_products[userPhone][k].quantity;
+            const currentInitQty = db.cloud_products[userPhone][k].initial_quantity;
             db.cloud_products[userPhone][k] = Object.assign(db.cloud_products[userPhone][k], p);
             db.cloud_products[userPhone][k].quantity = currentSrvQty;
+            if (currentInitQty !== undefined) db.cloud_products[userPhone][k].initial_quantity = currentInitQty;
           } else {
             db.cloud_products[userPhone][k] = p;
-            const initialQty = Number(p.quantity) || 0;
+            const initialQty = Number(p.initial_quantity !== undefined ? p.initial_quantity : p.quantity) || 0;
+            p.initial_quantity = initialQty;
             if (!db.cloud_initial_stock[userPhone]) db.cloud_initial_stock[userPhone] = {};
             if (db.cloud_initial_stock[userPhone][k] === undefined) {
               db.cloud_initial_stock[userPhone][k] = initialQty;
             }
+            if (p.id) db.cloud_initial_stock[userPhone][String(p.id)] = initialQty;
+            if (p.name) db.cloud_initial_stock[userPhone][p.name.trim().toLowerCase()] = initialQty;
           }
         }
       }
