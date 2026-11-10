@@ -30,12 +30,21 @@
         body { font-family: 'Padauk', sans-serif; background-color: #f8fafc; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        /* Custom styles for active menu */
+        .menu-item.active { background-color: #2563eb; color: #ffffff; }
+        .menu-item:not(.active) { color: #d1d5db; }
+        .menu-item:not(.active):hover { background-color: rgba(255,255,255,0.1); color: #ffffff; }
     </style>
 </head>
 <body class="flex h-screen overflow-hidden text-gray-800">
 
-    <!-- Sidebar (Same as UI) -->
-    <aside class="w-64 bg-[#23314f] text-gray-300 flex flex-col transition-all duration-300 z-20">
+    <!-- Mobile Overlay for Sidebar -->
+    <div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-20 hidden transition-opacity lg:hidden" onclick="toggleSidebar()"></div>
+
+    <!-- Sidebar Menu Drawer -->
+    <aside id="sidebar" class="w-64 bg-[#23314f] text-gray-300 flex flex-col transition-transform duration-300 z-30 fixed lg:relative h-full -translate-x-full lg:translate-x-0">
+        <!-- Logo -->
         <div class="h-16 flex items-center px-6 border-b border-gray-700/50">
             <div class="w-8 h-8 bg-blue-500 rounded flex items-center justify-center text-white mr-3">
                 <i class="fa-solid fa-shopping-bag"></i>
@@ -45,17 +54,39 @@
                 <p class="text-xs text-gray-400">Admin Panel</p>
             </div>
         </div>
-        <nav class="flex-1 overflow-y-auto no-scrollbar py-4 px-3 space-y-1 text-sm font-medium">
-            <a href="#" class="flex items-center px-3 py-2.5 bg-blue-600 text-white rounded-lg group"><i class="fa-solid fa-home w-6 text-center"></i> Dashboard</a>
-            <a href="#" class="flex items-center px-3 py-2.5 hover:bg-white/10 hover:text-white rounded-lg"><i class="fa-solid fa-users w-6 text-center"></i> အသုံးပြုသူများ</a>
-            <a href="#" class="flex items-center px-3 py-2.5 hover:bg-white/10 hover:text-white rounded-lg"><i class="fa-solid fa-tablet-screen-button w-6 text-center"></i> POS စက်များ</a>
-            <a href="#" class="flex items-center px-3 py-2.5 hover:bg-white/10 hover:text-white rounded-lg"><i class="fa-solid fa-box w-6 text-center"></i> ကုန်ပစ္စည်းများ</a>
-            <a href="#" class="flex items-center px-3 py-2.5 hover:bg-white/10 hover:text-white rounded-lg"><i class="fa-solid fa-user-tag w-6 text-center"></i> ဈေးဝယ်သူများ</a>
-            <a href="#" class="flex items-center px-3 py-2.5 hover:bg-white/10 hover:text-white rounded-lg"><i class="fa-solid fa-truck-field w-6 text-center"></i> ကုန်သွင်းသူများ</a>
-            <a href="#" class="flex items-center px-3 py-2.5 hover:bg-white/10 hover:text-white rounded-lg"><i class="fa-solid fa-file-invoice-dollar w-6 text-center"></i> အရောင်းစာရင်း</a>
-            <a href="#" class="flex items-center px-3 py-2.5 hover:bg-white/10 hover:text-white rounded-lg"><i class="fa-solid fa-cart-arrow-down w-6 text-center"></i> အဝယ်စာရင်း</a>
-            <a href="#" class="flex items-center px-3 py-2.5 hover:bg-white/10 hover:text-white rounded-lg"><i class="fa-solid fa-wallet w-6 text-center"></i> ကုန်ကျစရိတ်များ</a>
+        
+        <!-- Navigation Menus -->
+        <nav class="flex-1 overflow-y-auto no-scrollbar py-4 px-3 space-y-1 text-sm font-medium" id="main-menu">
+            <a href="#" onclick="switchSection('dashboard', this, 'Dashboard')" class="menu-item active flex items-center px-3 py-2.5 rounded-lg transition">
+                <i class="fa-solid fa-home w-6 text-center"></i> Dashboard
+            </a>
+            <a href="#" onclick="switchSection('users', this, 'အသုံးပြုသူများ')" class="menu-item flex items-center px-3 py-2.5 rounded-lg transition">
+                <i class="fa-solid fa-users w-6 text-center"></i> အသုံးပြုသူများ
+            </a>
+            <a href="#" onclick="switchSection('generic', this, 'POS စက်များ')" class="menu-item flex items-center px-3 py-2.5 rounded-lg transition">
+                <i class="fa-solid fa-tablet-screen-button w-6 text-center"></i> POS စက်များ
+            </a>
+            <a href="#" onclick="switchSection('generic', this, 'ကုန်ပစ္စည်းများ')" class="menu-item flex items-center px-3 py-2.5 rounded-lg transition">
+                <i class="fa-solid fa-box w-6 text-center"></i> ကုန်ပစ္စည်းများ
+            </a>
+            <a href="#" onclick="switchSection('generic', this, 'ဈေးဝယ်သူများ')" class="menu-item flex items-center px-3 py-2.5 rounded-lg transition">
+                <i class="fa-solid fa-user-tag w-6 text-center"></i> ဈေးဝယ်သူများ
+            </a>
+            <a href="#" onclick="switchSection('generic', this, 'ကုန်သွင်းသူများ')" class="menu-item flex items-center px-3 py-2.5 rounded-lg transition">
+                <i class="fa-solid fa-truck-field w-6 text-center"></i> ကုန်သွင်းသူများ
+            </a>
+            <a href="#" onclick="switchSection('generic', this, 'အရောင်းစာရင်း')" class="menu-item flex items-center px-3 py-2.5 rounded-lg transition">
+                <i class="fa-solid fa-file-invoice-dollar w-6 text-center"></i> အရောင်းစာရင်း
+            </a>
+            <a href="#" onclick="switchSection('generic', this, 'အဝယ်စာရင်း')" class="menu-item flex items-center px-3 py-2.5 rounded-lg transition">
+                <i class="fa-solid fa-cart-arrow-down w-6 text-center"></i> အဝယ်စာရင်း
+            </a>
+            <a href="#" onclick="switchSection('generic', this, 'ကုန်ကျစရိတ်များ')" class="menu-item flex items-center px-3 py-2.5 rounded-lg transition">
+                <i class="fa-solid fa-wallet w-6 text-center"></i> ကုန်ကျစရိတ်များ
+            </a>
         </nav>
+        
+        <!-- Profile -->
         <div class="p-4 border-t border-gray-700/50">
             <div class="flex items-center mb-4">
                 <img src="https://ui-avatars.com/api/?name=Admin&background=1e3a8a&color=fff" class="w-10 h-10 rounded-full mr-3">
@@ -69,95 +100,150 @@
     <main class="flex-1 flex flex-col h-screen overflow-hidden bg-[#eff3f8]">
         
         <!-- Headerbar -->
-        <header class="h-16 bg-white flex items-center justify-between px-6 shadow-sm z-10">
+        <header class="h-16 bg-white flex items-center justify-between px-6 shadow-sm z-10 w-full">
             <div class="flex items-center">
-                <button class="text-gray-500 mr-4 text-xl"><i class="fa-solid fa-bars"></i></button>
-                <div class="relative w-64 md:w-96">
+                <!-- Hamburger Menu Button -->
+                <button id="menu-btn" class="text-gray-500 mr-4 text-xl hover:text-blue-600 lg:hidden" onclick="toggleSidebar()">
+                    <i class="fa-solid fa-bars"></i>
+                </button>
+                <div class="relative w-48 md:w-96">
                     <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400"><i class="fa-solid fa-magnifying-glass"></i></span>
                     <input type="text" class="w-full bg-gray-100/70 rounded-full py-2 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-100" placeholder="ရှာဖွေရန်...">
                 </div>
             </div>
-            <div class="flex items-center space-x-6">
+            <div class="flex items-center space-x-4 md:space-x-6">
                 <button class="relative text-gray-500 text-xl"><i class="fa-regular fa-bell"></i><span class="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] text-white font-bold border-2 border-white">3</span></button>
                 <div class="flex items-center cursor-pointer">
                     <img src="https://ui-avatars.com/api/?name=Admin&background=1e3a8a&color=fff" class="w-8 h-8 rounded-full border border-gray-200">
-                    <span class="ml-2 text-sm font-medium text-gray-700">Admin</span>
+                    <span class="ml-2 text-sm font-medium text-gray-700 hidden md:block">Admin</span>
                 </div>
             </div>
         </header>
 
         <!-- Content Area -->
-        <div class="flex-1 overflow-auto p-6">
+        <div class="flex-1 overflow-auto p-4 md:p-6" id="main-content-area">
             
-            <!-- Dynamic Stats Cards Grid -->
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-                <div class="bg-white rounded-xl shadow-sm p-5 border border-gray-100 relative overflow-hidden">
-                    <div class="flex items-center gap-4 relative z-10">
-                        <div class="w-12 h-12 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 text-xl"><i class="fa-solid fa-cart-shopping"></i></div>
-                        <div>
-                            <p class="text-sm text-gray-500 mb-1">ယနေ့ အရောင်း</p>
-                            <h3 class="text-xl font-bold text-gray-800" id="stat-sales">Ks 0</h3>
+            <!-- ===================== 1. DASHBOARD SECTION ===================== -->
+            <div id="section-dashboard" class="content-section block">
+                <!-- Stats Cards Grid -->
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-6">
+                    <div class="bg-white rounded-xl shadow-sm p-5 border border-gray-100 relative overflow-hidden">
+                        <div class="flex items-center gap-4 relative z-10">
+                            <div class="w-12 h-12 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 text-xl"><i class="fa-solid fa-cart-shopping"></i></div>
+                            <div>
+                                <p class="text-sm text-gray-500 mb-1">ယနေ့ အရောင်း</p>
+                                <h3 class="text-xl font-bold text-gray-800" id="stat-sales">Ks 0</h3>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="bg-white rounded-xl shadow-sm p-5 border border-gray-100 relative overflow-hidden">
+                        <div class="flex items-center gap-4 relative z-10">
+                            <div class="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 text-xl"><i class="fa-solid fa-cart-arrow-down"></i></div>
+                            <div>
+                                <p class="text-sm text-gray-500 mb-1">ယနေ့ အဝယ်</p>
+                                <h3 class="text-xl font-bold text-gray-800" id="stat-purchases">Ks 0</h3>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="bg-white rounded-xl shadow-sm p-5 border border-gray-100 relative overflow-hidden">
+                        <div class="flex items-center gap-4 relative z-10">
+                            <div class="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 text-xl"><i class="fa-solid fa-wallet"></i></div>
+                            <div>
+                                <p class="text-sm text-gray-500 mb-1">ကုန်ကျစရိတ်</p>
+                                <h3 class="text-xl font-bold text-gray-800" id="stat-expenses">Ks 0</h3>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="bg-white rounded-xl shadow-sm p-5 border border-gray-100 relative overflow-hidden">
+                        <div class="flex items-center gap-4 relative z-10">
+                            <div class="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 text-xl"><i class="fa-solid fa-chart-line"></i></div>
+                            <div>
+                                <p class="text-sm text-gray-500 mb-1">အမြတ်အစွန်း (ယနေ့)</p>
+                                <h3 class="text-xl font-bold text-gray-800" id="stat-profit">Ks 0</h3>
+                            </div>
                         </div>
                     </div>
                 </div>
-                <div class="bg-white rounded-xl shadow-sm p-5 border border-gray-100 relative overflow-hidden">
-                    <div class="flex items-center gap-4 relative z-10">
-                        <div class="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 text-xl"><i class="fa-solid fa-cart-arrow-down"></i></div>
-                        <div>
-                            <p class="text-sm text-gray-500 mb-1">ယနေ့ အဝယ်</p>
-                            <h3 class="text-xl font-bold text-gray-800" id="stat-purchases">Ks 0</h3>
+
+                <!-- Chart & Top Products -->
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+                    <!-- Line Chart -->
+                    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5 lg:col-span-2">
+                        <div class="flex justify-between items-center mb-6">
+                            <h2 class="text-lg font-bold text-gray-800 flex items-center"><i class="fa-solid fa-chart-simple text-blue-600 mr-2"></i> ၇ ရက်အတွင်း အရောင်းပြမြေပုံ</h2>
+                        </div>
+                        <div class="relative h-64 w-full">
+                            <canvas id="salesChart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Top Products dynamically pulled -->
+                    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+                        <div class="flex justify-between items-center mb-4">
+                            <h2 class="text-[15px] font-bold text-gray-800 flex items-center"><i class="fa-solid fa-trophy text-blue-600 mr-2"></i> ထိပ်တန်းရောင်းအား ကုန်ပစ္စည်းများ</h2>
+                        </div>
+                        <div class="space-y-4 mt-2" id="top-products-list">
+                            <p class="text-sm text-gray-500 text-center py-4">Data တွက်ချက်နေပါသည်...</p>
                         </div>
                     </div>
                 </div>
-                <div class="bg-white rounded-xl shadow-sm p-5 border border-gray-100 relative overflow-hidden">
-                    <div class="flex items-center gap-4 relative z-10">
-                        <div class="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 text-xl"><i class="fa-solid fa-wallet"></i></div>
-                        <div>
-                            <p class="text-sm text-gray-500 mb-1">ကုန်ကျစရိတ်</p>
-                            <h3 class="text-xl font-bold text-gray-800" id="stat-expenses">Ks 0</h3>
+
+                <!-- Users Table Mini and Sys Info -->
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5 lg:col-span-2">
+                        <div class="flex justify-between items-center mb-4">
+                            <h2 class="text-[16px] font-bold text-gray-800 flex items-center"><i class="fa-solid fa-users text-blue-600 mr-2"></i> အသုံးပြုသူများ (Top 5)</h2>
+                            <button onclick="document.querySelectorAll('.menu-item')[1].click()" class="text-xs text-blue-600 hover:underline">အားလုံးကြည့်ရန် &rarr;</button>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr class="text-xs text-gray-500 border-b border-gray-200">
+                                        <th class="pb-3 font-semibold">#</th>
+                                        <th class="pb-3 font-semibold">ဖုန်းနံပါတ်</th>
+                                        <th class="pb-3 font-semibold">အမည်</th>
+                                        <th class="pb-3 font-semibold">အခြေအနေ</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="text-sm" id="users-table-mini">
+                                    <tr><td colspan="4" class="text-center py-4 text-gray-500">Loading...</td></tr>
+                                </tbody>
+                            </table>
                         </div>
                     </div>
-                </div>
-                <div class="bg-white rounded-xl shadow-sm p-5 border border-gray-100 relative overflow-hidden">
-                    <div class="flex items-center gap-4 relative z-10">
-                        <div class="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 text-xl"><i class="fa-solid fa-chart-line"></i></div>
-                        <div>
-                            <p class="text-sm text-gray-500 mb-1">အမြတ်အစွန်း (ယနေ့)</p>
-                            <h3 class="text-xl font-bold text-gray-800" id="stat-profit">Ks 0</h3>
+
+                    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+                        <div class="flex justify-between items-center mb-4">
+                            <h2 class="text-[15px] font-bold text-gray-800 flex items-center"><i class="fa-solid fa-database text-blue-600 mr-2"></i> စနစ် အချက်အလက်များ</h2>
                         </div>
+                        <ul class="space-y-4 mt-2">
+                            <li class="flex justify-between items-center text-sm border-b border-gray-50 pb-3">
+                                <span class="flex items-center text-gray-600"><i class="fa-solid fa-server w-6 text-blue-500 text-center"></i> API Status</span>
+                                <span class="font-bold text-gray-800 flex items-center"><span class="w-2 h-2 rounded-full bg-green-500 mr-2"></span> Online</span>
+                            </li>
+                            <li class="flex justify-between items-center text-sm border-b border-gray-50 pb-3">
+                                <span class="flex items-center text-gray-600"><i class="fa-solid fa-mobile-screen w-6 text-blue-500 text-center"></i> Total Devices</span>
+                                <span class="font-medium text-gray-800" id="sys-devices">0</span>
+                            </li>
+                            <li class="flex justify-between items-center text-sm border-b border-gray-50 pb-3">
+                                <span class="flex items-center text-gray-600"><i class="fa-regular fa-calendar-check w-6 text-blue-500 text-center"></i> Active Users</span>
+                                <span class="font-medium text-gray-800" id="sys-active">0</span>
+                            </li>
+                            <li class="flex justify-between items-center text-sm">
+                                <span class="flex items-center text-gray-600"><i class="fa-solid fa-users-viewfinder w-6 text-blue-500 text-center"></i> Total Customers</span>
+                                <span class="font-medium text-gray-800" id="sys-customers">0</span>
+                            </li>
+                        </ul>
                     </div>
                 </div>
             </div>
 
-            <!-- Chart & Top Products -->
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-                <!-- Line Chart -->
-                <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5 lg:col-span-2">
+            <!-- ===================== 2. FULL USERS SECTION ===================== -->
+            <div id="section-users" class="content-section hidden">
+                <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5 min-h-[500px]">
                     <div class="flex justify-between items-center mb-6">
-                        <h2 class="text-lg font-bold text-gray-800 flex items-center"><i class="fa-solid fa-chart-simple text-blue-600 mr-2"></i> ၇ ရက်အတွင်း အရောင်းပြမြေပုံ</h2>
-                    </div>
-                    <div class="relative h-64 w-full">
-                        <canvas id="salesChart"></canvas>
-                    </div>
-                </div>
-
-                <!-- Top Products dynamically pulled -->
-                <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-                    <div class="flex justify-between items-center mb-4">
-                        <h2 class="text-[15px] font-bold text-gray-800 flex items-center"><i class="fa-solid fa-trophy text-blue-600 mr-2"></i> ထိပ်တန်းရောင်းအား ကုန်ပစ္စည်းများ</h2>
-                    </div>
-                    <div class="space-y-4 mt-2" id="top-products-list">
-                        <p class="text-sm text-gray-500 text-center py-4">Data တွက်ချက်နေပါသည်...</p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Users Table and Sys Info -->
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <!-- Users -->
-                <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5 lg:col-span-2">
-                    <div class="flex justify-between items-center mb-4">
-                        <h2 class="text-[16px] font-bold text-gray-800 flex items-center"><i class="fa-solid fa-users text-blue-600 mr-2"></i> အသုံးပြုသူများ စာရင်း</h2>
+                        <h2 class="text-lg font-bold text-gray-800 flex items-center"><i class="fa-solid fa-users text-blue-600 mr-2"></i> အသုံးပြုသူများ စာရင်း အပြည့်အစုံ</h2>
+                        <button class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded shadow-sm text-sm"><i class="fa-solid fa-plus mr-1"></i> User အသစ်ထည့်ရန်</button>
                     </div>
                     <div class="overflow-x-auto">
                         <table class="w-full text-left border-collapse">
@@ -165,52 +251,75 @@
                                 <tr class="text-xs text-gray-500 border-b border-gray-200">
                                     <th class="pb-3 font-semibold">#</th>
                                     <th class="pb-3 font-semibold">ဖုန်းနံပါတ်</th>
-                                    <th class="pb-3 font-semibold">အမည်</th>
+                                    <th class="pb-3 font-semibold">အသုံးပြုသူအမည်</th>
                                     <th class="pb-3 font-semibold">လုပ်ငန်းအမည်</th>
-                                    <th class="pb-3 font-semibold">အခြေအနေ</th>
-                                    <th class="pb-3 font-semibold">သက်တမ်းကုန်ရက်</th>
+                                    <th class="pb-3 font-semibold">ဝန်ဆောင်မှုအခြေအနေ</th>
+                                    <th class="pb-3 font-semibold">သက်တမ်းကုန်ဆုံးရက်</th>
+                                    <th class="pb-3 font-semibold text-center">လုပ်ဆောင်ချက်</th>
                                 </tr>
                             </thead>
-                            <tbody class="text-sm" id="users-table-body">
-                                <tr><td colspan="6" class="text-center py-4 text-gray-500">Loading Users...</td></tr>
+                            <tbody class="text-sm" id="users-table-full">
+                                <tr><td colspan="7" class="text-center py-4 text-gray-500">Loading All Users...</td></tr>
                             </tbody>
                         </table>
                     </div>
                 </div>
+            </div>
 
-                <!-- System Info -->
-                <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-                    <div class="flex justify-between items-center mb-4">
-                        <h2 class="text-[15px] font-bold text-gray-800 flex items-center"><i class="fa-solid fa-database text-blue-600 mr-2"></i> စနစ် အချက်အလက်များ</h2>
+            <!-- ===================== 3. GENERIC / PLACEHOLDER SECTION ===================== -->
+            <div id="section-generic" class="content-section hidden">
+                <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-8 text-center min-h-[400px] flex flex-col items-center justify-center">
+                    <div class="w-20 h-20 bg-blue-50 text-blue-500 rounded-full flex items-center justify-center text-3xl mb-4">
+                        <i class="fa-solid fa-screwdriver-wrench"></i>
                     </div>
-                    <ul class="space-y-4 mt-2">
-                        <li class="flex justify-between items-center text-sm border-b border-gray-50 pb-3">
-                            <span class="flex items-center text-gray-600"><i class="fa-solid fa-server w-6 text-blue-500 text-center"></i> API Status</span>
-                            <span class="font-bold text-gray-800 flex items-center"><span class="w-2 h-2 rounded-full bg-green-500 mr-2"></span> Online</span>
-                        </li>
-                        <li class="flex justify-between items-center text-sm border-b border-gray-50 pb-3">
-                            <span class="flex items-center text-gray-600"><i class="fa-solid fa-mobile-screen w-6 text-blue-500 text-center"></i> Total Devices</span>
-                            <span class="font-medium text-gray-800" id="sys-devices">0</span>
-                        </li>
-                        <li class="flex justify-between items-center text-sm border-b border-gray-50 pb-3">
-                            <span class="flex items-center text-gray-600"><i class="fa-regular fa-calendar-check w-6 text-blue-500 text-center"></i> Active Users</span>
-                            <span class="font-medium text-gray-800" id="sys-active">0</span>
-                        </li>
-                        <li class="flex justify-between items-center text-sm">
-                            <span class="flex items-center text-gray-600"><i class="fa-solid fa-users-viewfinder w-6 text-blue-500 text-center"></i> Total Customers</span>
-                            <span class="font-medium text-gray-800" id="sys-customers">0</span>
-                        </li>
-                    </ul>
+                    <h2 class="text-2xl font-bold text-gray-800 mb-2" id="generic-title">Section Name</h2>
+                    <p class="text-gray-500">ဤစာမျက်နှာကို တည်ဆောက်ဆဲ ဖြစ်ပါသည်။ မကြာမီ အသုံးပြုနိုင်ပါမည်။</p>
                 </div>
             </div>
+
         </div>
     </main>
 
     <!-- REAL API FETCH AND CALCULATIONS SCRIPT -->
     <script>
+        // ==========================================
+        // UI & Navigation Logic
+        // ==========================================
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebar-overlay');
+            sidebar.classList.toggle('-translate-x-full');
+            overlay.classList.toggle('hidden');
+        }
+
+        function switchSection(sectionId, element, title = '') {
+            // 1. Update Active State on Menus
+            document.querySelectorAll('.menu-item').forEach(el => el.classList.remove('active'));
+            element.classList.add('active');
+
+            // 2. Hide all sections
+            document.querySelectorAll('.content-section').forEach(el => el.classList.add('hidden'));
+
+            // 3. Show target section
+            document.getElementById('section-' + sectionId).classList.remove('hidden');
+
+            // 4. Update generic title if needed
+            if(sectionId === 'generic') {
+                document.getElementById('generic-title').innerText = title;
+            }
+
+            // 5. Close sidebar automatically on mobile after clicking
+            if (window.innerWidth < 1024) { // lg breakpoint in Tailwind
+                toggleSidebar();
+            }
+        }
+
+        // ==========================================
+        // Data Fetching Logic
+        // ==========================================
         const formatKs = (num) => 'Ks ' + Number(num).toLocaleString();
 
-        // 1. Initialize Chart.js
+        // Initialize Chart.js
         const ctx = document.getElementById('salesChart').getContext('2d');
         const gradientFill = ctx.createLinearGradient(0, 0, 0, 300);
         gradientFill.addColorStop(0, 'rgba(59, 130, 246, 0.2)');
@@ -219,7 +328,7 @@
         const salesChart = new Chart(ctx, {
             type: 'line',
             data: {
-                labels: [], // Will be filled dynamically
+                labels: [], 
                 datasets: [{
                     label: 'အရောင်း',
                     data: [],
@@ -242,10 +351,8 @@
             }
         });
 
-        // 2. Fetch Core Data from server.js
         async function fetchRealData() {
             try {
-                // Get Admin Stats & Users
                 const [statsRes, usersRes] = await Promise.all([
                     fetch('/api/admin/stats').catch(() => null),
                     fetch('/api/admin/users').catch(() => null)
@@ -257,41 +364,63 @@
                 const users = usersData.users || [];
                 document.getElementById('sys-active').innerText = stats.activeUsers || 0;
 
-                // Render Users Table
-                const tbody = document.getElementById('users-table-body');
-                tbody.innerHTML = '';
+                // Render Users Table (Mini for Dashboard, Full for Users Tab)
+                const tbodyMini = document.getElementById('users-table-mini');
+                const tbodyFull = document.getElementById('users-table-full');
+                tbodyMini.innerHTML = '';
+                tbodyFull.innerHTML = '';
                 let totalDevices = 0;
 
                 users.forEach((u, index) => {
                     totalDevices += (u.deviceCount || 0);
-                    if(index < 5) { // Show top 5 users in table
-                        const dateStr = new Date(u.expires_at).toISOString().split('T')[0];
-                        const statusBadge = (u.isExpired || u.status !== 'on') 
-                            ? `<span class="px-2.5 py-1 bg-red-100 text-red-700 text-xs font-medium rounded-full">သက်တမ်းကုန်</span>`
-                            : `<span class="px-2.5 py-1 bg-green-100 text-green-700 text-xs font-medium rounded-full">အသက်ဝင်</span>`;
-                        
-                        tbody.innerHTML += `
+                    const dateStr = new Date(u.expires_at).toISOString().split('T')[0];
+                    const statusBadge = (u.isExpired || u.status !== 'on') 
+                        ? `<span class="px-2.5 py-1 bg-red-100 text-red-700 text-xs font-medium rounded-full">သက်တမ်းကုန်</span>`
+                        : `<span class="px-2.5 py-1 bg-green-100 text-green-700 text-xs font-medium rounded-full">အသက်ဝင်</span>`;
+                    
+                    // Render for Full Table
+                    tbodyFull.innerHTML += `
+                        <tr class="border-b border-gray-50 hover:bg-gray-50/50">
+                            <td class="py-3 text-gray-500">${index + 1}</td>
+                            <td class="py-3 font-medium">${u.phone_no}</td>
+                            <td class="py-3">${u.username}</td>
+                            <td class="py-3 text-gray-600">${u.business_name || '-'}</td>
+                            <td class="py-3">${statusBadge}</td>
+                            <td class="py-3 text-gray-600">${dateStr}</td>
+                            <td class="py-3 text-center">
+                                <button class="text-blue-500 hover:bg-blue-50 p-1.5 rounded mr-1"><i class="fa-solid fa-pen"></i></button>
+                                <button class="text-red-500 hover:bg-red-50 p-1.5 rounded"><i class="fa-solid fa-trash"></i></button>
+                            </td>
+                        </tr>
+                    `;
+
+                    // Render for Dashboard Mini Table (Top 5 only)
+                    if(index < 5) { 
+                        tbodyMini.innerHTML += `
                             <tr class="border-b border-gray-50 hover:bg-gray-50/50">
                                 <td class="py-3 text-gray-500">${index + 1}</td>
                                 <td class="py-3 font-medium">${u.phone_no}</td>
                                 <td class="py-3">${u.username}</td>
-                                <td class="py-3 text-gray-600">${u.business_name || '-'}</td>
                                 <td class="py-3">${statusBadge}</td>
-                                <td class="py-3 text-gray-600">${dateStr}</td>
                             </tr>
                         `;
                     }
                 });
+                
+                if(users.length === 0) {
+                    tbodyFull.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-gray-500">အသုံးပြုသူ မရှိသေးပါ</td></tr>`;
+                    tbodyMini.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-gray-500">အသုံးပြုသူ မရှိသေးပါ</td></tr>`;
+                }
+
                 document.getElementById('sys-devices').innerText = `${totalDevices} / ${users.length * 5}`;
 
-                // 3. Sync all data (Sales, Purchases, Expenses, Customers, Suppliers, Products) from all Tenants!
+                // Sync all data from all Tenants
                 const pullPromises = users.map(u => fetch(`/api/sync/pull?phoneNo=${u.phone_no}`).then(r => r.json()).catch(()=>null));
                 const allTenantData = await Promise.all(pullPromises);
 
                 let todaySales = 0, todayPurchases = 0, todayExpenses = 0, totalCustomersCount = 0;
                 const productSalesTally = {};
                 
-                // Chart calculations (Last 7 Days)
                 const now = new Date();
                 const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
                 const endOfToday = startOfToday + 86400000;
@@ -303,13 +432,11 @@
                     labels7Days.push(`${d.getMonth()+1}/${d.getDate()}`);
                 }
 
-                // Aggregate calculations
                 allTenantData.forEach(data => {
                     if (!data || !data.success) return;
                     
                     totalCustomersCount += data.customers ? data.customers.length : 0;
 
-                    // Calculate Sales and Purchases
                     if(data.vouchers) {
                         data.vouchers.forEach(v => {
                             const ts = v.timestamp || 0;
@@ -318,12 +445,10 @@
                             const isCompleted = (v.isCompleted || v.is_completed === 1);
 
                             if(isCompleted) {
-                                // Today's totals
                                 if (ts >= startOfToday && ts < endOfToday) {
                                     if(isPurchase) todayPurchases += amount;
                                     else todaySales += amount;
                                 }
-                                // 7-Days Chart Mapping
                                 if(!isPurchase) {
                                     for(let i=0; i<7; i++) {
                                         const dStart = startOfToday - ((6-i)*86400000);
@@ -336,7 +461,6 @@
                         });
                     }
 
-                    // Calculate Expenses
                     if(data.expenses) {
                         data.expenses.forEach(e => {
                             const ts = e.timestamp || 0;
@@ -346,12 +470,11 @@
                         });
                     }
 
-                    // Tally Top Selling Products across the DB
                     if(data.voucherItems && data.vouchers) {
                         data.voucherItems.forEach(item => {
                             const vId = item.voucher_id || item.voucherId;
                             const parentVoucher = data.vouchers.find(v => (v.receiptNo || v.receipt_no) === vId);
-                            if (parentVoucher && !parentVoucher.isPurchase) { // Only count sales
+                            if (parentVoucher && !parentVoucher.isPurchase) {
                                 const name = item.product_name || item.productName || 'Unknown';
                                 const saleTotal = Number(item.selling_price || item.sellingPrice || 0) * Number(item.quantity || 1);
                                 productSalesTally[name] = (productSalesTally[name] || 0) + saleTotal;
@@ -360,7 +483,6 @@
                     }
                 });
 
-                // Update Overview Cards
                 const todayProfit = todaySales - todayPurchases - todayExpenses;
                 document.getElementById('stat-sales').innerText = formatKs(todaySales);
                 document.getElementById('stat-purchases').innerText = formatKs(todayPurchases);
@@ -368,15 +490,11 @@
                 document.getElementById('stat-profit').innerText = formatKs(todayProfit);
                 document.getElementById('sys-customers').innerText = totalCustomersCount;
 
-                // Update Chart
                 salesChart.data.labels = labels7Days;
                 salesChart.data.datasets[0].data = data7Days;
                 salesChart.update();
 
-                // Render Top Products List
-                const topProductsList = Object.entries(productSalesTally)
-                    .sort((a,b) => b[1] - a[1]).slice(0, 5);
-                
+                const topProductsList = Object.entries(productSalesTally).sort((a,b) => b[1] - a[1]).slice(0, 5);
                 const topProdContainer = document.getElementById('top-products-list');
                 topProdContainer.innerHTML = '';
                 
@@ -407,13 +525,11 @@
                         `;
                     });
                 }
-
             } catch (err) {
                 console.error("Dashboard Data Fetch Error:", err);
             }
         }
 
-        // Initialize Fetch
         window.addEventListener('DOMContentLoaded', fetchRealData);
     </script>
 </body>
