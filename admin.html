@@ -1,536 +1,411 @@
 <!DOCTYPE html>
 <html lang="my">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>UN Mobile POS - Admin Panel</title>
-    
-    <!-- Google Fonts for Burmese -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Padauk:wght@400;700&display=swap" rel="stylesheet">
-    
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: { sans: ['Padauk', 'sans-serif'] }
-                }
-            }
-        }
-    </script>
-    
-    <!-- Font Awesome Icons & Chart.js -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
-    <style>
-        body { font-family: 'Padauk', sans-serif; background-color: #f8fafc; }
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-        
-        /* Custom styles for active menu */
-        .menu-item.active { background-color: #2563eb; color: #ffffff; }
-        .menu-item:not(.active) { color: #d1d5db; }
-        .menu-item:not(.active):hover { background-color: rgba(255,255,255,0.1); color: #ffffff; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#f7f8fc">
+<title>UN POS — Admin Reports</title>
+<style>
+:root{
+  --bg:#f6f7fb;--surface:#fff;--text:#171923;--muted:#74798b;--line:#e9ebf2;
+  --primary:#5b4bff;--primary-soft:#efedff;--green:#159b69;--green-soft:#e8f7f0;
+  --red:#dc5262;--red-soft:#fff0f1;--orange:#d98a26;--orange-soft:#fff6e8;
+  --shadow:0 8px 28px rgba(25,28,55,.055);--radius:17px;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,"Noto Sans Myanmar","Myanmar Text",system-ui,-apple-system,sans-serif}
+button,input{font:inherit}
+button{cursor:pointer}
+.app{min-height:100vh}
+.sidebar{position:fixed;inset:0 auto 0 0;width:244px;background:#fff;border-right:1px solid var(--line);padding:25px 17px;display:flex;flex-direction:column;z-index:5}
+.brand{display:flex;align-items:center;gap:11px;padding:0 9px 30px}
+.brand-mark{width:39px;height:39px;border-radius:12px;background:linear-gradient(145deg,#6d5cff,#4032d7);display:grid;place-items:center;color:#fff;font-weight:900;font-size:19px;box-shadow:0 7px 16px #5b4bff35}
+.brand-name{font-weight:800;font-size:17px;letter-spacing:-.4px}
+.brand-sub{font-size:11px;color:var(--muted);margin-top:2px}
+.nav-label{font-size:10px;font-weight:800;color:#a0a4b2;letter-spacing:1.2px;padding:8px 11px 10px}
+.nav-item{height:43px;border:0;background:transparent;color:#656a7b;border-radius:10px;padding:0 12px;display:flex;align-items:center;gap:12px;width:100%;text-align:left;font-size:13px;margin:3px 0}
+.nav-item.active{background:var(--primary-soft);color:var(--primary);font-weight:750}
+.nav-icon{width:19px;text-align:center;font-size:16px}
+.sidebar-bottom{margin-top:auto;border-top:1px solid var(--line);padding:17px 7px 0}
+.admin-mini{display:flex;align-items:center;gap:10px}
+.avatar{width:35px;height:35px;border-radius:50%;background:#eeecff;color:var(--primary);display:grid;place-items:center;font-weight:800}
+.admin-name{font-size:12px;font-weight:750}.admin-role{font-size:10px;color:var(--muted);margin-top:3px}
+.main{margin-left:244px;min-height:100vh}
+.topbar{height:73px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 34px;position:sticky;top:0;z-index:4}
+.breadcrumb{font-size:13px;color:var(--muted)}.breadcrumb strong{color:var(--text)}
+.top-actions{display:flex;align-items:center;gap:10px}
+.icon-btn,.btn{border:1px solid var(--line);background:#fff;border-radius:10px;height:38px;padding:0 13px;color:#45495a;font-size:12px;font-weight:700}
+.icon-btn{width:38px;padding:0;font-size:16px}
+.btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+.btn:disabled{opacity:.55;cursor:not-allowed}
+.content{max-width:1500px;margin:auto;padding:29px 34px 45px}
+.page-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;margin-bottom:23px}
+h1{font-size:24px;letter-spacing:-.7px;margin:0 0 7px;font-weight:850}
+.subtitle{font-size:12px;color:var(--muted)}
+.heading-actions{display:flex;gap:9px;flex-wrap:wrap}
+.filters{display:flex;align-items:center;gap:9px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:19px;box-shadow:var(--shadow);flex-wrap:wrap}
+.filter-label{font-size:11px;color:var(--muted);font-weight:750;padding:0 5px}
+.date-input{height:36px;border:1px solid var(--line);border-radius:9px;padding:0 10px;color:#44495a;background:#fff;font-size:12px;min-width:145px}
+.quick{display:flex;gap:5px;margin-left:auto}
+.quick button{height:31px;padding:0 10px;border:0;background:#f4f5f9;border-radius:8px;color:#666b7a;font-size:11px}
+.quick button.selected{background:var(--primary-soft);color:var(--primary);font-weight:750}
+.status-line{font-size:11px;color:var(--muted);margin:0 2px 15px;display:flex;align-items:center;gap:7px}
+.dot{width:7px;height:7px;background:var(--green);border-radius:50%;display:inline-block}
+.stats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:13px;margin-bottom:18px}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:17px 17px 15px;box-shadow:var(--shadow);min-width:0}
+.stat-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:15px}
+.stat-label{font-size:11px;color:var(--muted);font-weight:700}
+.stat-icon{width:32px;height:32px;border-radius:10px;display:grid;place-items:center;font-size:15px}
+.stat-value{font-size:clamp(17px,1.8vw,24px);font-weight:850;letter-spacing:-.7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stat-foot{font-size:10px;color:var(--muted);margin-top:8px}
+.purple{background:var(--primary-soft);color:var(--primary)}.green{background:var(--green-soft);color:var(--green)}
+.orange{background:var(--orange-soft);color:var(--orange)}.red{background:var(--red-soft);color:var(--red)}
+.two-col{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(260px,.85fr);gap:15px;margin-bottom:18px}
+.panel{background:#fff;border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);min-width:0}
+.panel-head{padding:18px 19px 13px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.panel-title{font-size:13px;font-weight:800}.panel-sub{font-size:10px;color:var(--muted);margin-top:4px}
+.panel-body{padding:5px 19px 19px}
+.legend{display:flex;gap:13px;flex-wrap:wrap;font-size:10px;color:var(--muted)}
+.legend span{display:flex;align-items:center;gap:5px}.legend i{width:7px;height:7px;border-radius:3px;display:inline-block}
+.chart{height:220px;display:flex;align-items:stretch;gap:8px;padding:12px 2px 0;overflow-x:auto}
+.chart-empty{width:100%;display:grid;place-items:center;color:var(--muted);font-size:12px}
+.chart-col{flex:1;min-width:27px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:8px}
+.bar-pair{height:174px;width:100%;display:flex;align-items:flex-end;justify-content:center;gap:3px;border-bottom:1px solid var(--line)}
+.bar{width:min(13px,38%);min-height:2px;border-radius:4px 4px 0 0;position:relative}
+.bar.sales{background:#6558f5}.bar.purchases{background:#9ddcc5}
+.chart-date{font-size:9px;color:#969aaa;white-space:nowrap}
+.profit-box{padding:0 19px 19px}
+.profit-main{background:linear-gradient(135deg,#f0eeff,#f8f7ff);border:1px solid #e9e5ff;border-radius:13px;padding:17px;margin-bottom:12px}
+.profit-label{font-size:11px;color:#6e65bd;font-weight:700}
+.profit-number{font-size:25px;font-weight:850;color:#4032c7;margin-top:8px;letter-spacing:-.7px}
+.profit-note{font-size:10px;color:#817bb5;margin-top:5px}
+.profit-row{display:flex;justify-content:space-between;padding:11px 1px;border-bottom:1px solid var(--line);font-size:11px;gap:10px}
+.profit-row:last-child{border:0}.profit-row span:first-child{color:var(--muted)}.profit-row strong{font-weight:800}
+.table-wrap{overflow:auto}
+table{border-collapse:collapse;width:100%;min-width:680px}
+th{text-align:left;background:#fafbfe;color:#9296a5;font-size:10px;font-weight:750;padding:12px 15px;white-space:nowrap}
+td{padding:13px 15px;border-top:1px solid #f0f1f5;font-size:11px;white-space:nowrap}
+td.num,th.num{text-align:right}
+.shop-cell{display:flex;align-items:center;gap:9px}
+.shop-avatar{width:30px;height:30px;border-radius:9px;background:#f0efff;color:var(--primary);display:grid;place-items:center;font-weight:800;font-size:11px}
+.shop-name{font-weight:750}.shop-phone{font-size:10px;color:var(--muted);margin-top:3px}
+.money-positive{color:var(--green);font-weight:800}.money-negative{color:var(--red);font-weight:750}
+.badge{display:inline-flex;padding:5px 8px;border-radius:20px;font-size:9px;font-weight:750;background:var(--green-soft);color:var(--green)}
+.badge.off{background:var(--red-soft);color:var(--red)}.badge.expired{background:var(--orange-soft);color:var(--orange)}
+.empty{padding:35px 15px;text-align:center;color:var(--muted);font-size:12px}
+.table-foot{padding:12px 16px;border-top:1px solid var(--line);font-size:10px;color:var(--muted);display:flex;justify-content:space-between}
+.error{background:var(--red-soft);color:#b43d4b;padding:12px 14px;border-radius:10px;font-size:12px;margin-bottom:14px;display:none}
+.loading{opacity:.55;pointer-events:none}
+.login-screen{position:fixed;inset:0;background:#f6f7fb;z-index:20;display:grid;place-items:center;padding:20px}
+.login-card{width:min(100%,390px);background:#fff;border:1px solid var(--line);border-radius:20px;padding:30px;box-shadow:0 20px 60px #20234a12}
+.login-logo{width:48px;height:48px;border-radius:15px;background:var(--primary);color:#fff;display:grid;place-items:center;font-size:22px;font-weight:900;margin-bottom:22px}
+.login-card h2{margin:0 0 7px;font-size:21px}.login-card p{margin:0 0 23px;color:var(--muted);font-size:12px}
+.field{display:block;margin:14px 0}.field span{display:block;font-size:11px;font-weight:750;margin-bottom:7px}
+.field input{width:100%;height:43px;border:1px solid var(--line);border-radius:10px;padding:0 12px;outline:none}
+.field input:focus,.date-input:focus{border-color:var(--primary);box-shadow:0 0 0 3px #5b4bff16}
+.login-card .btn{width:100%;height:43px;margin-top:8px}
+.login-error{font-size:11px;color:var(--red);margin-top:12px;display:none}
+.mobile-menu{display:none}
+@media(max-width:1100px){.stats{grid-template-columns:repeat(3,minmax(0,1fr))}.two-col{grid-template-columns:1fr}}
+@media(max-width:760px){
+ .sidebar{width:0;padding:0;border:0;overflow:hidden;transition:width .2s}.sidebar.open{width:244px;padding:22px 17px;border-right:1px solid var(--line);box-shadow:10px 0 30px #10102018}
+ .main{margin-left:0}.topbar{height:62px;padding:0 16px}.mobile-menu{display:inline-grid}
+ .content{padding:22px 14px 35px}.page-heading{display:block}.heading-actions{margin-top:15px}
+ h1{font-size:21px}.stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+ .stat{padding:14px}.stat-value{font-size:18px}.stat-label{font-size:10px}
+ .filters{gap:8px}.filter-label{width:100%}.date-input{flex:1;min-width:0;width:40%}.quick{width:100%;margin:3px 0 0;overflow:auto}.quick button{flex:1;white-space:nowrap}
+ .panel-head{padding:15px}.panel-body{padding:4px 13px 14px}.profit-box{padding:0 14px 14px}
+ .chart{height:205px}.bar-pair{height:160px}
+}
+</style>
 </head>
-<body class="flex h-screen overflow-hidden text-gray-800">
-
-    <!-- Mobile Overlay for Sidebar -->
-    <div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-20 hidden transition-opacity lg:hidden" onclick="toggleSidebar()"></div>
-
-    <!-- Sidebar Menu Drawer -->
-    <aside id="sidebar" class="w-64 bg-[#23314f] text-gray-300 flex flex-col transition-transform duration-300 z-30 fixed lg:relative h-full -translate-x-full lg:translate-x-0">
-        <!-- Logo -->
-        <div class="h-16 flex items-center px-6 border-b border-gray-700/50">
-            <div class="w-8 h-8 bg-blue-500 rounded flex items-center justify-center text-white mr-3">
-                <i class="fa-solid fa-shopping-bag"></i>
-            </div>
-            <div>
-                <h1 class="text-white font-bold text-lg leading-tight">UN Mobile Pos</h1>
-                <p class="text-xs text-gray-400">Admin Panel</p>
-            </div>
+<body>
+<div class="app" id="app" style="display:none">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand"><div class="brand-mark">U</div><div><div class="brand-name">UN POS</div><div class="brand-sub">Management Console</div></div></div>
+    <div class="nav-label">OVERVIEW</div>
+    <button class="nav-item active"><span class="nav-icon">▦</span>Report Dashboard</button>
+    <div class="nav-label" style="margin-top:18px">MANAGEMENT</div>
+    <button class="nav-item" id="usersNav"><span class="nav-icon">♙</span>Accounts Overview</button>
+    <button class="nav-item" id="refreshNav"><span class="nav-icon">↻</span>Refresh Data</button>
+    <div class="sidebar-bottom"><div class="admin-mini"><div class="avatar">A</div><div><div class="admin-name" id="adminName">Administrator</div><div class="admin-role">System Admin</div></div></div></div>
+  </aside>
+  <main class="main">
+    <header class="topbar">
+      <div style="display:flex;align-items:center;gap:12px"><button class="icon-btn mobile-menu" id="menuBtn">☰</button><div class="breadcrumb">UN POS <span style="padding:0 7px">/</span> <strong>Reports</strong></div></div>
+      <div class="top-actions"><button class="icon-btn" id="refreshBtn" title="Refresh">↻</button><button class="btn" id="logoutBtn">Logout ↗</button></div>
+    </header>
+    <section class="content" id="reportContent">
+      <div class="page-heading">
+        <div><h1>Report Dashboard</h1><div class="subtitle">ဆိုင်အားလုံး၏ အရောင်း၊ အဝယ်နှင့် ငွေကြေးအခြေအနေ</div></div>
+        <div class="heading-actions"><button class="btn" id="exportBtn">↓ Export CSV</button><button class="btn primary" id="refreshPageBtn">↻ Refresh Report</button></div>
+      </div>
+      <div class="error" id="errorBox"></div>
+      <div class="filters">
+        <span class="filter-label">REPORT PERIOD</span>
+        <input class="date-input" type="date" id="fromDate" aria-label="From date">
+        <span style="font-size:11px;color:#9a9eaa">to</span>
+        <input class="date-input" type="date" id="toDate" aria-label="To date">
+        <button class="btn primary" id="applyBtn">Apply Filter</button>
+        <div class="quick">
+          <button data-range="today">Today</button><button data-range="7">7 Days</button><button data-range="30" class="selected">30 Days</button><button data-range="all">All Time</button>
         </div>
-        
-        <!-- Navigation Menus -->
-        <nav class="flex-1 overflow-y-auto no-scrollbar py-4 px-3 space-y-1 text-sm font-medium" id="main-menu">
-            <a href="#" onclick="switchSection('dashboard', this, 'Dashboard')" class="menu-item active flex items-center px-3 py-2.5 rounded-lg transition">
-                <i class="fa-solid fa-home w-6 text-center"></i> Dashboard
-            </a>
-            <a href="#" onclick="switchSection('users', this, 'အသုံးပြုသူများ')" class="menu-item flex items-center px-3 py-2.5 rounded-lg transition">
-                <i class="fa-solid fa-users w-6 text-center"></i> အသုံးပြုသူများ
-            </a>
-            <a href="#" onclick="switchSection('generic', this, 'POS စက်များ')" class="menu-item flex items-center px-3 py-2.5 rounded-lg transition">
-                <i class="fa-solid fa-tablet-screen-button w-6 text-center"></i> POS စက်များ
-            </a>
-            <a href="#" onclick="switchSection('generic', this, 'ကုန်ပစ္စည်းများ')" class="menu-item flex items-center px-3 py-2.5 rounded-lg transition">
-                <i class="fa-solid fa-box w-6 text-center"></i> ကုန်ပစ္စည်းများ
-            </a>
-            <a href="#" onclick="switchSection('generic', this, 'ဈေးဝယ်သူများ')" class="menu-item flex items-center px-3 py-2.5 rounded-lg transition">
-                <i class="fa-solid fa-user-tag w-6 text-center"></i> ဈေးဝယ်သူများ
-            </a>
-            <a href="#" onclick="switchSection('generic', this, 'ကုန်သွင်းသူများ')" class="menu-item flex items-center px-3 py-2.5 rounded-lg transition">
-                <i class="fa-solid fa-truck-field w-6 text-center"></i> ကုန်သွင်းသူများ
-            </a>
-            <a href="#" onclick="switchSection('generic', this, 'အရောင်းစာရင်း')" class="menu-item flex items-center px-3 py-2.5 rounded-lg transition">
-                <i class="fa-solid fa-file-invoice-dollar w-6 text-center"></i> အရောင်းစာရင်း
-            </a>
-            <a href="#" onclick="switchSection('generic', this, 'အဝယ်စာရင်း')" class="menu-item flex items-center px-3 py-2.5 rounded-lg transition">
-                <i class="fa-solid fa-cart-arrow-down w-6 text-center"></i> အဝယ်စာရင်း
-            </a>
-            <a href="#" onclick="switchSection('generic', this, 'ကုန်ကျစရိတ်များ')" class="menu-item flex items-center px-3 py-2.5 rounded-lg transition">
-                <i class="fa-solid fa-wallet w-6 text-center"></i> ကုန်ကျစရိတ်များ
-            </a>
-        </nav>
-        
-        <!-- Profile -->
-        <div class="p-4 border-t border-gray-700/50">
-            <div class="flex items-center mb-4">
-                <img src="https://ui-avatars.com/api/?name=Admin&background=1e3a8a&color=fff" class="w-10 h-10 rounded-full mr-3">
-                <div><p class="text-white text-sm font-bold">Admin</p><p class="text-xs text-gray-400">Super Admin</p></div>
-            </div>
-            <button class="flex items-center text-sm text-gray-400 hover:text-white transition"><i class="fa-solid fa-arrow-right-from-bracket w-6"></i> ထွက်ရန်</button>
-        </div>
-    </aside>
+      </div>
+      <div class="status-line"><i class="dot"></i><span id="lastUpdated">Data ကို ရယူနေပါသည်...</span><span id="periodText" style="margin-left:auto"></span></div>
+      <div class="stats">
+        <div class="stat"><div class="stat-top"><span class="stat-label">စုစုပေါင်း အရောင်း</span><span class="stat-icon purple">↗</span></div><div class="stat-value" id="totalSales">—</div><div class="stat-foot" id="salesCount">Voucher 0 ခု</div></div>
+        <div class="stat"><div class="stat-top"><span class="stat-label">စုစုပေါင်း အဝယ်</span><span class="stat-icon orange">↓</span></div><div class="stat-value" id="totalPurchases">—</div><div class="stat-foot" id="purchaseCount">Voucher 0 ခု</div></div>
+        <div class="stat"><div class="stat-top"><span class="stat-label">ကုန်ကျစရိတ်</span><span class="stat-icon red">−</span></div><div class="stat-value" id="totalExpenses">—</div><div class="stat-foot" id="expenseCount">စာရင်း 0 ခု</div></div>
+        <div class="stat"><div class="stat-top"><span class="stat-label">စုစုပေါင်း အမြတ်</span><span class="stat-icon green">⌁</span></div><div class="stat-value" id="grossProfit">—</div><div class="stat-foot">ကုန်ပစ္စည်းအလိုက် အမြတ်</div></div>
+        <div class="stat"><div class="stat-top"><span class="stat-label">အသားတင်အမြတ်</span><span class="stat-icon purple">◆</span></div><div class="stat-value" id="netProfit">—</div><div class="stat-foot">အမြတ် − ကုန်ကျစရိတ်</div></div>
+      </div>
+      <div class="two-col">
+        <section class="panel">
+          <div class="panel-head"><div><div class="panel-title">နေ့စဉ် အရောင်း / အဝယ်</div><div class="panel-sub">Daily sales and purchase overview</div></div><div class="legend"><span><i style="background:#6558f5"></i>အရောင်း</span><span><i style="background:#9ddcc5"></i>အဝယ်</span></div></div>
+          <div class="panel-body"><div class="chart" id="dailyChart"><div class="chart-empty">စာရင်းမရှိသေးပါ</div></div></div>
+        </section>
+        <section class="panel">
+          <div class="panel-head"><div><div class="panel-title">အမြတ် အကျဉ်းချုပ်</div><div class="panel-sub">Profit summary</div></div></div>
+          <div class="profit-box">
+            <div class="profit-main"><div class="profit-label">NET PROFIT</div><div class="profit-number" id="profitHighlight">—</div><div class="profit-note">ရွေးချယ်ထားသော ကာလအတွက်</div></div>
+            <div class="profit-row"><span>စုစုပေါင်း အရောင်း</span><strong id="profitSales">—</strong></div>
+            <div class="profit-row"><span>စုစုပေါင်း အဝယ်</span><strong id="profitPurchases">—</strong></div>
+            <div class="profit-row"><span>Gross Profit</span><strong id="profitGross">—</strong></div>
+            <div class="profit-row"><span>ကုန်ကျစရိတ်</span><strong id="profitExpenses">—</strong></div>
+          </div>
+        </section>
+      </div>
+      <section class="panel" style="margin-bottom:17px">
+        <div class="panel-head"><div><div class="panel-title">ဆိုင်တစ်ဆိုင်ချင်းစီ အရောင်းစာရင်း</div><div class="panel-sub">Shop performance overview</div></div><span class="badge" id="shopCount">0 ဆိုင်</span></div>
+        <div class="table-wrap"><table><thead><tr><th>ဆိုင် / အကောင့်</th><th>အခြေအနေ</th><th class="num">အရောင်း</th><th class="num">အဝယ်</th><th class="num">ကုန်ကျစရိတ်</th><th class="num">အမြတ်</th></tr></thead><tbody id="shopsBody"><tr><td colspan="6" class="empty">စာရင်းရယူနေပါသည်...</td></tr></tbody></table></div>
+        <div class="table-foot"><span id="shopFoot">ဆိုင်စာရင်း</span><span>အရောင်းအများဆုံး အစဉ်လိုက်</span></div>
+      </section>
+      <section class="panel">
+        <div class="panel-head"><div><div class="panel-title">နေ့စဉ် အသေးစိတ်စာရင်း</div><div class="panel-sub">Daily report details</div></div><span class="badge" id="dailyCount">0 ရက်</span></div>
+        <div class="table-wrap"><table style="min-width:560px"><thead><tr><th>ရက်စွဲ</th><th class="num">အရောင်း</th><th class="num">အဝယ်</th><th class="num">ကုန်ကျစရိတ်</th><th class="num">အရောင်း − အဝယ် − ကုန်ကျစရိတ်</th></tr></thead><tbody id="dailyBody"><tr><td colspan="5" class="empty">စာရင်းရယူနေပါသည်...</td></tr></tbody></table></div>
+        <div class="table-foot"><span>နေ့စဉ် စာရင်း</span><span id="dailyFoot">—</span></div>
+      </section>
+    </section>
+  </main>
+</div>
 
-    <!-- Main Content -->
-    <main class="flex-1 flex flex-col h-screen overflow-hidden bg-[#eff3f8]">
-        
-        <!-- Headerbar -->
-        <header class="h-16 bg-white flex items-center justify-between px-6 shadow-sm z-10 w-full">
-            <div class="flex items-center">
-                <!-- Hamburger Menu Button -->
-                <button id="menu-btn" class="text-gray-500 mr-4 text-xl hover:text-blue-600 lg:hidden" onclick="toggleSidebar()">
-                    <i class="fa-solid fa-bars"></i>
-                </button>
-                <div class="relative w-48 md:w-96">
-                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400"><i class="fa-solid fa-magnifying-glass"></i></span>
-                    <input type="text" class="w-full bg-gray-100/70 rounded-full py-2 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-100" placeholder="ရှာဖွေရန်...">
-                </div>
-            </div>
-            <div class="flex items-center space-x-4 md:space-x-6">
-                <button class="relative text-gray-500 text-xl"><i class="fa-regular fa-bell"></i><span class="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] text-white font-bold border-2 border-white">3</span></button>
-                <div class="flex items-center cursor-pointer">
-                    <img src="https://ui-avatars.com/api/?name=Admin&background=1e3a8a&color=fff" class="w-8 h-8 rounded-full border border-gray-200">
-                    <span class="ml-2 text-sm font-medium text-gray-700 hidden md:block">Admin</span>
-                </div>
-            </div>
-        </header>
+<div class="login-screen" id="loginScreen">
+  <form class="login-card" id="loginForm">
+    <div class="login-logo">U</div>
+    <h2>Welcome back</h2><p>UN POS Management Console သို့ ဝင်ရောက်ပါ</p>
+    <label class="field"><span>Admin Username</span><input id="loginUsername" autocomplete="username" placeholder="Enter admin username" required value="admin"></label>
+    <label class="field"><span>Password</span><input id="loginPassword" type="password" autocomplete="current-password" placeholder="Enter password" required></label>
+    <button class="btn primary" type="submit" id="loginBtn">Sign in to Dashboard</button>
+    <div class="login-error" id="loginError"></div>
+  </form>
+</div>
+<script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const money = value => (Number(value)||0).toLocaleString('en-US',{maximumFractionDigits:2}) + ' Ks';
+  const dateISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  let reportData = null;
+  let adminUsername = 'Administrator';
 
-        <!-- Content Area -->
-        <div class="flex-1 overflow-auto p-4 md:p-6" id="main-content-area">
-            
-            <!-- ===================== 1. DASHBOARD SECTION ===================== -->
-            <div id="section-dashboard" class="content-section block">
-                <!-- Stats Cards Grid -->
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-6">
-                    <div class="bg-white rounded-xl shadow-sm p-5 border border-gray-100 relative overflow-hidden">
-                        <div class="flex items-center gap-4 relative z-10">
-                            <div class="w-12 h-12 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 text-xl"><i class="fa-solid fa-cart-shopping"></i></div>
-                            <div>
-                                <p class="text-sm text-gray-500 mb-1">ယနေ့ အရောင်း</p>
-                                <h3 class="text-xl font-bold text-gray-800" id="stat-sales">Ks 0</h3>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="bg-white rounded-xl shadow-sm p-5 border border-gray-100 relative overflow-hidden">
-                        <div class="flex items-center gap-4 relative z-10">
-                            <div class="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 text-xl"><i class="fa-solid fa-cart-arrow-down"></i></div>
-                            <div>
-                                <p class="text-sm text-gray-500 mb-1">ယနေ့ အဝယ်</p>
-                                <h3 class="text-xl font-bold text-gray-800" id="stat-purchases">Ks 0</h3>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="bg-white rounded-xl shadow-sm p-5 border border-gray-100 relative overflow-hidden">
-                        <div class="flex items-center gap-4 relative z-10">
-                            <div class="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 text-xl"><i class="fa-solid fa-wallet"></i></div>
-                            <div>
-                                <p class="text-sm text-gray-500 mb-1">ကုန်ကျစရိတ်</p>
-                                <h3 class="text-xl font-bold text-gray-800" id="stat-expenses">Ks 0</h3>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="bg-white rounded-xl shadow-sm p-5 border border-gray-100 relative overflow-hidden">
-                        <div class="flex items-center gap-4 relative z-10">
-                            <div class="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 text-xl"><i class="fa-solid fa-chart-line"></i></div>
-                            <div>
-                                <p class="text-sm text-gray-500 mb-1">အမြတ်အစွန်း (ယနေ့)</p>
-                                <h3 class="text-xl font-bold text-gray-800" id="stat-profit">Ks 0</h3>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+  function setDefaultRange(days=30){
+    const today = new Date();
+    $('toDate').value = dateISO(today);
+    if(days === 'all') $('fromDate').value = '';
+    else {
+      const start = new Date(today);
+      start.setDate(start.getDate() - (days === 'today' ? 0 : Number(days)-1));
+      $('fromDate').value = dateISO(start);
+    }
+  }
+  function showError(message){
+    $('errorBox').textContent = message;
+    $('errorBox').style.display = 'block';
+  }
+  function hideError(){ $('errorBox').style.display = 'none'; }
+  function setLoading(on){
+    $('reportContent').classList.toggle('loading',on);
+    $('refreshBtn').disabled = on;
+    $('refreshPageBtn').disabled = on;
+    $('applyBtn').disabled = on;
+  }
 
-                <!-- Chart & Top Products -->
-                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-                    <!-- Line Chart -->
-                    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5 lg:col-span-2">
-                        <div class="flex justify-between items-center mb-6">
-                            <h2 class="text-lg font-bold text-gray-800 flex items-center"><i class="fa-solid fa-chart-simple text-blue-600 mr-2"></i> ၇ ရက်အတွင်း အရောင်းပြမြေပုံ</h2>
-                        </div>
-                        <div class="relative h-64 w-full">
-                            <canvas id="salesChart"></canvas>
-                        </div>
-                    </div>
+  async function api(path, options={}){
+    const response = await fetch(path, {
+      ...options,
+      headers:{'Content-Type':'application/json',...(options.headers||{})}
+    });
+    let data;
+    try { data = await response.json(); }
+    catch { throw new Error('Server မှ JSON response မရရှိပါ။'); }
+    if(!response.ok || data.success === false) throw new Error(data.message || `HTTP ${response.status}`);
+    return data;
+  }
 
-                    <!-- Top Products dynamically pulled -->
-                    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-                        <div class="flex justify-between items-center mb-4">
-                            <h2 class="text-[15px] font-bold text-gray-800 flex items-center"><i class="fa-solid fa-trophy text-blue-600 mr-2"></i> ထိပ်တန်းရောင်းအား ကုန်ပစ္စည်းများ</h2>
-                        </div>
-                        <div class="space-y-4 mt-2" id="top-products-list">
-                            <p class="text-sm text-gray-500 text-center py-4">Data တွက်ချက်နေပါသည်...</p>
-                        </div>
-                    </div>
-                </div>
+  async function login(username,password){
+    const data = await api('/api/admin/login',{
+      method:'POST',body:JSON.stringify({username,password})
+    });
+    if(!data.token) throw new Error('Admin token မရရှိပါ။');
+    sessionStorage.setItem('unpos_admin_token',data.token);
+    sessionStorage.setItem('unpos_admin_name',data.username || username);
+    adminUsername = data.username || username;
+    openDashboard();
+  }
+  function openDashboard(){
+    $('loginScreen').style.display='none';
+    $('app').style.display='block';
+    $('adminName').textContent=adminUsername;
+    loadReport();
+  }
+  function logout(){
+    sessionStorage.removeItem('unpos_admin_token');
+    sessionStorage.removeItem('unpos_admin_name');
+    $('app').style.display='none';
+    $('loginScreen').style.display='grid';
+    $('loginPassword').value='';
+  }
 
-                <!-- Users Table Mini and Sys Info -->
-                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5 lg:col-span-2">
-                        <div class="flex justify-between items-center mb-4">
-                            <h2 class="text-[16px] font-bold text-gray-800 flex items-center"><i class="fa-solid fa-users text-blue-600 mr-2"></i> အသုံးပြုသူများ (Top 5)</h2>
-                            <button onclick="document.querySelectorAll('.menu-item')[1].click()" class="text-xs text-blue-600 hover:underline">အားလုံးကြည့်ရန် &rarr;</button>
-                        </div>
-                        <div class="overflow-x-auto">
-                            <table class="w-full text-left border-collapse">
-                                <thead>
-                                    <tr class="text-xs text-gray-500 border-b border-gray-200">
-                                        <th class="pb-3 font-semibold">#</th>
-                                        <th class="pb-3 font-semibold">ဖုန်းနံပါတ်</th>
-                                        <th class="pb-3 font-semibold">အမည်</th>
-                                        <th class="pb-3 font-semibold">အခြေအနေ</th>
-                                    </tr>
-                                </thead>
-                                <tbody class="text-sm" id="users-table-mini">
-                                    <tr><td colspan="4" class="text-center py-4 text-gray-500">Loading...</td></tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
+  async function loadReport(){
+    hideError();setLoading(true);
+    const from=$('fromDate').value,to=$('toDate').value;
+    const params=new URLSearchParams();
+    if(from)params.set('from',from);
+    if(to)params.set('to',to);
+    try{
+      const data=await api('/api/admin/reports'+(params.toString()?'?'+params.toString():''));
+      reportData=data;renderReport(data);
+      $('lastUpdated').textContent='နောက်ဆုံး Update: '+new Date().toLocaleString();
+      $('periodText').textContent=(from||'အစမှ')+' — '+(to||'ယနေ့အထိ');
+    }catch(err){showError('Report ရယူ၍မရပါ — '+err.message);}
+    finally{setLoading(false);}
+  }
 
-                    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-                        <div class="flex justify-between items-center mb-4">
-                            <h2 class="text-[15px] font-bold text-gray-800 flex items-center"><i class="fa-solid fa-database text-blue-600 mr-2"></i> စနစ် အချက်အလက်များ</h2>
-                        </div>
-                        <ul class="space-y-4 mt-2">
-                            <li class="flex justify-between items-center text-sm border-b border-gray-50 pb-3">
-                                <span class="flex items-center text-gray-600"><i class="fa-solid fa-server w-6 text-blue-500 text-center"></i> API Status</span>
-                                <span class="font-bold text-gray-800 flex items-center"><span class="w-2 h-2 rounded-full bg-green-500 mr-2"></span> Online</span>
-                            </li>
-                            <li class="flex justify-between items-center text-sm border-b border-gray-50 pb-3">
-                                <span class="flex items-center text-gray-600"><i class="fa-solid fa-mobile-screen w-6 text-blue-500 text-center"></i> Total Devices</span>
-                                <span class="font-medium text-gray-800" id="sys-devices">0</span>
-                            </li>
-                            <li class="flex justify-between items-center text-sm border-b border-gray-50 pb-3">
-                                <span class="flex items-center text-gray-600"><i class="fa-regular fa-calendar-check w-6 text-blue-500 text-center"></i> Active Users</span>
-                                <span class="font-medium text-gray-800" id="sys-active">0</span>
-                            </li>
-                            <li class="flex justify-between items-center text-sm">
-                                <span class="flex items-center text-gray-600"><i class="fa-solid fa-users-viewfinder w-6 text-blue-500 text-center"></i> Total Customers</span>
-                                <span class="font-medium text-gray-800" id="sys-customers">0</span>
-                            </li>
-                        </ul>
-                    </div>
-                </div>
-            </div>
+  function renderReport(data){
+    const s=data.summary||{};
+    $('totalSales').textContent=money(s.totalSales);
+    $('totalPurchases').textContent=money(s.totalPurchases);
+    $('totalExpenses').textContent=money(s.totalExpenses);
+    $('grossProfit').textContent=money(s.grossProfit);
+    $('netProfit').textContent=money(s.netProfit);
+    $('profitHighlight').textContent=money(s.netProfit);
+    $('salesCount').textContent=`Voucher ${(s.salesCount||0).toLocaleString()} ခု`;
+    $('purchaseCount').textContent=`Voucher ${(s.purchaseCount||0).toLocaleString()} ခု`;
+    $('expenseCount').textContent=`စာရင်း ${(s.expenseCount||0).toLocaleString()} ခု`;
+    $('profitSales').textContent=money(s.totalSales);
+    $('profitPurchases').textContent=money(s.totalPurchases);
+    $('profitGross').textContent=money(s.grossProfit);
+    $('profitExpenses').textContent=money(s.totalExpenses);
+    renderChart(data.daily||[]);
+    renderShops(data.shops||[]);
+    renderDaily(data.daily||[]);
+  }
 
-            <!-- ===================== 2. FULL USERS SECTION ===================== -->
-            <div id="section-users" class="content-section hidden">
-                <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5 min-h-[500px]">
-                    <div class="flex justify-between items-center mb-6">
-                        <h2 class="text-lg font-bold text-gray-800 flex items-center"><i class="fa-solid fa-users text-blue-600 mr-2"></i> အသုံးပြုသူများ စာရင်း အပြည့်အစုံ</h2>
-                        <button class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded shadow-sm text-sm"><i class="fa-solid fa-plus mr-1"></i> User အသစ်ထည့်ရန်</button>
-                    </div>
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-left border-collapse">
-                            <thead>
-                                <tr class="text-xs text-gray-500 border-b border-gray-200">
-                                    <th class="pb-3 font-semibold">#</th>
-                                    <th class="pb-3 font-semibold">ဖုန်းနံပါတ်</th>
-                                    <th class="pb-3 font-semibold">အသုံးပြုသူအမည်</th>
-                                    <th class="pb-3 font-semibold">လုပ်ငန်းအမည်</th>
-                                    <th class="pb-3 font-semibold">ဝန်ဆောင်မှုအခြေအနေ</th>
-                                    <th class="pb-3 font-semibold">သက်တမ်းကုန်ဆုံးရက်</th>
-                                    <th class="pb-3 font-semibold text-center">လုပ်ဆောင်ချက်</th>
-                                </tr>
-                            </thead>
-                            <tbody class="text-sm" id="users-table-full">
-                                <tr><td colspan="7" class="text-center py-4 text-gray-500">Loading All Users...</td></tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
+  function renderChart(rows){
+    const el=$('dailyChart');el.innerHTML='';
+    const list=rows.slice(-14);
+    if(!list.length){el.innerHTML='<div class="chart-empty">ရွေးချယ်ထားသော ကာလအတွင်း စာရင်းမရှိပါ</div>';return;}
+    const max=Math.max(1,...list.flatMap(x=>[Number(x.sales)||0,Number(x.purchases)||0]));
+    list.forEach(item=>{
+      const col=document.createElement('div');col.className='chart-col';
+      const pair=document.createElement('div');pair.className='bar-pair';
+      const sale=document.createElement('div');sale.className='bar sales';
+      const purchase=document.createElement('div');purchase.className='bar purchases';
+      sale.style.height=Math.max(2,(Number(item.sales)||0)/max*100)+'%';
+      purchase.style.height=Math.max(2,(Number(item.purchases)||0)/max*100)+'%';
+      sale.title='အရောင်း '+money(item.sales);purchase.title='အဝယ် '+money(item.purchases);
+      pair.append(sale,purchase);
+      const label=document.createElement('div');label.className='chart-date';label.textContent=(item.date||'').slice(5);
+      col.append(pair,label);el.append(col);
+    });
+  }
 
-            <!-- ===================== 3. GENERIC / PLACEHOLDER SECTION ===================== -->
-            <div id="section-generic" class="content-section hidden">
-                <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-8 text-center min-h-[400px] flex flex-col items-center justify-center">
-                    <div class="w-20 h-20 bg-blue-50 text-blue-500 rounded-full flex items-center justify-center text-3xl mb-4">
-                        <i class="fa-solid fa-screwdriver-wrench"></i>
-                    </div>
-                    <h2 class="text-2xl font-bold text-gray-800 mb-2" id="generic-title">Section Name</h2>
-                    <p class="text-gray-500">ဤစာမျက်နှာကို တည်ဆောက်ဆဲ ဖြစ်ပါသည်။ မကြာမီ အသုံးပြုနိုင်ပါမည်။</p>
-                </div>
-            </div>
+  function renderShops(shops){
+    $('shopCount').textContent=shops.length+' ဆိုင်';
+    $('shopFoot').textContent='စုစုပေါင်း '+shops.length+' ဆိုင်';
+    const body=$('shopsBody');body.innerHTML='';
+    if(!shops.length){body.innerHTML='<tr><td colspan="6" class="empty">ဆိုင်စာရင်း မရှိသေးပါ</td></tr>';return;}
+    shops.forEach(shop=>{
+      const tr=document.createElement('tr');
+      const name=shop.businessName||shop.username||'ဆိုင်အမည်မရှိ';
+      const status=String(shop.status||'on').toLowerCase();
+      const badgeClass=status==='expired'?'expired':(status==='off'?'off':'');
+      const statusText=status==='on'?'Active':status==='expired'?'Expired':status.toUpperCase();
+      tr.innerHTML=`
+        <td><div class="shop-cell"><div class="shop-avatar"></div><div><div class="shop-name"></div><div class="shop-phone"></div></div></div></td>
+        <td><span class="badge ${badgeClass}">${statusText}</span></td>
+        <td class="num"></td><td class="num"></td><td class="num"></td><td class="num money-positive"></td>`;
+      tr.querySelector('.shop-avatar').textContent=String(name).trim().charAt(0).toUpperCase()||'S';
+      tr.querySelector('.shop-name').textContent=name;
+      tr.querySelector('.shop-phone').textContent=shop.phoneNo||'';
+      const cells=tr.querySelectorAll('td');
+      cells[2].textContent=money(shop.sales);cells[3].textContent=money(shop.purchases);
+      cells[4].textContent=money(shop.expenses);cells[5].textContent=money(shop.netProfit);
+      if(Number(shop.netProfit)<0)cells[5].className='num money-negative';
+      body.appendChild(tr);
+    });
+  }
 
-        </div>
-    </main>
+  function renderDaily(rows){
+    $('dailyCount').textContent=rows.length+' ရက်';
+    $('dailyFoot').textContent=rows.length?`ပြသထားသော ${rows.length} ရက်`:'စာရင်းမရှိပါ';
+    const body=$('dailyBody');body.innerHTML='';
+    if(!rows.length){body.innerHTML='<tr><td colspan="5" class="empty">နေ့စဉ်စာရင်း မရှိသေးပါ</td></tr>';return;}
+    [...rows].reverse().forEach(item=>{
+      const net=(Number(item.sales)||0)-(Number(item.purchases)||0)-(Number(item.expenses)||0);
+      const tr=document.createElement('tr');
+      tr.innerHTML='<td></td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num"></td>';
+      const c=tr.querySelectorAll('td');
+      c[0].textContent=item.date||'—';c[1].textContent=money(item.sales);c[2].textContent=money(item.purchases);
+      c[3].textContent=money(item.expenses);c[4].textContent=money(net);
+      c[4].className='num '+(net<0?'money-negative':'money-positive');
+      body.appendChild(tr);
+    });
+  }
 
-    <!-- REAL API FETCH AND CALCULATIONS SCRIPT -->
-    <script>
-        // ==========================================
-        // UI & Navigation Logic
-        // ==========================================
-        function toggleSidebar() {
-            const sidebar = document.getElementById('sidebar');
-            const overlay = document.getElementById('sidebar-overlay');
-            sidebar.classList.toggle('-translate-x-full');
-            overlay.classList.toggle('hidden');
-        }
+  function exportCSV(){
+    if(!reportData){showError('Export လုပ်ရန် Report Data မရှိသေးပါ။');return;}
+    const rows=[['Date','Sales (Ks)','Purchases (Ks)','Expenses (Ks)','Sales-Purchases-Expenses (Ks)']];
+    (reportData.daily||[]).forEach(x=>rows.push([x.date,x.sales,x.purchases,x.expenses,(Number(x.sales)||0)-(Number(x.purchases)||0)-(Number(x.expenses)||0)]));
+    rows.push([]);
+    rows.push(['Shop','Phone','Sales','Purchases','Expenses','Net Profit','Status']);
+    (reportData.shops||[]).forEach(x=>rows.push([x.businessName||x.username,x.phoneNo,x.sales,x.purchases,x.expenses,x.netProfit,x.status]));
+    const csv='\uFEFF'+rows.map(row=>row.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(',')).join('\r\n');
+    const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
+    const link=document.createElement('a');link.href=URL.createObjectURL(blob);
+    link.download='UN-POS-Report-'+dateISO(new Date())+'.csv';link.click();URL.revokeObjectURL(link.href);
+  }
 
-        function switchSection(sectionId, element, title = '') {
-            // 1. Update Active State on Menus
-            document.querySelectorAll('.menu-item').forEach(el => el.classList.remove('active'));
-            element.classList.add('active');
+  $('loginForm').addEventListener('submit',async e=>{
+    e.preventDefault();$('loginError').style.display='none';$('loginBtn').disabled=true;
+    try{await login($('loginUsername').value.trim(),$('loginPassword').value);}
+    catch(err){$('loginError').textContent=err.message;$('loginError').style.display='block';}
+    finally{$('loginBtn').disabled=false;}
+  });
+  $('applyBtn').addEventListener('click',loadReport);
+  $('refreshBtn').addEventListener('click',loadReport);
+  $('refreshPageBtn').addEventListener('click',loadReport);
+  $('refreshNav').addEventListener('click',loadReport);
+  $('exportBtn').addEventListener('click',exportCSV);
+  $('logoutBtn').addEventListener('click',logout);
+  $('menuBtn').addEventListener('click',()=>$('sidebar').classList.toggle('open'));
+  $('usersNav').addEventListener('click',()=>showError('Accounts Overview ကို နောက်ထပ် Admin Users စာမျက်နှာတွင် ချိတ်ဆက်နိုင်ပါသည်။'));
+  document.querySelectorAll('[data-range]').forEach(btn=>btn.addEventListener('click',()=>{
+    document.querySelectorAll('[data-range]').forEach(b=>b.classList.remove('selected'));
+    btn.classList.add('selected');
+    const range=btn.dataset.range;
+    setDefaultRange(range==='all'?'all':range==='today'?'today':Number(range));
+    loadReport();
+  }));
 
-            // 2. Hide all sections
-            document.querySelectorAll('.content-section').forEach(el => el.classList.add('hidden'));
-
-            // 3. Show target section
-            document.getElementById('section-' + sectionId).classList.remove('hidden');
-
-            // 4. Update generic title if needed
-            if(sectionId === 'generic') {
-                document.getElementById('generic-title').innerText = title;
-            }
-
-            // 5. Close sidebar automatically on mobile after clicking
-            if (window.innerWidth < 1024) { // lg breakpoint in Tailwind
-                toggleSidebar();
-            }
-        }
-
-        // ==========================================
-        // Data Fetching Logic
-        // ==========================================
-        const formatKs = (num) => 'Ks ' + Number(num).toLocaleString();
-
-        // Initialize Chart.js
-        const ctx = document.getElementById('salesChart').getContext('2d');
-        const gradientFill = ctx.createLinearGradient(0, 0, 0, 300);
-        gradientFill.addColorStop(0, 'rgba(59, 130, 246, 0.2)');
-        gradientFill.addColorStop(1, 'rgba(59, 130, 246, 0)');
-
-        const salesChart = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: [], 
-                datasets: [{
-                    label: 'အရောင်း',
-                    data: [],
-                    borderColor: '#3b82f6',
-                    backgroundColor: gradientFill,
-                    borderWidth: 2,
-                    pointBackgroundColor: '#fff',
-                    pointBorderColor: '#3b82f6',
-                    fill: true,
-                    tension: 0.4
-                }]
-            },
-            options: {
-                responsive: true, maintainAspectRatio: false,
-                plugins: { legend: { display: false } },
-                scales: {
-                    x: { grid: { display: false } },
-                    y: { beginAtZero: true, grid: { color: '#f3f4f6' } }
-                }
-            }
-        });
-
-        async function fetchRealData() {
-            try {
-                const [statsRes, usersRes] = await Promise.all([
-                    fetch('/api/admin/stats').catch(() => null),
-                    fetch('/api/admin/users').catch(() => null)
-                ]);
-
-                const stats = statsRes && statsRes.ok ? await statsRes.json() : {};
-                const usersData = usersRes && usersRes.ok ? await usersRes.json() : { users: [] };
-                
-                const users = usersData.users || [];
-                document.getElementById('sys-active').innerText = stats.activeUsers || 0;
-
-                // Render Users Table (Mini for Dashboard, Full for Users Tab)
-                const tbodyMini = document.getElementById('users-table-mini');
-                const tbodyFull = document.getElementById('users-table-full');
-                tbodyMini.innerHTML = '';
-                tbodyFull.innerHTML = '';
-                let totalDevices = 0;
-
-                users.forEach((u, index) => {
-                    totalDevices += (u.deviceCount || 0);
-                    const dateStr = new Date(u.expires_at).toISOString().split('T')[0];
-                    const statusBadge = (u.isExpired || u.status !== 'on') 
-                        ? `<span class="px-2.5 py-1 bg-red-100 text-red-700 text-xs font-medium rounded-full">သက်တမ်းကုန်</span>`
-                        : `<span class="px-2.5 py-1 bg-green-100 text-green-700 text-xs font-medium rounded-full">အသက်ဝင်</span>`;
-                    
-                    // Render for Full Table
-                    tbodyFull.innerHTML += `
-                        <tr class="border-b border-gray-50 hover:bg-gray-50/50">
-                            <td class="py-3 text-gray-500">${index + 1}</td>
-                            <td class="py-3 font-medium">${u.phone_no}</td>
-                            <td class="py-3">${u.username}</td>
-                            <td class="py-3 text-gray-600">${u.business_name || '-'}</td>
-                            <td class="py-3">${statusBadge}</td>
-                            <td class="py-3 text-gray-600">${dateStr}</td>
-                            <td class="py-3 text-center">
-                                <button class="text-blue-500 hover:bg-blue-50 p-1.5 rounded mr-1"><i class="fa-solid fa-pen"></i></button>
-                                <button class="text-red-500 hover:bg-red-50 p-1.5 rounded"><i class="fa-solid fa-trash"></i></button>
-                            </td>
-                        </tr>
-                    `;
-
-                    // Render for Dashboard Mini Table (Top 5 only)
-                    if(index < 5) { 
-                        tbodyMini.innerHTML += `
-                            <tr class="border-b border-gray-50 hover:bg-gray-50/50">
-                                <td class="py-3 text-gray-500">${index + 1}</td>
-                                <td class="py-3 font-medium">${u.phone_no}</td>
-                                <td class="py-3">${u.username}</td>
-                                <td class="py-3">${statusBadge}</td>
-                            </tr>
-                        `;
-                    }
-                });
-                
-                if(users.length === 0) {
-                    tbodyFull.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-gray-500">အသုံးပြုသူ မရှိသေးပါ</td></tr>`;
-                    tbodyMini.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-gray-500">အသုံးပြုသူ မရှိသေးပါ</td></tr>`;
-                }
-
-                document.getElementById('sys-devices').innerText = `${totalDevices} / ${users.length * 5}`;
-
-                // Sync all data from all Tenants
-                const pullPromises = users.map(u => fetch(`/api/sync/pull?phoneNo=${u.phone_no}`).then(r => r.json()).catch(()=>null));
-                const allTenantData = await Promise.all(pullPromises);
-
-                let todaySales = 0, todayPurchases = 0, todayExpenses = 0, totalCustomersCount = 0;
-                const productSalesTally = {};
-                
-                const now = new Date();
-                const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-                const endOfToday = startOfToday + 86400000;
-                
-                const labels7Days = [];
-                const data7Days = [0,0,0,0,0,0,0];
-                for(let i=6; i>=0; i--) {
-                    const d = new Date(now.getTime() - i*86400000);
-                    labels7Days.push(`${d.getMonth()+1}/${d.getDate()}`);
-                }
-
-                allTenantData.forEach(data => {
-                    if (!data || !data.success) return;
-                    
-                    totalCustomersCount += data.customers ? data.customers.length : 0;
-
-                    if(data.vouchers) {
-                        data.vouchers.forEach(v => {
-                            const ts = v.timestamp || 0;
-                            const amount = Number(v.totalAmount || v.total_amount || 0);
-                            const isPurchase = (v.isPurchase || v.is_purchase === 1);
-                            const isCompleted = (v.isCompleted || v.is_completed === 1);
-
-                            if(isCompleted) {
-                                if (ts >= startOfToday && ts < endOfToday) {
-                                    if(isPurchase) todayPurchases += amount;
-                                    else todaySales += amount;
-                                }
-                                if(!isPurchase) {
-                                    for(let i=0; i<7; i++) {
-                                        const dStart = startOfToday - ((6-i)*86400000);
-                                        if(ts >= dStart && ts < dStart + 86400000) {
-                                            data7Days[i] += amount; break;
-                                        }
-                                    }
-                                }
-                            }
-                        });
-                    }
-
-                    if(data.expenses) {
-                        data.expenses.forEach(e => {
-                            const ts = e.timestamp || 0;
-                            if (ts >= startOfToday && ts < endOfToday) {
-                                todayExpenses += Number(e.amount || 0);
-                            }
-                        });
-                    }
-
-                    if(data.voucherItems && data.vouchers) {
-                        data.voucherItems.forEach(item => {
-                            const vId = item.voucher_id || item.voucherId;
-                            const parentVoucher = data.vouchers.find(v => (v.receiptNo || v.receipt_no) === vId);
-                            if (parentVoucher && !parentVoucher.isPurchase) {
-                                const name = item.product_name || item.productName || 'Unknown';
-                                const saleTotal = Number(item.selling_price || item.sellingPrice || 0) * Number(item.quantity || 1);
-                                productSalesTally[name] = (productSalesTally[name] || 0) + saleTotal;
-                            }
-                        });
-                    }
-                });
-
-                const todayProfit = todaySales - todayPurchases - todayExpenses;
-                document.getElementById('stat-sales').innerText = formatKs(todaySales);
-                document.getElementById('stat-purchases').innerText = formatKs(todayPurchases);
-                document.getElementById('stat-expenses').innerText = formatKs(todayExpenses);
-                document.getElementById('stat-profit').innerText = formatKs(todayProfit);
-                document.getElementById('sys-customers').innerText = totalCustomersCount;
-
-                salesChart.data.labels = labels7Days;
-                salesChart.data.datasets[0].data = data7Days;
-                salesChart.update();
-
-                const topProductsList = Object.entries(productSalesTally).sort((a,b) => b[1] - a[1]).slice(0, 5);
-                const topProdContainer = document.getElementById('top-products-list');
-                topProdContainer.innerHTML = '';
-                
-                if(topProductsList.length === 0) {
-                    topProdContainer.innerHTML = '<p class="text-sm text-gray-500 text-center py-4">အရောင်းမှတ်တမ်း မရှိသေးပါ</p>';
-                } else {
-                    const iconStyles = [
-                        { bg: 'bg-red-100', text: 'text-red-600', icon: 'fa-box' },
-                        { bg: 'bg-green-100', text: 'text-green-600', icon: 'fa-leaf' },
-                        { bg: 'bg-blue-100', text: 'text-blue-600', icon: 'fa-bottle-water' },
-                        { bg: 'bg-yellow-100', text: 'text-yellow-600', icon: 'fa-bowl-food' },
-                        { bg: 'bg-cyan-100', text: 'text-cyan-600', icon: 'fa-soap' }
-                    ];
-
-                    topProductsList.forEach(([name, amount], idx) => {
-                        const style = iconStyles[idx % 5];
-                        topProdContainer.innerHTML += `
-                            <div class="flex items-center justify-between">
-                                <div class="flex items-center gap-3">
-                                    <span class="text-sm font-bold text-gray-400 w-4">${idx + 1}</span>
-                                    <div class="w-8 h-8 ${style.bg} rounded flex items-center justify-center ${style.text} text-xs">
-                                        <i class="fa-solid ${style.icon}"></i>
-                                    </div>
-                                    <span class="text-sm font-medium text-gray-700">${name}</span>
-                                </div>
-                                <span class="text-sm font-bold text-gray-800">${formatKs(amount)}</span>
-                            </div>
-                        `;
-                    });
-                }
-            } catch (err) {
-                console.error("Dashboard Data Fetch Error:", err);
-            }
-        }
-
-        window.addEventListener('DOMContentLoaded', fetchRealData);
-    </script>
+  const savedToken=sessionStorage.getItem('unpos_admin_token');
+  if(savedToken){
+    adminUsername=sessionStorage.getItem('unpos_admin_name')||'Administrator';
+    openDashboard();
+  }else{
+    setDefaultRange(30);
+  }
+})();
+</script>
 </body>
 </html>
