@@ -2,7 +2,7 @@
  * UN POS Backend Server for VPS (Linux / Ubuntu / Debian / Windows)
  * Runs on pure Node.js (NO npm install required!)
  *
- * HOW TO RUN ON YOUR VPS:t
+ * HOW TO RUN ON YOUR VPS:
  * 1. Install Node.js on your VPS (if not installed):
  *    sudo apt update && sudo apt install -y nodejs npm
  *
@@ -915,13 +915,16 @@ const server = http.createServer(async (req, res) => {
 
         if (targetKey) {
           const oldQty = Number(db.cloud_products[userPhone][targetKey].quantity) || 0;
+          const existingBaseline = db.cloud_products[userPhone][targetKey].initial_quantity !== undefined
+            ? Number(db.cloud_products[userPhone][targetKey].initial_quantity)
+            : oldQty;
           const incomingQty = (p.quantity !== undefined && p.quantity !== null) ? Number(p.quantity) : oldQty;
 
           // Update metadata
           db.cloud_products[userPhone][targetKey] = Object.assign(db.cloud_products[userPhone][targetKey], p);
 
-          // If the user explicitly adjusted or edited the stock quantity:
-          if (incomingQty !== oldQty && !isNaN(incomingQty)) {
+          // ONLY if the merchant explicitly performed a manual stock adjustment from the UI:
+          if (p.isManualStockAdjustment === true && incomingQty !== oldQty && !isNaN(incomingQty)) {
             // Find total sales and purchases delta so far for this product
             let soldSoFar = 0;
             let purchasedSoFar = 0;
@@ -949,6 +952,10 @@ const server = http.createServer(async (req, res) => {
             if (targetKey) db.cloud_initial_stock[userPhone][targetKey] = adjustedBaseline;
             db.cloud_products[userPhone][targetKey].quantity = incomingQty;
           } else {
+            // Routine sync: preserve existing baseline and server quantity (recalculateUserProductStock will compute exact quantity)
+            if (existingBaseline !== undefined) {
+              db.cloud_products[userPhone][targetKey].initial_quantity = existingBaseline;
+            }
             db.cloud_products[userPhone][targetKey].quantity = oldQty;
           }
         } else {
@@ -1028,7 +1035,10 @@ const server = http.createServer(async (req, res) => {
           delete db.cloud_vouchers[userPhone][receiptNo];
         }
         if (db.cloud_voucher_items[userPhone]) {
-          db.cloud_voucher_items[userPhone] = db.cloud_voucher_items[userPhone].filter(it => it.voucher_id !== receiptNo);
+          db.cloud_voucher_items[userPhone] = db.cloud_voucher_items[userPhone].filter(it => {
+            const vid = it.voucher_id || it.voucherId;
+            return vid !== receiptNo;
+          });
         }
         recalculateUserProductStock(userPhone);
         saveDatabase();
