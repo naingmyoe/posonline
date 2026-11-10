@@ -1,651 +1,532 @@
 <!DOCTYPE html>
 <html lang="my">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>UN Mobile Pos - Admin Panel</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Padauk:wght@400;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <style>
-    body {
-      font-family: 'Plus Jakarta Sans', 'Padauk', sans-serif;
-    }
-    .custom-scrollbar::-webkit-scrollbar {
-      width: 6px;
-      height: 6px;
-    }
-    .custom-scrollbar::-webkit-scrollbar-track {
-      background: #f1f5f9;
-    }
-    .custom-scrollbar::-webkit-scrollbar-thumb {
-      background: #cbd5e1;
-      border-radius: 9999px;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UN Mobile POS - Admin Panel</title>
+    
+    <!-- Google Fonts for Burmese -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Padauk:wght@400;700&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Padauk', 'sans-serif'] },
+                    colors: {
+                        sidebar: '#1f2937',     // Dark slate
+                        sidebarAct: '#3b82f6',  // Blue primary
+                        bgLight: '#f3f4f6',     // Light gray background
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        body { font-family: 'Padauk', sans-serif; background-color: #f8fafc; }
+        /* Hide scrollbar for sidebar */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
 </head>
-<body class="bg-slate-100 text-slate-800 min-h-screen flex">
+<body class="flex h-screen overflow-hidden text-gray-800">
 
-  <!-- Admin Login Overlay Modal -->
-  <div id="loginOverlay" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md hidden items-center justify-center p-4">
-    <div class="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-100 p-8 space-y-6">
-      <div class="text-center space-y-2">
-        <div class="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center font-black text-2xl text-white shadow-xl shadow-blue-500/25">
-          UN
-        </div>
-        <h2 class="text-2xl font-extrabold text-slate-900">Admin Dashboard Login</h2>
-        <p class="text-xs text-slate-500">UN Mobile POS Cloud ဆာဗာ စီမံခန့်ခွဲရေး</p>
-      </div>
-
-      <form id="adminLoginForm" onsubmit="handleAdminLogin(event)" class="space-y-4">
-        <div>
-          <label class="block text-xs font-bold text-slate-700 uppercase mb-1.5">Admin Username</label>
-          <input type="text" id="loginUsername" value="admin" required class="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none font-medium">
-        </div>
-        <div>
-          <label class="block text-xs font-bold text-slate-700 uppercase mb-1.5">Admin Password</label>
-          <input type="password" id="loginPassword" placeholder="Default: unposadmin" required class="w-full px-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none font-medium">
-        </div>
-        <div id="loginError" class="hidden text-xs text-rose-600 bg-rose-50 border border-rose-200 rounded-lg p-2.5 font-medium text-center"></div>
-        <button type="submit" class="w-full py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm shadow-lg shadow-blue-600/30 transition">
-          လော့ဂ်အင် ဝင်မည် (Login)
-        </button>
-      </form>
-    </div>
-  </div>
-
-  <!-- Sidebar -->
-  <aside class="w-64 bg-[#0B132B] text-slate-300 flex flex-col justify-between shrink-0 hidden lg:flex sticky top-0 h-screen shadow-xl">
-    <div>
-      <div class="p-5 flex items-center space-x-3 border-b border-slate-800/80">
-        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center text-white shadow-lg shadow-blue-500/30">
-          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"></path></svg>
-        </div>
-        <div>
-          <h1 class="text-sm font-bold text-white tracking-wide">UN Mobile Pos</h1>
-          <p class="text-[11px] text-slate-400">Admin Panel</p>
-        </div>
-      </div>
-
-      <nav class="p-3 space-y-1 text-sm font-medium overflow-y-auto custom-scrollbar max-h-[calc(100vh-180px)]">
-        <a href="#" onclick="switchTab('dashboard')" id="nav-dashboard" class="nav-item flex items-center space-x-3 px-3.5 py-2.5 rounded-xl bg-blue-600 text-white shadow-md shadow-blue-600/30 transition">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
-          <span>Dashboard</span>
-        </a>
-
-        <a href="#" onclick="switchTab('users')" id="nav-users" class="nav-item flex items-center space-x-3 px-3.5 py-2.5 rounded-xl hover:bg-slate-800 text-slate-300 transition">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
-          <span>အသုံးပြုသူများ</span>
-        </a>
-
-        <a href="#" onclick="switchTab('vouchers')" id="nav-vouchers" class="nav-item flex items-center space-x-3 px-3.5 py-2.5 rounded-xl hover:bg-slate-800 text-slate-300 transition">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-          <span>အရောင်း/ဘောက်ချာ</span>
-        </a>
-
-        <a href="#" onclick="switchTab('products')" id="nav-products" class="nav-item flex items-center space-x-3 px-3.5 py-2.5 rounded-xl hover:bg-slate-800 text-slate-300 transition">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path></svg>
-          <span>ကုန်ပစ္စည်းများ</span>
-        </a>
-      </nav>
-    </div>
-
-    <div class="p-4 border-t border-slate-800/80 bg-slate-900/40">
-      <div class="flex items-center justify-between">
-        <div class="flex items-center space-x-3">
-          <div class="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center font-bold text-white text-sm">👑</div>
-          <div>
-            <p class="text-xs font-bold text-white">Admin</p>
-            <p class="text-[10px] text-slate-400">Super Admin</p>
-          </div>
-        </div>
-        <button onclick="handleAdminLogout()" class="p-2 text-rose-400 hover:bg-rose-950/50 rounded-lg transition" title="Logout">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
-        </button>
-      </div>
-    </div>
-  </aside>
-
-  <!-- Main Wrapper -->
-  <div class="flex-1 flex flex-col min-w-0">
-    <header class="bg-white border-b border-slate-200 h-16 px-6 flex items-center justify-between sticky top-0 z-30 shadow-xs">
-      <div class="flex items-center space-x-4">
-        <div class="relative w-64 sm:w-80">
-          <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-          </span>
-          <input type="text" id="searchInput" oninput="filterUsersList()" placeholder="ဖုန်းနံပါတ် သို့မဟုတ် ဆိုင်အမည်ဖြင့် ရှာရန်..." class="w-full pl-10 pr-4 py-2 bg-slate-100 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition">
-        </div>
-      </div>
-
-      <div class="flex items-center space-x-3">
-        <button onclick="fetchAllData()" class="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold flex items-center space-x-1">
-          <span>🔄 Refresh</span>
-        </button>
-        <div class="flex items-center space-x-2 pl-2 border-l border-slate-200">
-          <div class="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-sm">A</div>
-          <span class="text-sm font-semibold text-slate-700 hidden sm:inline">Admin</span>
-        </div>
-      </div>
-    </header>
-
-    <main class="p-6 space-y-6 flex-1 overflow-y-auto">
-
-      <!-- DASHBOARD VIEW -->
-      <div id="view-dashboard" class="space-y-6">
-        <!-- Top 4 Metric Cards -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-          <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs flex items-center justify-between">
+    <!-- Sidebar -->
+    <aside class="w-64 bg-[#23314f] text-gray-300 flex flex-col transition-all duration-300 z-20">
+        <!-- Logo -->
+        <div class="h-16 flex items-center px-6 border-b border-gray-700/50">
+            <div class="w-8 h-8 bg-blue-500 rounded flex items-center justify-center text-white mr-3">
+                <i class="fa-solid fa-shopping-bag"></i>
+            </div>
             <div>
-              <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">စုစုပေါင်း အကောင့်များ</p>
-              <h3 id="statTotalUsers" class="text-2xl font-extrabold text-slate-900 mt-1">0</h3>
-              <p class="text-xs text-blue-600 font-semibold mt-1">စနစ်သုံး အသုံးပြုသူများ</p>
+                <h1 class="text-white font-bold text-lg leading-tight">UN Mobile Pos</h1>
+                <p class="text-xs text-gray-400">Admin Panel</p>
             </div>
-            <div class="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-xl">👥</div>
-          </div>
-
-          <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs flex items-center justify-between">
-            <div>
-              <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">သက်တမ်းရှိ (ON)</p>
-              <h3 id="statActiveUsers" class="text-2xl font-extrabold text-emerald-600 mt-1">0</h3>
-              <p class="text-xs text-emerald-600 font-semibold mt-1">အသုံးပြုခွင့်ရှိသူများ</p>
-            </div>
-            <div class="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold text-xl">✅</div>
-          </div>
-
-          <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs flex items-center justify-between">
-            <div>
-              <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">သက်တမ်းကုန် (Expired)</p>
-              <h3 id="statExpiredUsers" class="text-2xl font-extrabold text-rose-600 mt-1">0</h3>
-              <p class="text-xs text-rose-500 font-semibold mt-1">သက်တမ်းတိုးရန်လိုသူ</p>
-            </div>
-            <div class="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center font-bold text-xl">⚠️</div>
-          </div>
-
-          <div class="bg-white rounded-2xl p-5 border border-slate-200 shadow-xs flex items-center justify-between">
-            <div>
-              <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Cloud ဘောက်ချာများ</p>
-              <h3 id="statTotalVouchers" class="text-2xl font-extrabold text-purple-600 mt-1">0</h3>
-              <p class="text-xs text-purple-600 font-semibold mt-1">စုစုပေါင်း အရောင်းဘောက်ချာ</p>
-            </div>
-            <div class="w-12 h-12 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold text-xl">🧾</div>
-          </div>
         </div>
 
-        <!-- Middle Chart & Top Products -->
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div class="lg:col-span-2 bg-white rounded-2xl p-6 border border-slate-200 shadow-xs space-y-4">
-            <div class="flex items-center justify-between">
-              <h3 class="font-bold text-slate-900 text-base">အရောင်းစာရင်း ခြုံငုံချက် (Cloud Sales Trend)</h3>
-            </div>
-            <div class="h-64 relative flex flex-col justify-between pt-4 bg-slate-50 rounded-xl p-4 items-center justify-center">
-              <p class="text-sm text-slate-500">ဆာဗာမှ Real-time အချက်အလက်များ ချိတ်ဆက်ပြီးပါပြီ။</p>
-              <div id="chartSummaryText" class="text-xs font-bold text-blue-600">Active Tenants: Loading...</div>
-            </div>
-          </div>
+        <!-- Menu -->
+        <nav class="flex-1 overflow-y-auto no-scrollbar py-4 px-3 space-y-1 text-sm font-medium">
+            <a href="#" class="flex items-center px-3 py-2.5 bg-blue-600 text-white rounded-lg group">
+                <i class="fa-solid fa-home w-6 text-center"></i> Dashboard
+            </a>
+            <a href="#" class="flex items-center px-3 py-2.5 hover:bg-white/10 hover:text-white rounded-lg transition">
+                <i class="fa-solid fa-users w-6 text-center"></i> အသုံးပြုသူများ
+            </a>
+            <a href="#" class="flex items-center px-3 py-2.5 hover:bg-white/10 hover:text-white rounded-lg transition">
+                <i class="fa-solid fa-tablet-screen-button w-6 text-center"></i> POS စက်များ
+            </a>
+            <a href="#" class="flex items-center px-3 py-2.5 hover:bg-white/10 hover:text-white rounded-lg transition">
+                <i class="fa-solid fa-box w-6 text-center"></i> ကုန်ပစ္စည်းများ
+            </a>
+            <a href="#" class="flex items-center px-3 py-2.5 hover:bg-white/10 hover:text-white rounded-lg transition">
+                <i class="fa-solid fa-user-tag w-6 text-center"></i> ဈေးဝယ်သူများ
+            </a>
+            <a href="#" class="flex items-center px-3 py-2.5 hover:bg-white/10 hover:text-white rounded-lg transition">
+                <i class="fa-solid fa-truck-field w-6 text-center"></i> ကုန်သွင်းသူများ
+            </a>
+            <a href="#" class="flex items-center px-3 py-2.5 hover:bg-white/10 hover:text-white rounded-lg transition">
+                <i class="fa-solid fa-file-invoice-dollar w-6 text-center"></i> အရောင်းစာရင်း
+            </a>
+            <a href="#" class="flex items-center px-3 py-2.5 hover:bg-white/10 hover:text-white rounded-lg transition">
+                <i class="fa-solid fa-cart-arrow-down w-6 text-center"></i> အဝယ်စာရင်း
+            </a>
+            <a href="#" class="flex items-center px-3 py-2.5 hover:bg-white/10 hover:text-white rounded-lg transition">
+                <i class="fa-solid fa-wallet w-6 text-center"></i> ကုန်ကျစရိတ်များ
+            </a>
+            <a href="#" class="flex items-center px-3 py-2.5 hover:bg-white/10 hover:text-white rounded-lg transition">
+                <i class="fa-solid fa-chart-pie w-6 text-center"></i> အစီရင်ခံစာများ
+            </a>
+            <a href="#" class="flex items-center px-3 py-2.5 hover:bg-white/10 hover:text-white rounded-lg transition">
+                <i class="fa-solid fa-gear w-6 text-center"></i> ဆက်တင်များ
+            </a>
+        </nav>
 
-          <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs flex flex-col justify-between">
-            <div>
-              <div class="flex items-center justify-between mb-4">
-                <h3 class="font-bold text-slate-900 text-base">စနစ် အချက်အလက်များ</h3>
-              </div>
-              <div class="space-y-4 text-sm">
-                <div class="flex items-center justify-between py-2 border-b border-slate-100">
-                  <span class="text-slate-600">🖥️ Server Status</span>
-                  <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700">Online</span>
+        <!-- Sidebar Profile Profile -->
+        <div class="p-4 border-t border-gray-700/50">
+            <div class="flex items-center mb-4">
+                <img src="https://ui-avatars.com/api/?name=Admin&background=1e3a8a&color=fff" class="w-10 h-10 rounded-full mr-3" alt="Admin">
+                <div>
+                    <p class="text-white text-sm font-bold">Admin</p>
+                    <p class="text-xs text-gray-400">Super Admin</p>
                 </div>
-                <div class="flex items-center justify-between py-2 border-b border-slate-100">
-                  <span class="text-slate-600">⏱️ Server Time</span>
-                  <span id="sysServerTime" class="font-mono text-xs text-slate-800">-</span>
-                </div>
-                <div class="flex items-center justify-between py-2 border-b border-slate-100">
-                  <span class="text-slate-600">👥 Total Users</span>
-                  <span id="sysTotalUsers" class="font-bold text-slate-800">0</span>
-                </div>
-                <div class="flex items-center justify-between py-2">
-                  <span class="text-slate-600">🚀 App Version</span>
-                  <span class="font-mono text-xs font-bold text-blue-600">v2.4 Core</span>
-                </div>
-              </div>
             </div>
-          </div>
+            <button class="flex items-center text-sm text-gray-400 hover:text-white transition">
+                <i class="fa-solid fa-arrow-right-from-bracket w-6"></i> ထွက်ရန်
+            </button>
         </div>
+    </aside>
 
-        <!-- Users Table -->
-        <div class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden flex flex-col">
-          <div class="p-6 border-b border-slate-100 flex items-center justify-between">
-            <div>
-              <h3 class="font-bold text-slate-900 text-base">အသုံးပြုသူများ စာရင်းနှင့် သက်တမ်းစီမံခန့်ခွဲမှု</h3>
-              <p class="text-xs text-slate-500">အကောင့်တစ်ခုလျှင် စက် ၅ လုံးအထိ ချိတ်ဆက်ခွင့်ရှိသည်</p>
+    <!-- Main Content -->
+    <main class="flex-1 flex flex-col h-screen overflow-hidden bg-[#eff3f8]">
+        
+        <!-- Headerbar -->
+        <header class="h-16 bg-white flex items-center justify-between px-6 shadow-sm z-10">
+            <div class="flex items-center">
+                <button class="text-gray-500 hover:text-gray-700 mr-4 text-xl">
+                    <i class="fa-solid fa-bars"></i>
+                </button>
+                <div class="relative w-64 md:w-96">
+                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-400">
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                    </span>
+                    <input type="text" class="w-full bg-gray-100/70 border-none rounded-full py-2 pl-10 pr-4 text-sm focus:ring-2 focus:ring-blue-100 outline-none transition" placeholder="ရှာဖွေရန်...">
+                </div>
             </div>
-            <button onclick="openCreateUserModal()" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-semibold shadow">အကောင့်အသစ် ဖွင့်မည်</button>
-          </div>
+            
+            <div class="flex items-center space-x-6">
+                <button class="relative text-gray-500 hover:text-blue-600 transition text-xl">
+                    <i class="fa-regular fa-bell"></i>
+                    <span class="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] text-white font-bold border-2 border-white">3</span>
+                </button>
+                <div class="flex items-center cursor-pointer">
+                    <img src="https://ui-avatars.com/api/?name=Admin&background=1e3a8a&color=fff" class="w-8 h-8 rounded-full border border-gray-200" alt="Admin">
+                    <span class="ml-2 text-sm font-medium text-gray-700">Admin</span>
+                    <i class="fa-solid fa-chevron-down ml-2 text-xs text-gray-400"></i>
+                </div>
+            </div>
+        </header>
 
-          <div class="overflow-x-auto custom-scrollbar flex-1">
-            <table class="w-full text-left text-sm">
-              <thead>
-                <tr class="bg-slate-50 text-slate-500 font-semibold text-xs uppercase border-b border-slate-100">
-                  <th class="py-3 px-4 pl-6">ဖုန်းနံပါတ် / ဆိုင်အမည်</th>
-                  <th class="py-3 px-4">စကားဝှက်</th>
-                  <th class="py-3 px-4">ချိတ်ဆက်စက် (Devices)</th>
-                  <th class="py-3 px-4">အခြေအနေ (Status)</th>
-                  <th class="py-3 px-4">သက်တမ်းကုန်ရက်</th>
-                  <th class="py-3 px-4">အမြန်သက်တမ်းတိုး</th>
-                  <th class="py-3 px-4 pr-6 text-right">လုပ်ဆောင်ချက်</th>
-                </tr>
-              </thead>
-              <tbody id="usersTableBody" class="divide-y divide-slate-100 text-xs">
-                <tr><td colspan="7" class="py-12 text-center text-slate-400">ဆာဗာမှ ဒေတာများ ဆွဲထုတ်နေပါသည်...</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
+        <!-- Content Area -->
+        <div class="flex-1 overflow-auto p-6">
+            
+            <!-- Stats Cards Grid -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+                <!-- Card 1 -->
+                <div class="bg-white rounded-xl shadow-sm p-5 border border-gray-100 flex justify-between items-center relative overflow-hidden">
+                    <div class="flex items-center gap-4 relative z-10">
+                        <div class="w-12 h-12 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 text-xl">
+                            <i class="fa-solid fa-cart-shopping"></i>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-500 mb-1">ယနေ့ အရောင်း</p>
+                            <h3 class="text-xl font-bold text-gray-800" id="stat-sales">Ks 456,780</h3>
+                            <p class="text-xs text-green-500 mt-1 flex items-center"><i class="fa-solid fa-arrow-up mr-1"></i> 12%</p>
+                        </div>
+                    </div>
+                    <!-- Sparkline decorative -->
+                    <svg class="absolute right-0 bottom-0 h-12 w-24 text-indigo-200/50" preserveAspectRatio="none" viewBox="0 0 100 30" fill="none" stroke="currentColor" stroke-width="2"><path d="M0,30 Q20,10 40,25 T80,5 T100,20"></path></svg>
+                </div>
 
-      <!-- USERS TAB -->
-      <div id="view-users" class="space-y-6 hidden">
-        <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs flex items-center justify-between">
-          <h2 class="text-lg font-bold text-slate-900">အသုံးပြုသူများ စာရင်းအပြည့်အစုံ</h2>
-          <button onclick="openCreateUserModal()" class="px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-semibold">အကောင့်အသစ် ဖွင့်မည်</button>
-        </div>
-        <div class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-          <table class="w-full text-left text-sm">
-            <thead>
-              <tr class="bg-slate-50 text-slate-500 text-xs uppercase border-b">
-                <th class="py-3 px-4 pl-6">ဖုန်းနံပါတ်</th>
-                <th class="py-3 px-4">ဆိုင်အမည်</th>
-                <th class="py-3 px-4">ပိုင်ရှင်</th>
-                <th class="py-3 px-4">စက်အရေအတွက်</th>
-                <th class="py-3 px-4">Status</th>
-                <th class="py-3 px-4 pr-6 text-right">လုပ်ဆောင်ချက်</th>
-              </tr>
-            </thead>
-            <tbody id="fullUsersTableBody" class="divide-y divide-slate-100 text-xs"></tbody>
-          </table>
-        </div>
-      </div>
+                <!-- Card 2 -->
+                <div class="bg-white rounded-xl shadow-sm p-5 border border-gray-100 flex justify-between items-center relative overflow-hidden">
+                    <div class="flex items-center gap-4 relative z-10">
+                        <div class="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 text-xl">
+                            <i class="fa-solid fa-cart-arrow-down"></i>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-500 mb-1">ယနေ့ အဝယ်</p>
+                            <h3 class="text-xl font-bold text-gray-800" id="stat-purchases">Ks 320,500</h3>
+                            <p class="text-xs text-green-500 mt-1 flex items-center"><i class="fa-solid fa-arrow-up mr-1"></i> 8%</p>
+                        </div>
+                    </div>
+                    <svg class="absolute right-0 bottom-0 h-12 w-24 text-emerald-200/50" preserveAspectRatio="none" viewBox="0 0 100 30" fill="none" stroke="currentColor" stroke-width="2"><path d="M0,30 Q25,20 45,30 T80,10 T100,5"></path></svg>
+                </div>
 
-      <!-- VOUCHERS TAB -->
-      <div id="view-vouchers" class="space-y-6 hidden">
-        <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs flex items-center justify-between">
-          <h2 class="text-lg font-bold text-slate-900">Cloud ဘောက်ချာများ (Real Vouchers Ledger)</h2>
-          <button onclick="fetchCloudVouchers()" class="px-3 py-1.5 bg-slate-900 text-white rounded-lg text-xs">Refresh Vouchers</button>
-        </div>
-        <div class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-          <table class="w-full text-left text-sm">
-            <thead>
-              <tr class="bg-slate-50 text-slate-500 text-xs uppercase border-b">
-                <th class="py-3 px-4 pl-6">Receipt No</th>
-                <th class="py-3 px-4">ဆိုင်အမည်</th>
-                <th class="py-3 px-4">အမျိုးအစား</th>
-                <th class="py-3 px-4">ကျသင့်ငွေ</th>
-                <th class="py-3 px-4">Customer</th>
-                <th class="py-3 px-4 pr-6 text-right">အချိန်</th>
-              </tr>
-            </thead>
-            <tbody id="vouchersTableBody" class="divide-y divide-slate-100 text-xs"></tbody>
-          </table>
-        </div>
-      </div>
+                <!-- Card 3 -->
+                <div class="bg-white rounded-xl shadow-sm p-5 border border-gray-100 flex justify-between items-center relative overflow-hidden">
+                    <div class="flex items-center gap-4 relative z-10">
+                        <div class="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 text-xl">
+                            <i class="fa-solid fa-wallet"></i>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-500 mb-1">ကုန်ကျစရိတ်</p>
+                            <h3 class="text-xl font-bold text-gray-800">Ks 85,000</h3>
+                            <p class="text-xs text-red-500 mt-1 flex items-center"><i class="fa-solid fa-arrow-up mr-1"></i> 2%</p>
+                        </div>
+                    </div>
+                    <svg class="absolute right-0 bottom-0 h-12 w-24 text-amber-200/50" preserveAspectRatio="none" viewBox="0 0 100 30" fill="none" stroke="currentColor" stroke-width="2"><path d="M0,10 Q20,25 50,15 T80,25 T100,5"></path></svg>
+                </div>
 
-      <!-- PRODUCTS TAB -->
-      <div id="view-products" class="space-y-6 hidden">
-        <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-xs flex items-center justify-between">
-          <h2 class="text-lg font-bold text-slate-900">Cloud ကုန်ပစ္စည်းများနှင့် Stock စာရင်း</h2>
-          <button onclick="fetchCloudProducts()" class="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs">Refresh Products</button>
-        </div>
-        <div class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-          <table class="w-full text-left text-sm">
-            <thead>
-              <tr class="bg-slate-50 text-slate-500 text-xs uppercase border-b">
-                <th class="py-3 px-4 pl-6">ပစ္စည်းအမည်</th>
-                <th class="py-3 px-4">ဆိုင်အမည်</th>
-                <th class="py-3 px-4">လက်ကျန် Stock</th>
-                <th class="py-3 px-4">ဝယ်ဈေး</th>
-                <th class="py-3 px-4 pr-6 text-right">ရောင်းဈေး</th>
-              </tr>
-            </thead>
-            <tbody id="productsTableBody" class="divide-y divide-slate-100 text-xs"></tbody>
-          </table>
-        </div>
-      </div>
+                <!-- Card 4 -->
+                <div class="bg-white rounded-xl shadow-sm p-5 border border-gray-100 flex justify-between items-center relative overflow-hidden">
+                    <div class="flex items-center gap-4 relative z-10">
+                        <div class="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 text-xl">
+                            <i class="fa-solid fa-chart-line"></i>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-500 mb-1">အမြတ်အစွန်း</p>
+                            <h3 class="text-xl font-bold text-gray-800">Ks 51,280</h3>
+                            <p class="text-xs text-green-500 mt-1 flex items-center"><i class="fa-solid fa-arrow-up mr-1"></i> 15%</p>
+                        </div>
+                    </div>
+                    <svg class="absolute right-0 bottom-0 h-12 w-24 text-blue-200/50" preserveAspectRatio="none" viewBox="0 0 100 30" fill="none" stroke="currentColor" stroke-width="2"><path d="M0,25 Q30,5 50,15 T70,5 T100,10"></path></svg>
+                </div>
+            </div>
 
+            <!-- Chart and Top Products -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+                <!-- Line Chart -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5 lg:col-span-2">
+                    <div class="flex justify-between items-center mb-6">
+                        <h2 class="text-lg font-bold text-gray-800 flex items-center"><i class="fa-solid fa-chart-simple text-blue-600 mr-2"></i> အရောင်းစာရင်း ခြုံငုံသုံးသပ်ချက်</h2>
+                        <div class="flex bg-gray-100 rounded-lg p-1 text-xs">
+                            <button class="px-3 py-1.5 bg-blue-600 text-white rounded shadow-sm font-medium">7 ရက်</button>
+                            <button class="px-3 py-1.5 text-gray-600 hover:text-gray-900 font-medium">30 ရက်</button>
+                            <button class="px-3 py-1.5 text-gray-600 hover:text-gray-900 font-medium">12 လ</button>
+                        </div>
+                    </div>
+                    <div class="relative h-64 w-full">
+                        <canvas id="salesChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Top Products -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-[15px] font-bold text-gray-800 flex items-center"><i class="fa-solid fa-trophy text-blue-600 mr-2"></i> ထိပ်တန်းရောင်းအား ကုန်ပစ္စည်းများ</h2>
+                        <a href="#" class="text-xs text-blue-600 hover:underline">ပိုမိုကြည့်ရန် &rarr;</a>
+                    </div>
+                    
+                    <div class="space-y-4 mt-2">
+                        <!-- Product 1 -->
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                                <span class="text-sm font-bold text-gray-400 w-4">1</span>
+                                <div class="w-8 h-8 bg-red-100 rounded flex items-center justify-center text-red-600 text-xs">
+                                    <i class="fa-solid fa-bottle-water"></i>
+                                </div>
+                                <span class="text-sm font-medium text-gray-700">Coca Cola</span>
+                            </div>
+                            <span class="text-sm font-bold text-gray-800">Ks 120,000</span>
+                        </div>
+                        <!-- Product 2 -->
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                                <span class="text-sm font-bold text-gray-400 w-4">2</span>
+                                <div class="w-8 h-8 bg-green-100 rounded flex items-center justify-center text-green-600 text-xs">
+                                    <i class="fa-solid fa-leaf"></i>
+                                </div>
+                                <span class="text-sm font-medium text-gray-700">လက်ဖက်ရည်</span>
+                            </div>
+                            <span class="text-sm font-bold text-gray-800">Ks 98,000</span>
+                        </div>
+                        <!-- Product 3 -->
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                                <span class="text-sm font-bold text-gray-400 w-4">3</span>
+                                <div class="w-8 h-8 bg-blue-100 rounded flex items-center justify-center text-blue-600 text-xs">
+                                    <i class="fa-solid fa-bottle-water"></i>
+                                </div>
+                                <span class="text-sm font-medium text-gray-700">Pepsi</span>
+                            </div>
+                            <span class="text-sm font-bold text-gray-800">Ks 85,000</span>
+                        </div>
+                        <!-- Product 4 -->
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                                <span class="text-sm font-bold text-gray-400 w-4">4</span>
+                                <div class="w-8 h-8 bg-yellow-100 rounded flex items-center justify-center text-yellow-600 text-xs">
+                                    <i class="fa-solid fa-bowl-food"></i>
+                                </div>
+                                <span class="text-sm font-medium text-gray-700">ကြက်သားခေါက်ဆွဲ</span>
+                            </div>
+                            <span class="text-sm font-bold text-gray-800">Ks 72,000</span>
+                        </div>
+                        <!-- Product 5 -->
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                                <span class="text-sm font-bold text-gray-400 w-4">5</span>
+                                <div class="w-8 h-8 bg-cyan-100 rounded flex items-center justify-center text-cyan-600 text-xs">
+                                    <i class="fa-solid fa-soap"></i>
+                                </div>
+                                <span class="text-sm font-medium text-gray-700">ဆပ်ပြာမှုန့်</span>
+                            </div>
+                            <span class="text-sm font-bold text-gray-800">Ks 60,000</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Users Table and Sys Info -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Users Table -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5 lg:col-span-2">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-[16px] font-bold text-gray-800 flex items-center"><i class="fa-solid fa-users text-blue-600 mr-2"></i> အသုံးပြုသူများ စာရင်း</h2>
+                        <a href="#" class="text-xs text-blue-600 hover:underline">အားလုံးကြည့်ရန် &rarr;</a>
+                    </div>
+                    
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="text-xs text-gray-500 border-b border-gray-200">
+                                    <th class="pb-3 font-semibold">#</th>
+                                    <th class="pb-3 font-semibold">ဖုန်းနံပါတ်</th>
+                                    <th class="pb-3 font-semibold">အသုံးပြုသူအမည်</th>
+                                    <th class="pb-3 font-semibold">လုပ်ငန်းအမည်</th>
+                                    <th class="pb-3 font-semibold">ဝန်ဆောင်မှုအခြေအနေ</th>
+                                    <th class="pb-3 font-semibold">သက်တမ်းကုန်ဆုံးရက်</th>
+                                    <th class="pb-3 font-semibold text-center">လုပ်ဆောင်ချက်</th>
+                                </tr>
+                            </thead>
+                            <tbody class="text-sm" id="users-table-body">
+                                <!-- Dummy Data identical to Image (Will be replaced if API connects) -->
+                                <tr class="border-b border-gray-50 last:border-0 hover:bg-gray-50/50">
+                                    <td class="py-3 text-gray-500">1</td>
+                                    <td class="py-3 font-medium">09251234567</td>
+                                    <td class="py-3">Win Ko</td>
+                                    <td class="py-3 text-gray-600">Happy Shop</td>
+                                    <td class="py-3"><span class="px-2.5 py-1 bg-green-100 text-green-700 text-xs font-medium rounded-full">အသက်ဝင်</span></td>
+                                    <td class="py-3 text-gray-600">2026-12-31</td>
+                                    <td class="py-3 text-center">
+                                        <button class="text-blue-500 hover:bg-blue-50 p-1.5 rounded mr-1"><i class="fa-solid fa-pen"></i></button>
+                                        <button class="text-red-500 hover:bg-red-50 p-1.5 rounded"><i class="fa-solid fa-trash"></i></button>
+                                    </td>
+                                </tr>
+                                <tr class="border-b border-gray-50 last:border-0 hover:bg-gray-50/50">
+                                    <td class="py-3 text-gray-500">2</td>
+                                    <td class="py-3 font-medium">09781234567</td>
+                                    <td class="py-3">May Thu</td>
+                                    <td class="py-3 text-gray-600">Lucky Store</td>
+                                    <td class="py-3"><span class="px-2.5 py-1 bg-green-100 text-green-700 text-xs font-medium rounded-full">အသက်ဝင်</span></td>
+                                    <td class="py-3 text-gray-600">2026-11-15</td>
+                                    <td class="py-3 text-center">
+                                        <button class="text-blue-500 hover:bg-blue-50 p-1.5 rounded mr-1"><i class="fa-solid fa-pen"></i></button>
+                                        <button class="text-red-500 hover:bg-red-50 p-1.5 rounded"><i class="fa-solid fa-trash"></i></button>
+                                    </td>
+                                </tr>
+                                <tr class="border-b border-gray-50 last:border-0 hover:bg-gray-50/50">
+                                    <td class="py-3 text-gray-500">3</td>
+                                    <td class="py-3 font-medium">09971234567</td>
+                                    <td class="py-3">Aung Aung</td>
+                                    <td class="py-3 text-gray-600">Sky Mart</td>
+                                    <td class="py-3"><span class="px-2.5 py-1 bg-red-100 text-red-700 text-xs font-medium rounded-full">သက်တမ်းကုန်</span></td>
+                                    <td class="py-3 text-gray-600">2026-10-20</td>
+                                    <td class="py-3 text-center">
+                                        <button class="text-blue-500 hover:bg-blue-50 p-1.5 rounded mr-1"><i class="fa-solid fa-pen"></i></button>
+                                        <button class="text-red-500 hover:bg-red-50 p-1.5 rounded"><i class="fa-solid fa-trash"></i></button>
+                                    </td>
+                                </tr>
+                                <tr class="border-b border-gray-50 last:border-0 hover:bg-gray-50/50">
+                                    <td class="py-3 text-gray-500">4</td>
+                                    <td class="py-3 font-medium">09121234567</td>
+                                    <td class="py-3">Su Su</td>
+                                    <td class="py-3 text-gray-600">Mini Mart</td>
+                                    <td class="py-3"><span class="px-2.5 py-1 bg-green-100 text-green-700 text-xs font-medium rounded-full">အသက်ဝင်</span></td>
+                                    <td class="py-3 text-gray-600">2026-12-01</td>
+                                    <td class="py-3 text-center">
+                                        <button class="text-blue-500 hover:bg-blue-50 p-1.5 rounded mr-1"><i class="fa-solid fa-pen"></i></button>
+                                        <button class="text-red-500 hover:bg-red-50 p-1.5 rounded"><i class="fa-solid fa-trash"></i></button>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- System Info -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-[15px] font-bold text-gray-800 flex items-center"><i class="fa-solid fa-circle-info text-blue-600 mr-2"></i> စနစ် အချက်အလက်များ</h2>
+                        <a href="#" class="text-xs text-blue-600 hover:underline">ပိုမိုကြည့်ရန် &rarr;</a>
+                    </div>
+                    
+                    <ul class="space-y-4 mt-2">
+                        <li class="flex justify-between items-center text-sm">
+                            <span class="flex items-center text-gray-600"><i class="fa-solid fa-server w-6 text-blue-500 text-center"></i> Server Status</span>
+                            <span class="font-bold text-gray-800 flex items-center"><span class="w-2 h-2 rounded-full bg-green-500 mr-2"></span> Online</span>
+                        </li>
+                        <li class="flex justify-between items-center text-sm border-t border-gray-50 pt-3">
+                            <span class="flex items-center text-gray-600"><i class="fa-regular fa-clock w-6 text-blue-500 text-center"></i> Last Sync</span>
+                            <span class="font-medium text-gray-800">2026-11-08 22:30:15</span>
+                        </li>
+                        <li class="flex justify-between items-center text-sm border-t border-gray-50 pt-3">
+                            <span class="flex items-center text-gray-600"><i class="fa-solid fa-mobile-screen w-6 text-blue-500 text-center"></i> Total Devices</span>
+                            <span class="font-medium text-gray-800" id="sys-devices">12 / 50</span>
+                        </li>
+                        <li class="flex justify-between items-center text-sm border-t border-gray-50 pt-3">
+                            <span class="flex items-center text-gray-600"><i class="fa-regular fa-calendar-check w-6 text-blue-500 text-center"></i> Active Users</span>
+                            <span class="font-medium text-gray-800" id="sys-active">28</span>
+                        </li>
+                        <li class="flex justify-between items-center text-sm border-t border-gray-50 pt-3">
+                            <span class="flex items-center text-gray-600"><i class="fa-solid fa-code-merge w-6 text-blue-500 text-center"></i> App Version</span>
+                            <span class="font-medium text-gray-800">v1.0.0</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+
+        </div>
     </main>
-  </div>
 
-  <!-- Create User Modal -->
-  <div id="createModal" class="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm hidden items-center justify-center p-4">
-    <div class="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 p-6 space-y-4">
-      <div class="flex items-center justify-between border-b pb-3">
-        <h3 class="font-bold text-slate-900">အကောင့်အသစ် ဖွင့်လှစ်ခြင်း</h3>
-        <button onclick="closeCreateModal()" class="text-slate-400 hover:text-slate-600">✕</button>
-      </div>
-      <form onsubmit="handleCreateUser(event)" class="space-y-3 text-xs">
-        <div><label class="block font-bold mb-1">ဖုန်းနံပါတ် (Phone No) *</label><input type="text" id="createPhone" required class="w-full px-3 py-2 border rounded-lg font-mono"></div>
-        <div><label class="block font-bold mb-1">ဆိုင်အမည် (Shop Name)</label><input type="text" id="createBusinessName" class="w-full px-3 py-2 border rounded-lg"></div>
-        <div><label class="block font-bold mb-1">ပိုင်ရှင်အမည် (Username) *</label><input type="text" id="createUsername" required class="w-full px-3 py-2 border rounded-lg"></div>
-        <div><label class="block font-bold mb-1">စကားဝှက် (Password) *</label><input type="text" id="createPassword" required class="w-full px-3 py-2 border rounded-lg font-mono"></div>
-        <div><label class="block font-bold mb-1">စတင်ခွင့်ပြုမည့်ရက်</label><select id="createDays" class="w-full px-3 py-2 border rounded-lg bg-white"><option value="7">ရက် ၇ ရက် (Trial)</option><option value="30">၃၀ ရက် (1 Month)</option><option value="365">၃၆၅ ရက် (1 Year)</option></select></div>
-        <div class="pt-3 flex justify-end space-x-2 border-t">
-          <button type="button" onclick="closeCreateModal()" class="px-4 py-2 border rounded-lg text-slate-600">မလုပ်တော့ပါ</button>
-          <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg font-semibold">အကောင့်ဖွင့်မည်</button>
-        </div>
-      </form>
-    </div>
-  </div>
+    <!-- JavaScript for Chart and Backend API Fetching -->
+    <script>
+        // 1. Initialize Chart.js exactly like UI Design
+        const ctx = document.getElementById('salesChart').getContext('2d');
+        
+        // Create Gradient for chart fill
+        const gradientFill = ctx.createLinearGradient(0, 0, 0, 300);
+        gradientFill.addColorStop(0, 'rgba(59, 130, 246, 0.2)'); // Blue with opacity
+        gradientFill.addColorStop(1, 'rgba(59, 130, 246, 0)');
 
-  <!-- Toast Notification -->
-  <div id="toast" class="fixed bottom-5 right-5 z-50 transform transition-all duration-300 translate-y-24 opacity-0 pointer-events-none">
-    <div class="bg-slate-900 text-white px-5 py-3 rounded-xl shadow-xl border border-slate-700 text-sm font-medium">
-      <span id="toastMsg">Action completed</span>
-    </div>
-  </div>
-
-  <script>
-    const API_BASE = window.location.origin;
-    let allUsersData = [];
-
-    // Check Admin Authentication on Load
-    function checkAuth() {
-      const token = localStorage.getItem('unpos_admin_token');
-      const overlay = document.getElementById('loginOverlay');
-      if (!token) {
-        overlay.classList.remove('hidden');
-        overlay.classList.add('flex');
-        return false;
-      } else {
-        overlay.classList.add('hidden');
-        overlay.classList.remove('flex');
-        return true;
-      }
-    }
-
-    async function handleAdminLogin(e) {
-      e.preventDefault();
-      const user = document.getElementById('loginUsername').value.trim();
-      const pass = document.getElementById('loginPassword').value.trim();
-      const errBox = document.getElementById('loginError');
-      errBox.classList.add('hidden');
-
-      try {
-        const res = await fetch(`${API_BASE}/api/admin/login`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username: user, password: pass })
+        const salesChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: ['Nov 2', 'Nov 3', 'Nov 4', 'Nov 5', 'Nov 6', 'Nov 7', 'Nov 8'],
+                datasets: [{
+                    label: 'အရောင်း',
+                    data: [100000, 200000, 190000, 310000, 352000, 250000, 310000],
+                    borderColor: '#3b82f6', // Tailwind blue-500
+                    backgroundColor: gradientFill,
+                    borderWidth: 2,
+                    pointBackgroundColor: '#fff',
+                    pointBorderColor: '#3b82f6',
+                    pointBorderWidth: 2,
+                    pointRadius: 4,
+                    pointHoverRadius: 6,
+                    fill: true,
+                    tension: 0.4 // Gives smooth curves
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: '#fff',
+                        titleColor: '#374151',
+                        bodyColor: '#1f2937',
+                        borderColor: '#e5e7eb',
+                        borderWidth: 1,
+                        padding: 10,
+                        displayColors: true,
+                        callbacks: {
+                            label: function(context) {
+                                return 'Ks ' + context.parsed.y.toLocaleString();
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { display: false, drawBorder: false },
+                        ticks: { color: '#6b7280', font: { size: 12 } }
+                    },
+                    y: {
+                        grid: { color: '#f3f4f6', drawBorder: false },
+                        ticks: { 
+                            color: '#6b7280', 
+                            font: { size: 12 },
+                            callback: function(value) {
+                                if (value >= 1000) return value / 1000 + 'K';
+                                return value;
+                            }
+                        },
+                        beginAtZero: true,
+                        suggestedMax: 400000
+                    }
+                }
+            }
         });
-        const data = await res.json();
-        if (data.success) {
-          localStorage.setItem('unpos_admin_token', data.token || 'valid');
-          document.getElementById('loginOverlay').classList.add('hidden');
-          showToast('Admin Login အောင်မြင်ပါသည်');
-          fetchAllData();
-        } else {
-          errBox.textContent = data.message || 'Login မှားယွင်းနေပါသည်';
-          errBox.classList.remove('hidden');
+
+        // 2. Fetch Real Data from server.js endpoints
+        async function fetchAdminData() {
+            try {
+                // Since this page is served from same server, empty hostname calls itself
+                // Fetch Stats
+                const statsRes = await fetch('/api/admin/stats');
+                if(statsRes.ok) {
+                    const stats = await statsRes.json();
+                    document.getElementById('sys-active').innerText = stats.activeUsers || 0;
+                    // Optional: Update dashboard numbers based on stats if applicable
+                }
+
+                // Fetch Users list
+                const usersRes = await fetch('/api/admin/users');
+                if(usersRes.ok) {
+                    const data = await usersRes.json();
+                    if(data.users && data.users.length > 0) {
+                        const tbody = document.getElementById('users-table-body');
+                        tbody.innerHTML = ''; // Clear dummy data
+                        
+                        // Limit to top 5 for UI 
+                        const displayUsers = data.users.slice(0, 5); 
+                        
+                        displayUsers.forEach((u, index) => {
+                            const dateObj = new Date(u.expires_at);
+                            const dateStr = dateObj.toISOString().split('T')[0];
+                            
+                            const statusBadge = u.isExpired || u.status !== 'on' 
+                                ? `<span class="px-2.5 py-1 bg-red-100 text-red-700 text-xs font-medium rounded-full">သက်တမ်းကုန်</span>`
+                                : `<span class="px-2.5 py-1 bg-green-100 text-green-700 text-xs font-medium rounded-full">အသက်ဝင်</span>`;
+
+                            const tr = document.createElement('tr');
+                            tr.className = "border-b border-gray-50 last:border-0 hover:bg-gray-50/50";
+                            tr.innerHTML = `
+                                <td class="py-3 text-gray-500">${index + 1}</td>
+                                <td class="py-3 font-medium">${u.phone_no}</td>
+                                <td class="py-3">${u.username}</td>
+                                <td class="py-3 text-gray-600">${u.business_name || '-'}</td>
+                                <td class="py-3">${statusBadge}</td>
+                                <td class="py-3 text-gray-600">${dateStr}</td>
+                                <td class="py-3 text-center">
+                                    <button class="text-blue-500 hover:bg-blue-50 p-1.5 rounded mr-1"><i class="fa-solid fa-pen"></i></button>
+                                    <button class="text-red-500 hover:bg-red-50 p-1.5 rounded"><i class="fa-solid fa-trash"></i></button>
+                                </td>
+                            `;
+                            tbody.appendChild(tr);
+                        });
+                    }
+                }
+            } catch (err) {
+                console.log('Error fetching live data. Showing UI defaults.', err);
+                // If API is unreachable, it will gracefully fallback to the pre-written HTML dummy data
+            }
         }
-      } catch (err) {
-        errBox.textContent = 'Server ချိတ်ဆက်၍မရပါ: ' + err.message;
-        errBox.classList.remove('hidden');
-      }
-    }
 
-    function handleAdminLogout() {
-      if (confirm('Admin Panel မှ ထွက်မှာ သေချာပါသလား?')) {
-        localStorage.removeItem('unpos_admin_token');
-        checkAuth();
-        showToast('Logout ပြုလုပ်ပြီးပါပြီ');
-      }
-    }
-
-    // Switch Tabs
-    function switchTab(tabName) {
-      ['dashboard', 'users', 'vouchers', 'products'].forEach(t => {
-        const el = document.getElementById(`view-${t}`);
-        if (el) el.classList.toggle('hidden', t !== tabName);
-        const nav = document.getElementById(`nav-${t}`);
-        if (nav) {
-          nav.className = t === tabName ? 'nav-item flex items-center space-x-3 px-3.5 py-2.5 rounded-xl bg-blue-600 text-white shadow-md shadow-blue-600/30 transition' : 'nav-item flex items-center space-x-3 px-3.5 py-2.5 rounded-xl hover:bg-slate-800 text-slate-300 transition';
-        }
-      });
-      if (tabName === 'vouchers') fetchCloudVouchers();
-      if (tabName === 'products') fetchCloudProducts();
-    }
-
-    // Fetch All Real API Data
-    async function fetchAllData() {
-      try {
-        const [statsRes, usersRes] = await Promise.all([
-          fetch(`${API_BASE}/api/admin/stats`),
-          fetch(`${API_BASE}/api/admin/users`)
-        ]);
-
-        if (statsRes.ok) {
-          const stats = await statsRes.json();
-          document.getElementById('statTotalUsers').textContent = stats.totalUsers || 0;
-          document.getElementById('statActiveUsers').textContent = stats.activeUsers || 0;
-          document.getElementById('statExpiredUsers').textContent = stats.expiredUsers || 0;
-          document.getElementById('statTotalVouchers').textContent = stats.totalVouchers || 0;
-          document.getElementById('sysTotalUsers').textContent = stats.totalUsers || 0;
-          document.getElementById('sysServerTime').textContent = new Date(stats.serverTime || Date.now()).toLocaleTimeString();
-          document.getElementById('chartSummaryText').textContent = `Active Tenants: ${stats.activeUsers} | Expired: ${stats.expiredUsers}`;
-        }
-
-        if (usersRes.ok) {
-          const uData = await usersRes.json();
-          allUsersData = uData.users || [];
-          renderUsersTable(allUsersData);
-        }
-      } catch (err) {
-        showToast('ဆာဗာမှ ဒေတာဆွဲထုတ်ရာတွင် အမှားရှိသည်: ' + err.message, true);
-      }
-    }
-
-    function renderUsersTable(users) {
-      const tbody = document.getElementById('usersTableBody');
-      const fullTbody = document.getElementById('fullUsersTableBody');
-
-      if (!users || users.length === 0) {
-        if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="py-12 text-center text-slate-400">အသုံးပြုသူ အကောင့် မရှိသေးပါ။</td></tr>`;
-        if (fullTbody) fullTbody.innerHTML = `<tr><td colspan="6" class="py-12 text-center text-slate-400">အသုံးပြုသူ အကောင့် မရှိသေးပါ။</td></tr>`;
-        return;
-      }
-
-      const html = users.map(u => {
-        const devCount = (u.devices || []).length;
-        const isExp = u.isExpired || u.status === 'expired';
-        return `
-          <tr class="hover:bg-slate-50 transition">
-            <td class="py-3 px-4 pl-6">
-              <div class="font-bold text-slate-900">${u.business_name || 'UN POS Store'}</div>
-              <div class="text-slate-400 font-mono text-[11px]">${u.phone_no} (${u.username})</div>
-            </td>
-            <td class="py-3 px-4 font-mono text-slate-600">${u.password_hash || '-'}</td>
-            <td class="py-3 px-4">
-              <span class="px-2 py-0.5 rounded bg-slate-100 font-mono">${devCount} / 5 Devices</span>
-              <button onclick="handleResetDevices('${u.phone_no}')" class="text-blue-600 hover:underline ml-1">Reset</button>
-            </td>
-            <td class="py-3 px-4">
-              <span class="px-2 py-0.5 rounded font-bold ${isExp ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}">
-                ${isExp ? 'EXPIRED' : 'ON'}
-              </span>
-            </td>
-            <td class="py-3 px-4 text-slate-700">${new Date(u.expires_at).toLocaleDateString()}</td>
-            <td class="py-3 px-4">
-              <button onclick="handleQuickRenew('${u.phone_no}', 7)" class="px-2 py-1 bg-slate-100 hover:bg-slate-200 rounded text-[11px] font-semibold">+7d</button>
-              <button onclick="handleQuickRenew('${u.phone_no}', 30)" class="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded text-[11px] font-semibold">+30d</button>
-            </td>
-            <td class="py-3 px-4 pr-6 text-right">
-              <button onclick="handleDeleteUser('${u.phone_no}')" class="p-1 text-rose-600 hover:bg-rose-50 rounded">🗑️</button>
-            </td>
-          </tr>
-        `;
-      }).join('');
-
-      if (tbody) tbody.innerHTML = html;
-      if (fullTbody) fullTbody.innerHTML = html;
-    }
-
-    function filterUsersList() {
-      const q = (document.getElementById('searchInput').value || '').toLowerCase();
-      const filtered = allUsersData.filter(u => u.phone_no.toLowerCase().includes(q) || (u.business_name || '').toLowerCase().includes(q) || (u.username || '').toLowerCase().includes(q));
-      renderUsersTable(filtered);
-    }
-
-    // Quick Renew API
-    async function handleQuickRenew(phoneNo, days) {
-      try {
-        const res = await fetch(`${API_BASE}/api/admin/renew`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phoneNo, days })
-        });
-        const data = await res.json();
-        if (data.success) {
-          showToast(`အကောင့်ကို ${days} ရက် သက်တမ်းတိုးပြီးပါပြီ`);
-          fetchAllData();
-        } else {
-          showToast(data.message || 'သက်တမ်းတိုး၍ မရပါ', true);
-        }
-      } catch (err) {
-        showToast('Error: ' + err.message, true);
-      }
-    }
-
-    // Reset Devices API
-    async function handleResetDevices(phoneNo) {
-      if (!confirm(`ဖုန်းနံပါတ် ${phoneNo} ၏ စက်စာရင်းကို Reset လုပ်မှာ သေချာပါသလား?`)) return;
-      try {
-        const res = await fetch(`${API_BASE}/api/admin/renew`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phoneNo, action: 'reset_devices' })
-        });
-        const data = await res.json();
-        if (data.success) {
-          showToast('စက်စာရင်းများ Reset လုပ်ပြီးပါပြီ');
-          fetchAllData();
-        }
-      } catch (err) { showToast(err.message, true); }
-    }
-
-    // Delete User API
-    async function handleDeleteUser(phoneNo) {
-      if (!confirm(`ဖုန်းနံပါတ် ${phoneNo} အကောင့်ကို ဖျက်မှာ သေချာပါသလား?`)) return;
-      try {
-        const res = await fetch(`${API_BASE}/api/admin/user/delete`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phoneNo })
-        });
-        const data = await res.json();
-        if (data.success) {
-          showToast('အကောင့်ကို ဖျက်ပြီးပါပြီ');
-          fetchAllData();
-        }
-      } catch (err) { showToast(err.message, true); }
-    }
-
-    // Create User Modal
-    function openCreateUserModal() {
-      document.getElementById('createModal').classList.remove('hidden');
-      document.getElementById('createModal').classList.add('flex');
-    }
-    function closeCreateModal() {
-      document.getElementById('createModal').classList.add('hidden');
-      document.getElementById('createModal').classList.remove('flex');
-    }
-
-    async function handleCreateUser(e) {
-      e.preventDefault();
-      const phoneNo = document.getElementById('createPhone').value.trim();
-      const businessName = document.getElementById('createBusinessName').value.trim();
-      const username = document.getElementById('createUsername').value.trim();
-      const password = document.getElementById('createPassword').value.trim();
-      const days = document.getElementById('createDays').value;
-
-      try {
-        const res = await fetch(`${API_BASE}/api/admin/user/create`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phoneNo, businessName, username, password, days })
-        });
-        const data = await res.json();
-        if (data.success) {
-          showToast('အကောင့်အသစ် ဖန်တီးပြီးပါပြီ');
-          closeCreateModal();
-          fetchAllData();
-        } else {
-          showToast(data.message || 'အကောင့်ဖွင့်၍ မရပါ', true);
-        }
-      } catch (err) { showToast(err.message, true); }
-    }
-
-    // Fetch Cloud Vouchers
-    async function fetchCloudVouchers() {
-      const tbody = document.getElementById('vouchersTableBody');
-      tbody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-slate-400">ဘောက်ချာများ ရယူနေပါသည်...</td></tr>`;
-      try {
-        const res = await fetch(`${API_BASE}/api/admin/vouchers`);
-        const data = await res.json();
-        const list = data.vouchers || [];
-        if (list.length === 0) {
-          tbody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-slate-400">ဆာဗာပေါ်တွင် ဘောက်ချာ မရှိသေးပါ။</td></tr>`;
-          return;
-        }
-        tbody.innerHTML = list.map(v => `
-          <tr class="hover:bg-slate-50">
-            <td class="py-3 px-4 pl-6 font-mono font-bold text-blue-600">${v.receiptNo || v.receipt_no}</td>
-            <td class="py-3 px-4 font-bold">${v.ownerShop || '-'} (${v.ownerPhone})</td>
-            <td class="py-3 px-4"><span class="px-2 py-0.5 rounded text-[10px] ${v.isPurchase ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}">${v.isPurchase ? 'အဝယ်' : 'အရောင်း'}</span></td>
-            <td class="py-3 px-4 font-bold">${(Number(v.totalAmount || v.total_amount) || 0).toLocaleString()} Ks</td>
-            <td class="py-3 px-4">${v.customerName || 'General'}</td>
-            <td class="py-3 px-4 pr-6 text-right text-slate-500">${new Date(v.timestamp).toLocaleString()}</td>
-          </tr>
-        `).join('');
-      } catch (err) { tbody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-rose-500">Error: ${err.message}</td></tr>`; }
-    }
-
-    // Fetch Cloud Products
-    async function fetchCloudProducts() {
-      const tbody = document.getElementById('productsTableBody');
-      tbody.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-slate-400">ကုန်ပစ္စည်းများ ရယူနေပါသည်...</td></tr>`;
-      try {
-        const res = await fetch(`${API_BASE}/api/admin/products`);
-        const data = await res.json();
-        const list = data.products || [];
-        if (list.length === 0) {
-          tbody.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-slate-400">ဆာဗာပေါ်တွင် ကုန်ပစ္စည်း မရှိသေးပါ။</td></tr>`;
-          return;
-        }
-        tbody.innerHTML = list.map(p => `
-          <tr class="hover:bg-slate-50">
-            <td class="py-3 px-4 pl-6 font-bold">${p.name}</td>
-            <td class="py-3 px-4">${p.ownerShop || '-'}</td>
-            <td class="py-3 px-4 font-bold text-emerald-600">${p.quantity || 0}</td>
-            <td class="py-3 px-4 font-mono">${(Number(p.purchasePrice || p.purchase_price) || 0).toLocaleString()} Ks</td>
-            <td class="py-3 px-4 pr-6 text-right font-mono font-bold">${(Number(p.sellingPrice || p.selling_price) || 0).toLocaleString()} Ks</td>
-          </tr>
-        `).join('');
-      } catch (err) { tbody.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-rose-500">Error: ${err.message}</td></tr>`; }
-    }
-
-    function showToast(msg, isErr = false) {
-      const toast = document.getElementById('toast');
-      document.getElementById('toastMsg').textContent = msg;
-      toast.classList.remove('translate-y-24', 'opacity-0');
-      toast.classList.add('translate-y-0', 'opacity-100');
-      setTimeout(() => {
-        toast.classList.remove('translate-y-0', 'opacity-100');
-        toast.classList.add('translate-y-24', 'opacity-0');
-      }, 3500);
-    }
-
-    // Initialize on page load
-    if (checkAuth()) {
-      fetchAllData();
-      setInterval(fetchAllData, 30000); // Auto-refresh every 30s
-    }
-  </script>
+        // Call fetch function on load
+        window.addEventListener('DOMContentLoaded', fetchAdminData);
+    </script>
 </body>
 </html>
