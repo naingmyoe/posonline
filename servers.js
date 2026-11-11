@@ -983,6 +983,51 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    // 7ab. Explicit Manual Stock Adjustment (POST /api/sync/adjust-stock)
+    if (pathname === '/api/sync/adjust-stock' && method === 'POST') {
+      const body = await parseJsonBody(req);
+      const { userPhone, productId, productName, newQuantity, newAlertQuantity } = body;
+      if (userPhone && db.cloud_products[userPhone] && (productId || productName) && newQuantity !== undefined) {
+        const pId = productId ? String(productId) : null;
+        const pName = productName ? String(productName).trim().toLowerCase() : null;
+        const targetKey = findTargetProductKey(userPhone, { id: productId, name: productName });
+        const incomingQty = Number(newQuantity);
+        if (targetKey && db.cloud_products[userPhone][targetKey] && !isNaN(incomingQty)) {
+          let soldSoFar = 0;
+          let purchasedSoFar = 0;
+          const vouchersMap = db.cloud_vouchers[userPhone] || {};
+          const allItems = db.cloud_voucher_items[userPhone] || [];
+          for (const it of allItems) {
+            const vId = it.voucher_id || it.voucherId;
+            const v = vId ? vouchersMap[vId] : null;
+            const isComp = v ? (v.isCompleted === true || v.isCompleted === 1 || v.is_completed === 1) : true;
+            if (!isComp) continue;
+            const isPurch = v ? (v.isPurchase === true || v.isPurchase === 1 || v.is_purchase === 1) : false;
+            const itPid = (it.product_id !== undefined && it.product_id !== null) ? String(it.product_id) : (it.productId !== undefined && it.productId !== null ? String(it.productId) : null);
+            const itPname = (it.product_name || it.productName) ? String(it.product_name || it.productName).trim().toLowerCase() : null;
+
+            if ((pId && itPid === pId) || (pName && itPname === pName)) {
+              const q = Number(it.quantity) || 1;
+              if (isPurch) purchasedSoFar += q;
+              else soldSoFar += q;
+            }
+          }
+          const adjustedBaseline = Math.max(0, incomingQty + soldSoFar - purchasedSoFar);
+          db.cloud_products[userPhone][targetKey].initial_quantity = adjustedBaseline;
+          db.cloud_products[userPhone][targetKey].quantity = incomingQty;
+          if (newAlertQuantity !== undefined) db.cloud_products[userPhone][targetKey].alertQuantity = Number(newAlertQuantity) || 0;
+          if (pId) db.cloud_initial_stock[userPhone][pId] = adjustedBaseline;
+          if (pName) db.cloud_initial_stock[userPhone][pName] = adjustedBaseline;
+          db.cloud_initial_stock[userPhone][targetKey] = adjustedBaseline;
+          recalculateUserProductStock(userPhone);
+          saveDatabase();
+          console.log(`[SYNC] Stock adjusted explicitly on cloud for ${userPhone}: ${targetKey} -> ${incomingQty} (baseline: ${adjustedBaseline})`);
+          return sendJson(res, 200, { success: true, message: 'Stock adjusted on cloud', quantity: incomingQty });
+        }
+      }
+      return sendJson(res, 200, { success: true, message: 'Stock adjust processed' });
+    }
+
     // 7b. Delete Single Product (POST /api/sync/delete-product)
     if (pathname === '/api/sync/delete-product' && method === 'POST') {
       const body = await parseJsonBody(req);
@@ -1246,94 +1291,261 @@ const server = http.createServer(async (req, res) => {
     // 8. Sync Customers (POST /api/sync/customers)
     if (pathname === '/api/sync/customers' && method === 'POST') {
       const body = await parseJsonBody(req);
-      const { userPhone, customers } = body;
+      const { userPhone, customers, deletedCustomers } = body;
 
-      if (!userPhone || !Array.isArray(customers)) {
-        return sendJson(res, 400, { success: false, message: 'Missing userPhone or customers' });
+      if (!userPhone) {
+        return sendJson(res, 400, { success: false, message: 'Missing userPhone' });
       }
 
       if (!db.cloud_customers[userPhone]) db.cloud_customers[userPhone] = {};
+      if (!db.cloud_deleted_customers) db.cloud_deleted_customers = {};
+      if (!db.cloud_deleted_customers[userPhone]) db.cloud_deleted_customers[userPhone] = [];
 
-      for (const c of customers) {
-        const cName = (c.name || '').trim();
-        if (cName) {
-          db.cloud_customers[userPhone][cName] = { ...c, name: cName };
+      if (Array.isArray(deletedCustomers)) {
+        for (const dc of deletedCustomers) {
+          const norm = String(dc).trim();
+          delete db.cloud_customers[userPhone][norm];
+          for (const k of Object.keys(db.cloud_customers[userPhone])) {
+            const cust = db.cloud_customers[userPhone][k];
+            if (cust.name === norm || String(cust.id) === norm) {
+              delete db.cloud_customers[userPhone][k];
+            }
+          }
+          if (!db.cloud_deleted_customers[userPhone].includes(norm)) {
+            db.cloud_deleted_customers[userPhone].push(norm);
+          }
+        }
+      }
+
+      if (Array.isArray(customers)) {
+        for (const c of customers) {
+          const cName = (c.name || '').trim();
+          if (cName) {
+            db.cloud_customers[userPhone][cName] = { ...c, name: cName };
+            db.cloud_deleted_customers[userPhone] = db.cloud_deleted_customers[userPhone].filter(x => x !== cName && x !== String(c.id));
+          }
         }
       }
 
       saveDatabase();
-      console.log(`[SYNC] Customers synced for ${userPhone}: ${customers.length} customers`);
+      console.log(`[SYNC] Customers synced for ${userPhone}: ${customers ? customers.length : 0} customers`);
 
       return sendJson(res, 200, {
         success: true,
-        message: `${customers.length} customers synced successfully`,
-        count: customers.length
+        message: 'Customers synced successfully'
       });
+    }
+
+    // 8-del. Delete Customer (POST /api/sync/delete-customer)
+    if (pathname === '/api/sync/delete-customer' && method === 'POST') {
+      const body = await parseJsonBody(req);
+      const { userPhone, customerName, customerId } = body;
+      if (userPhone) {
+        if (!db.cloud_customers[userPhone]) db.cloud_customers[userPhone] = {};
+        if (!db.cloud_deleted_customers) db.cloud_deleted_customers = {};
+        if (!db.cloud_deleted_customers[userPhone]) db.cloud_deleted_customers[userPhone] = [];
+
+        const targets = [customerName, customerId ? String(customerId) : null].filter(Boolean);
+        for (const key of Object.keys(db.cloud_customers[userPhone])) {
+          const c = db.cloud_customers[userPhone][key];
+          if ((customerName && (c.name === customerName || key === customerName)) ||
+              (customerId && (String(c.id) === String(customerId) || key === String(customerId)))) {
+            delete db.cloud_customers[userPhone][key];
+          }
+        }
+        for (const t of targets) {
+          if (!db.cloud_deleted_customers[userPhone].includes(t)) {
+            db.cloud_deleted_customers[userPhone].push(t);
+          }
+        }
+        saveDatabase();
+        console.log(`[SYNC] Deleted customer on cloud: ${customerName} (${customerId}) for ${userPhone}`);
+      }
+      return sendJson(res, 200, { success: true, message: 'Customer deleted from cloud' });
     }
 
     // 8a. Sync Groups (POST /api/sync/groups)
     if (pathname === '/api/sync/groups' && method === 'POST') {
       const body = await parseJsonBody(req);
-      const { userPhone, groups } = body;
-      if (userPhone && Array.isArray(groups)) {
-        if (!db.cloud_product_groups[userPhone]) db.cloud_product_groups[userPhone] = [];
-        for (const g of groups) {
-          if (!db.cloud_product_groups[userPhone].includes(g)) {
-            db.cloud_product_groups[userPhone].push(g);
+      const { userPhone, groups, deletedGroups } = body;
+      if (userPhone) {
+        if (!db.cloud_deleted_groups) db.cloud_deleted_groups = {};
+        if (!db.cloud_deleted_groups[userPhone]) db.cloud_deleted_groups[userPhone] = [];
+        if (Array.isArray(deletedGroups)) {
+          for (const dg of deletedGroups) {
+            if (!db.cloud_deleted_groups[userPhone].includes(dg)) db.cloud_deleted_groups[userPhone].push(dg);
           }
+        }
+        if (Array.isArray(groups)) {
+          db.cloud_product_groups[userPhone] = groups;
         }
         saveDatabase();
       }
       return sendJson(res, 200, { success: true, message: 'Groups synced successfully' });
     }
 
+    // 8a-del. Delete Group (POST /api/sync/delete-group)
+    if (pathname === '/api/sync/delete-group' && method === 'POST') {
+      const body = await parseJsonBody(req);
+      const { userPhone, groupName } = body;
+      if (userPhone && groupName) {
+        if (db.cloud_product_groups[userPhone]) {
+          db.cloud_product_groups[userPhone] = db.cloud_product_groups[userPhone].filter(g => g !== groupName);
+        }
+        if (!db.cloud_deleted_groups) db.cloud_deleted_groups = {};
+        if (!db.cloud_deleted_groups[userPhone]) db.cloud_deleted_groups[userPhone] = [];
+        if (!db.cloud_deleted_groups[userPhone].includes(groupName)) {
+          db.cloud_deleted_groups[userPhone].push(groupName);
+        }
+        saveDatabase();
+        console.log(`[SYNC] Deleted group on cloud: ${groupName} for ${userPhone}`);
+      }
+      return sendJson(res, 200, { success: true, message: 'Group deleted from cloud' });
+    }
+
     // 8b. Sync Units (POST /api/sync/units)
     if (pathname === '/api/sync/units' && method === 'POST') {
       const body = await parseJsonBody(req);
-      const { userPhone, units } = body;
-      if (userPhone && Array.isArray(units)) {
-        if (!db.cloud_product_units[userPhone]) db.cloud_product_units[userPhone] = [];
-        for (const u of units) {
-          if (!db.cloud_product_units[userPhone].includes(u)) {
-            db.cloud_product_units[userPhone].push(u);
+      const { userPhone, units, deletedUnits } = body;
+      if (userPhone) {
+        if (!db.cloud_deleted_units) db.cloud_deleted_units = {};
+        if (!db.cloud_deleted_units[userPhone]) db.cloud_deleted_units[userPhone] = [];
+        if (Array.isArray(deletedUnits)) {
+          for (const du of deletedUnits) {
+            if (!db.cloud_deleted_units[userPhone].includes(du)) db.cloud_deleted_units[userPhone].push(du);
           }
+        }
+        if (Array.isArray(units)) {
+          db.cloud_product_units[userPhone] = units;
         }
         saveDatabase();
       }
       return sendJson(res, 200, { success: true, message: 'Units synced successfully' });
     }
 
+    // 8b-del. Delete Unit (POST /api/sync/delete-unit)
+    if (pathname === '/api/sync/delete-unit' && method === 'POST') {
+      const body = await parseJsonBody(req);
+      const { userPhone, unitName } = body;
+      if (userPhone && unitName) {
+        if (db.cloud_product_units[userPhone]) {
+          db.cloud_product_units[userPhone] = db.cloud_product_units[userPhone].filter(u => u !== unitName);
+        }
+        if (!db.cloud_deleted_units) db.cloud_deleted_units = {};
+        if (!db.cloud_deleted_units[userPhone]) db.cloud_deleted_units[userPhone] = [];
+        if (!db.cloud_deleted_units[userPhone].includes(unitName)) {
+          db.cloud_deleted_units[userPhone].push(unitName);
+        }
+        saveDatabase();
+        console.log(`[SYNC] Deleted unit on cloud: ${unitName} for ${userPhone}`);
+      }
+      return sendJson(res, 200, { success: true, message: 'Unit deleted from cloud' });
+    }
+
     // 8c. Sync Payments (POST /api/sync/payments)
     if (pathname === '/api/sync/payments' && method === 'POST') {
       const body = await parseJsonBody(req);
-      const { userPhone, payments } = body;
-      if (userPhone && Array.isArray(payments)) {
-        if (!db.cloud_payments[userPhone]) db.cloud_payments[userPhone] = [];
-        for (const p of payments) {
-          const idx = db.cloud_payments[userPhone].findIndex(it => it.method === p.method);
-          if (idx >= 0) db.cloud_payments[userPhone][idx] = p;
-          else db.cloud_payments[userPhone].push(p);
+      const { userPhone, payments, deletedPayments } = body;
+      if (userPhone) {
+        if (!db.cloud_deleted_payments) db.cloud_deleted_payments = {};
+        if (!db.cloud_deleted_payments[userPhone]) db.cloud_deleted_payments[userPhone] = [];
+        if (Array.isArray(deletedPayments)) {
+          for (const dp of deletedPayments) {
+            if (!db.cloud_deleted_payments[userPhone].includes(dp)) db.cloud_deleted_payments[userPhone].push(dp);
+          }
+        }
+        if (Array.isArray(payments)) {
+          db.cloud_payments[userPhone] = payments;
         }
         saveDatabase();
       }
       return sendJson(res, 200, { success: true, message: 'Payments synced successfully' });
     }
 
+    // 8c-del. Delete Payment Method (POST /api/sync/delete-payment)
+    if (pathname === '/api/sync/delete-payment' && method === 'POST') {
+      const body = await parseJsonBody(req);
+      const { userPhone, method: payMethod } = body;
+      if (userPhone && payMethod) {
+        if (db.cloud_payments[userPhone]) {
+          db.cloud_payments[userPhone] = db.cloud_payments[userPhone].filter(p => (p.method || '').toLowerCase() !== payMethod.toLowerCase());
+        }
+        if (!db.cloud_deleted_payments) db.cloud_deleted_payments = {};
+        if (!db.cloud_deleted_payments[userPhone]) db.cloud_deleted_payments[userPhone] = [];
+        if (!db.cloud_deleted_payments[userPhone].includes(payMethod)) {
+          db.cloud_deleted_payments[userPhone].push(payMethod);
+        }
+        saveDatabase();
+        console.log(`[SYNC] Deleted payment method on cloud: ${payMethod} for ${userPhone}`);
+      }
+      return sendJson(res, 200, { success: true, message: 'Payment method deleted from cloud' });
+    }
+
     // 8d. Sync Suppliers (POST /api/sync/suppliers)
     if (pathname === '/api/sync/suppliers' && method === 'POST') {
       const body = await parseJsonBody(req);
-      const { userPhone, suppliers } = body;
-      if (userPhone && Array.isArray(suppliers)) {
+      const { userPhone, suppliers, deletedSuppliers } = body;
+      if (userPhone) {
         if (!db.cloud_suppliers[userPhone]) db.cloud_suppliers[userPhone] = {};
-        for (const s of suppliers) {
-          const sName = (s.name || '').trim();
-          if (sName) {
-            db.cloud_suppliers[userPhone][sName] = { ...s, name: sName };
+        if (!db.cloud_deleted_suppliers) db.cloud_deleted_suppliers = {};
+        if (!db.cloud_deleted_suppliers[userPhone]) db.cloud_deleted_suppliers[userPhone] = [];
+
+        if (Array.isArray(deletedSuppliers)) {
+          for (const ds of deletedSuppliers) {
+            const norm = String(ds).trim();
+            delete db.cloud_suppliers[userPhone][norm];
+            for (const k of Object.keys(db.cloud_suppliers[userPhone])) {
+              const sup = db.cloud_suppliers[userPhone][k];
+              if (sup.name === norm || String(sup.id) === norm) {
+                delete db.cloud_suppliers[userPhone][k];
+              }
+            }
+            if (!db.cloud_deleted_suppliers[userPhone].includes(norm)) {
+              db.cloud_deleted_suppliers[userPhone].push(norm);
+            }
+          }
+        }
+
+        if (Array.isArray(suppliers)) {
+          for (const s of suppliers) {
+            const sName = (s.name || '').trim();
+            if (sName) {
+              db.cloud_suppliers[userPhone][sName] = { ...s, name: sName };
+              db.cloud_deleted_suppliers[userPhone] = db.cloud_deleted_suppliers[userPhone].filter(x => x !== sName && x !== String(s.id));
+            }
           }
         }
         saveDatabase();
       }
       return sendJson(res, 200, { success: true, message: 'Suppliers synced successfully' });
+    }
+
+    // 8d-del. Delete Supplier (POST /api/sync/delete-supplier)
+    if (pathname === '/api/sync/delete-supplier' && method === 'POST') {
+      const body = await parseJsonBody(req);
+      const { userPhone, supplierName, supplierId } = body;
+      if (userPhone) {
+        if (!db.cloud_suppliers[userPhone]) db.cloud_suppliers[userPhone] = {};
+        if (!db.cloud_deleted_suppliers) db.cloud_deleted_suppliers = {};
+        if (!db.cloud_deleted_suppliers[userPhone]) db.cloud_deleted_suppliers[userPhone] = [];
+
+        const targets = [supplierName, supplierId ? String(supplierId) : null].filter(Boolean);
+        for (const key of Object.keys(db.cloud_suppliers[userPhone])) {
+          const s = db.cloud_suppliers[userPhone][key];
+          if ((supplierName && (s.name === supplierName || key === supplierName)) ||
+              (supplierId && (String(s.id) === String(supplierId) || key === String(supplierId)))) {
+            delete db.cloud_suppliers[userPhone][key];
+          }
+        }
+        for (const t of targets) {
+          if (!db.cloud_deleted_suppliers[userPhone].includes(t)) {
+            db.cloud_deleted_suppliers[userPhone].push(t);
+          }
+        }
+        saveDatabase();
+        console.log(`[SYNC] Deleted supplier on cloud: ${supplierName} (${supplierId}) for ${userPhone}`);
+      }
+      return sendJson(res, 200, { success: true, message: 'Supplier deleted from cloud' });
     }
 
     // 9. Pull All Cloud Data for User (GET or POST /api/sync/pull)
@@ -1351,14 +1563,31 @@ const server = http.createServer(async (req, res) => {
       // Ensure all product stocks reflect exact relative deltas (Baseline + Purchases - Sales)
       recalculateUserProductStock(userPhone);
 
+      const userDeletedCustomers = db.cloud_deleted_customers ? (db.cloud_deleted_customers[userPhone] || []) : [];
+      const userDeletedSuppliers = db.cloud_deleted_suppliers ? (db.cloud_deleted_suppliers[userPhone] || []) : [];
+      const userDeletedGroups = db.cloud_deleted_groups ? (db.cloud_deleted_groups[userPhone] || []) : [];
+      const userDeletedUnits = db.cloud_deleted_units ? (db.cloud_deleted_units[userPhone] || []) : [];
+      const userDeletedPayments = db.cloud_deleted_payments ? (db.cloud_deleted_payments[userPhone] || []) : [];
+
       const userVouchers = Object.values(db.cloud_vouchers[userPhone] || {});
       const userItems = db.cloud_voucher_items[userPhone] || [];
       const userProducts = Object.values(db.cloud_products[userPhone] || {});
-      const userCustomers = Object.values(db.cloud_customers[userPhone] || {});
-      const userGroups = db.cloud_product_groups[userPhone] || [];
-      const userUnits = db.cloud_product_units[userPhone] || [];
-      const userPayments = db.cloud_payments[userPhone] || [];
-      const userSuppliers = Object.values(db.cloud_suppliers[userPhone] || {});
+
+      const rawCustomers = Object.values(db.cloud_customers[userPhone] || {});
+      const userCustomers = rawCustomers.filter(c => !userDeletedCustomers.includes(c.name) && !userDeletedCustomers.includes(String(c.id)));
+
+      const rawGroups = db.cloud_product_groups[userPhone] || [];
+      const userGroups = rawGroups.filter(g => !userDeletedGroups.includes(g));
+
+      const rawUnits = db.cloud_product_units[userPhone] || [];
+      const userUnits = rawUnits.filter(u => !userDeletedUnits.includes(u));
+
+      const rawPayments = db.cloud_payments[userPhone] || [];
+      const userPayments = rawPayments.filter(p => !userDeletedPayments.includes(p.method));
+
+      const rawSuppliers = Object.values(db.cloud_suppliers[userPhone] || {});
+      const userSuppliers = rawSuppliers.filter(s => !userDeletedSuppliers.includes(s.name) && !userDeletedSuppliers.includes(String(s.id)));
+
       const userExpenseCategories = db.cloud_expense_categories[userPhone] || [];
       const userExpenses = db.cloud_expenses[userPhone] || [];
 
@@ -1376,7 +1605,12 @@ const server = http.createServer(async (req, res) => {
         payments: userPayments,
         suppliers: userSuppliers,
         expenseCategories: userExpenseCategories,
-        expenses: userExpenses
+        expenses: userExpenses,
+        deletedCustomers: userDeletedCustomers,
+        deletedSuppliers: userDeletedSuppliers,
+        deletedGroups: userDeletedGroups,
+        deletedUnits: userDeletedUnits,
+        deletedPayments: userDeletedPayments
       });
     }
 
