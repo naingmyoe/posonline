@@ -364,6 +364,8 @@ const server = http.createServer(async (req, res) => {
 
       const now = Date.now();
       const initialDevices = deviceId ? [deviceId] : [];
+      const isCashier = (role === 'CASHIER');
+      const cashierJoinCode = body.joinCode || Math.floor(100000 + Math.random() * 900000).toString();
 
       db.users[phoneNo] = {
         phone_no: phoneNo,
@@ -375,23 +377,89 @@ const server = http.createServer(async (req, res) => {
         password_hash: password,
         device_id: deviceId || '',
         devices: initialDevices,
-        status: 'on', // 7 days trial is active immediately upon registration!
+        status: isCashier ? 'pending' : 'on',
+        join_code: isCashier ? cashierJoinCode : '',
+        admin_phone: '',
         created_at: now,
         expires_at: now + SEVEN_DAYS_MS,
         trial_days: 7
       };
 
       saveDatabase();
-      console.log(`[USER] Registered new user with 7-day trial: ${phoneNo} (${businessName || username})`);
+      console.log(`[USER] Registered new ${role || 'ADMIN'} user: ${phoneNo} (${businessName || username})`);
 
       return sendJson(res, 200, {
         success: true,
-        message: 'အကောင့် အောင်မြင်စွာ ပြုလုပ်ပြီးပါပြီ (၇ ရက် အခမဲ့ စမ်းသပ်ခွင့် ရရှိပါသည်)',
-        status: 'on',
+        message: isCashier ? 'Cashier account created. Awaiting admin approval.' : 'အကောင့် အောင်မြင်စွာ ပြုလုပ်ပြီးပါပြီ (၇ ရက် အခမဲ့ စမ်းသပ်ခွင့် ရရှိပါသည်)',
+        status: isCashier ? 'pending' : 'on',
+        joinCode: isCashier ? cashierJoinCode : '',
         expiresAt: db.users[phoneNo].expires_at,
         daysLeft: 7,
         maxDevices: 5,
         user: db.users[phoneNo]
+      });
+    }
+
+    // Join Cashier (POST /api/join-cashier)
+    if (pathname === '/api/join-cashier' && method === 'POST') {
+      const body = await parseJsonBody(req);
+      const { adminPhone, joinCode } = body;
+
+      if (!joinCode) {
+        return sendJson(res, 400, { success: false, message: 'Cashier Code လိုအပ်ပါသည်' });
+      }
+
+      const adminUser = adminPhone ? db.users[adminPhone] : null;
+      const cashierKey = Object.keys(db.users).find(phone => {
+        const u = db.users[phone];
+        return u.role === 'CASHIER' && u.join_code === joinCode;
+      });
+
+      if (!cashierKey) {
+        return sendJson(res, 404, { success: false, message: 'ဤ Code ဖြင့် Cashier အကောင့် မတွေ့ရှိပါ' });
+      }
+
+      const cashier = db.users[cashierKey];
+      cashier.status = 'on';
+      cashier.admin_phone = adminPhone || cashier.admin_phone || '';
+      if (adminUser) {
+        cashier.business_name = adminUser.business_name || cashier.business_name;
+        cashier.business_type = adminUser.business_type || cashier.business_type;
+      }
+      saveDatabase();
+      console.log(`[CASHIER] Cashier ${cashierKey} joined with Admin ${adminPhone}`);
+
+      return sendJson(res, 200, {
+        success: true,
+        message: `Cashier '${cashier.username}' (${cashier.phone_no}) ကို အောင်မြင်စွာ Join ပေးပြီးပါပြီ`,
+        cashier: {
+          phoneNo: cashier.phone_no,
+          username: cashier.username,
+          businessName: cashier.business_name,
+          businessType: cashier.business_type,
+          role: 'CASHIER',
+          status: 'on',
+          joinCode: cashier.join_code,
+          adminPhone: cashier.admin_phone
+        }
+      });
+    }
+
+    // Check Status (POST /api/check-status)
+    if (pathname === '/api/check-status' && method === 'POST') {
+      const body = await parseJsonBody(req);
+      const { phoneNo } = body;
+      const user = db.users[phoneNo];
+      if (!user) {
+        return sendJson(res, 404, { success: false, message: 'Account not found' });
+      }
+      return sendJson(res, 200, {
+        success: true,
+        status: user.status,
+        joinCode: user.join_code || '',
+        adminPhone: user.admin_phone || '',
+        businessName: user.business_name || '',
+        role: user.role
       });
     }
 
