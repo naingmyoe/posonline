@@ -29,45 +29,45 @@
 
   <!-- Top Navbar -->
   <header class="bg-slate-900 border-b border-slate-800 text-white sticky top-0 z-40 shadow-lg">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-      <div class="flex items-center space-x-3">
+    <div class="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-2">
+      <div class="flex items-center space-x-2.5 sm:space-x-3 min-w-0">
         <!-- Drawer Hamburger Button -->
-        <button onclick="toggleDrawer()" class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 focus:outline-none transition" title="Menu Drawer ဖွင့်မည်">
+        <button onclick="toggleDrawer()" class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 focus:outline-none transition shrink-0" title="Menu Drawer ဖွင့်မည်">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
           </svg>
         </button>
 
-        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-500 flex items-center justify-center shadow-md shadow-indigo-500/20 font-black text-xl text-white">
+        <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-500 flex items-center justify-center shadow-md shadow-indigo-500/20 font-black text-lg sm:text-xl text-white shrink-0">
           UN
         </div>
-        <div>
+        <div class="min-w-0">
           <div class="flex items-center space-x-2">
-            <h1 class="text-base sm:text-lg font-bold tracking-tight text-white">UN POS Cloud Admin</h1>
-            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+            <h1 class="text-sm sm:text-lg font-bold tracking-tight text-white whitespace-nowrap truncate">UN POS Admin</h1>
+            <span class="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 whitespace-nowrap shrink-0">
               <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse mr-1.5"></span> Online
             </span>
           </div>
-          <p class="text-xs text-slate-400 hidden sm:block">Backend Server: <span id="serverHostDisplay" class="font-mono text-slate-300">171.22.172.107:8081</span></p>
+          <p class="text-xs text-slate-400 hidden sm:block truncate">Backend Server: <span id="serverHostDisplay" class="font-mono text-slate-300">171.22.172.107:8081</span></p>
         </div>
       </div>
 
-      <div class="flex items-center space-x-2 sm:space-x-3">
-        <button onclick="fetchUsersAndStats()" class="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs sm:text-sm font-medium border border-slate-700 transition">
+      <div class="flex items-center space-x-1.5 sm:space-x-3 shrink-0">
+        <button onclick="fetchUsersAndStats()" class="inline-flex items-center space-x-1.5 p-2 sm:px-3 sm:py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs sm:text-sm font-medium border border-slate-700 transition whitespace-nowrap">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
           </svg>
           <span class="hidden md:inline">Refresh</span>
         </button>
 
-        <button onclick="openCreateUserModal()" class="inline-flex items-center space-x-1 px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs sm:text-sm font-semibold shadow-md shadow-indigo-600/30 transition">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <button onclick="openCreateUserModal()" class="inline-flex items-center space-x-1 px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs sm:text-sm font-semibold shadow-md shadow-indigo-600/30 transition whitespace-nowrap">
+          <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
           </svg>
           <span>အကောင့်သစ်</span>
         </button>
 
-        <button onclick="handleAdminLogout()" class="inline-flex items-center space-x-1 px-2.5 sm:px-3 py-1.5 rounded-lg bg-rose-900/60 hover:bg-rose-800 text-rose-200 text-xs sm:text-sm font-medium border border-rose-700/60 transition" title="Admin Logout">
+        <button onclick="handleAdminLogout()" class="inline-flex items-center space-x-1 p-2 sm:px-3 sm:py-1.5 rounded-lg bg-rose-900/60 hover:bg-rose-800 text-rose-200 text-xs sm:text-sm font-medium border border-rose-700/60 transition whitespace-nowrap" title="Admin Logout">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
           </svg>
@@ -303,18 +303,23 @@
         </span>
       </div>
 
-      <!-- Responsive Table -->
-      <div class="overflow-x-auto custom-scrollbar">
+      <!-- Mobile Cards View (< md) -->
+      <div id="usersMobileCards" class="md:hidden divide-y divide-slate-100">
+        <div class="py-10 text-center text-slate-400 text-xs">အချက်အလက်များ ဆာဗာမှ ရယူနေပါသည်...</div>
+      </div>
+
+      <!-- Desktop Responsive Table (>= md) -->
+      <div class="hidden md:block overflow-x-auto custom-scrollbar">
         <table class="w-full text-left border-collapse text-sm">
           <thead>
             <tr class="bg-slate-50/75 text-slate-500 font-semibold border-b border-slate-200/80 text-xs uppercase tracking-wider">
-              <th class="py-3.5 px-4 pl-6">ဆိုင်နှင့် အကောင့် အချက်အလက်</th>
-              <th class="py-3.5 px-4">စကားဝှက် (Password)</th>
-              <th class="py-3.5 px-4">ချိတ်ဆက်စက် (Devices)</th>
-              <th class="py-3.5 px-4">အခြေအနေ (Status)</th>
-              <th class="py-3.5 px-4">သက်တမ်းကုန်ဆုံးချိန် (Expiry)</th>
-              <th class="py-3.5 px-4">အမြန်သက်တမ်းတိုး (Quick Renew)</th>
-              <th class="py-3.5 px-4 pr-6 text-right">လုပ်ဆောင်ချက် (Actions)</th>
+              <th class="py-3.5 px-4 pl-6 min-w-[260px]">ဆိုင်နှင့် အကောင့် အချက်အလက်</th>
+              <th class="py-3.5 px-4 whitespace-nowrap">စကားဝှက် (Password)</th>
+              <th class="py-3.5 px-4 whitespace-nowrap">ချိတ်ဆက်စက် (Devices)</th>
+              <th class="py-3.5 px-4 whitespace-nowrap">အခြေအနေ (Status)</th>
+              <th class="py-3.5 px-4 whitespace-nowrap">သက်တမ်းကုန်ဆုံးချိန် (Expiry)</th>
+              <th class="py-3.5 px-4 whitespace-nowrap">အမြန်သက်တမ်းတိုး (Quick Renew)</th>
+              <th class="py-3.5 px-4 pr-6 text-right whitespace-nowrap">လုပ်ဆောင်ချက် (Actions)</th>
             </tr>
           </thead>
           <tbody id="usersTableBody" class="divide-y divide-slate-100">
@@ -365,6 +370,13 @@
 
       <!-- Detail Content Container -->
       <div id="adminDetailBody" class="space-y-6 hidden">
+        <!-- Legacy Server Restart Notice Banner -->
+        <div id="adminDetailLegacyNotice" class="hidden rounded-2xl bg-amber-50 border border-amber-200 px-4 py-3 text-xs text-amber-900 flex items-start space-x-2.5">
+          <svg class="w-4 h-4 text-amber-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+          <div>
+            <b>Server Restart လိုအပ်နေပါသည်:</b> VPS ပေါ်ရှိ <span class="font-mono font-bold">server.js</span> အသစ်ကို Restart မချရသေးသဖြင့် Fallback API ဖြင့် ယာယီပြသထားပါသည်။ Cashier အသစ်ထည့်ခြင်းနှင့် Admin Cascade Delete အပြည့်အဝ သုံးနိုင်ရန် VPS ပေါ်တွင် <span class="font-mono font-bold">server.js</span> ကို Upload + Restart (<span class="font-mono">pm2 restart all</span>) လုပ်ပေးပါ။
+          </div>
+        </div>
         <!-- Hero Profile Card -->
         <div id="adminDetailHero" class="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden"></div>
 
@@ -1007,25 +1019,99 @@
 
       document.getElementById('filteredCountBadge').textContent = `Showing ${filtered.length} of ${mainAdmins.length} main admins`;
 
+      const mobileContainer = document.getElementById('usersMobileCards');
+
       if (filtered.length === 0) {
-        tbody.innerHTML = `
-          <tr>
-            <td colspan="7" class="py-12 text-center text-slate-400">
-              <svg class="w-10 h-10 mx-auto mb-2 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-              </svg>
-              ကိုက်ညီသော Main Admin အကောင့် မရှိပါ
-            </td>
-          </tr>
+        const emptyHtml = `
+          <div class="py-12 text-center text-slate-400">
+            <svg class="w-10 h-10 mx-auto mb-2 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+            ကိုက်ညီသော Main Admin အကောင့် မရှိပါ
+          </div>
         `;
+        tbody.innerHTML = `<tr><td colspan="7">${emptyHtml}</td></tr>`;
+        if (mobileContainer) mobileContainer.innerHTML = emptyHtml;
         return;
+      }
+
+      if (mobileContainer) {
+        mobileContainer.innerHTML = filtered.map(u => {
+          const isExpired = u.status === 'expired' || (u.expires_at && now > u.expires_at);
+          const devCount = u.deviceCount || 0;
+          const maxDevs = u.maxDevices || 5;
+          const linkedCashiers = allUsers.filter(c => (c.role || '').toUpperCase() === 'CASHIER' && c.admin_phone === u.phone_no).length;
+          const cashierCount = Number(u.cashiersCount) || linkedCashiers || 0;
+          const productsCount = Number(u.productsCount) || 0;
+          const vouchersCount = Number(u.vouchersCount) || 0;
+          const safePhone = escapeJs(u.phone_no);
+          const safePass = escapeJs(u.password_hash || '');
+
+          let statusBadge = '';
+          if (isExpired) {
+            statusBadge = `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-100 text-rose-700 border border-rose-200 whitespace-nowrap">EXPIRED</span>`;
+          } else if (u.status === 'on') {
+            statusBadge = `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200 whitespace-nowrap">ON · ${u.daysLeft ?? 0}d</span>`;
+          } else {
+            statusBadge = `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-700 border border-amber-200 whitespace-nowrap">OFF</span>`;
+          }
+
+          return `
+            <div onclick="openAdminDetail('${safePhone}')" class="p-4 hover:bg-indigo-50/40 active:bg-indigo-50/70 cursor-pointer transition space-y-3">
+              <div class="flex items-start justify-between gap-2">
+                <div class="flex items-center space-x-3 min-w-0">
+                  <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-200/70 text-indigo-700 flex items-center justify-center font-bold text-sm shrink-0">
+                    ${escapeHtml((u.business_name || u.username || 'U').charAt(0).toUpperCase())}
+                  </div>
+                  <div class="min-w-0">
+                    <div class="font-bold text-slate-900 text-sm truncate">${escapeHtml(u.business_name || 'UN POS Store')}</div>
+                    <div class="text-xs text-slate-500 font-mono truncate">${escapeHtml(u.phone_no)} · ${escapeHtml(u.username || 'User')}</div>
+                  </div>
+                </div>
+                ${statusBadge}
+              </div>
+
+              <div class="flex flex-wrap items-center gap-1.5 text-[11px]">
+                <span class="px-2 py-0.5 rounded-md font-bold bg-indigo-50 text-indigo-700 border border-indigo-200/80 whitespace-nowrap">Cashiers: ${cashierCount}</span>
+                <span class="px-2 py-0.5 rounded-md font-semibold bg-slate-100 text-slate-700 whitespace-nowrap">${devCount}/${maxDevs} Devices</span>
+                <span class="px-2 py-0.5 rounded-md font-medium bg-slate-100 text-slate-600 whitespace-nowrap">${productsCount} Products · ${vouchersCount} Vouchers</span>
+              </div>
+
+              <div class="flex items-center justify-between gap-2 text-xs text-slate-500" onclick="event.stopPropagation()">
+                <div class="flex items-center space-x-1.5 font-mono">
+                  <span id="mpass-${escapeHtml(u.phone_no)}" class="bg-slate-100 px-2 py-0.5 rounded border border-slate-200 text-slate-700">••••••</span>
+                  <button onclick="event.stopPropagation(); togglePass('${safePhone}', '${safePass}', 'mpass-${safePhone}')" class="text-indigo-600 font-sans text-[11px] font-semibold">Show</button>
+                </div>
+                <span class="text-[11px] text-slate-400">${formatDate(u.expires_at)}</span>
+              </div>
+
+              <div class="flex items-center justify-between gap-2 pt-1 border-t border-slate-100" onclick="event.stopPropagation()">
+                <div class="flex items-center space-x-1">
+                  <button onclick="event.stopPropagation(); handleQuickRenew('${safePhone}', 7)" class="px-2 py-1 rounded bg-slate-100 text-slate-700 text-[11px] font-bold border border-slate-200">+7d</button>
+                  <button onclick="event.stopPropagation(); handleQuickRenew('${safePhone}', 30)" class="px-2 py-1 rounded bg-indigo-50 text-indigo-700 text-[11px] font-bold border border-indigo-200">+30d</button>
+                  <button onclick="event.stopPropagation(); handleQuickRenew('${safePhone}', 365)" class="px-2 py-1 rounded bg-emerald-50 text-emerald-700 text-[11px] font-bold border border-emerald-200">+1y</button>
+                </div>
+                <div class="flex items-center space-x-1">
+                  <button onclick="event.stopPropagation(); openAdminDetail('${safePhone}')" class="px-2.5 py-1 rounded-lg bg-indigo-600 text-white text-[11px] font-bold whitespace-nowrap">အသေးစိတ် →</button>
+                  <button onclick="event.stopPropagation(); openEditModal('${safePhone}')" class="p-1.5 text-slate-500 hover:text-indigo-600 bg-slate-100 rounded-lg" title="ပြင်ဆင်မည်">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                  </button>
+                  <button onclick="event.stopPropagation(); openDeleteConfirmModal('${safePhone}')" class="p-1.5 text-rose-600 bg-rose-50 rounded-lg" title="ဖျက်မည်">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          `;
+        }).join('');
       }
 
       tbody.innerHTML = filtered.map(u => {
         const isExpired = u.status === 'expired' || (u.expires_at && now > u.expires_at);
         const devCount = u.deviceCount || 0;
         const maxDevs = u.maxDevices || 5;
-        const cashierCount = Number(u.cashiersCount) || 0;
+        const linkedCashiers = allUsers.filter(c => (c.role || '').toUpperCase() === 'CASHIER' && c.admin_phone === u.phone_no).length;
+        const cashierCount = Number(u.cashiersCount) || linkedCashiers || 0;
         const productsCount = Number(u.productsCount) || 0;
         const vouchersCount = Number(u.vouchersCount) || 0;
         const safePhone = escapeJs(u.phone_no);
@@ -1034,37 +1120,37 @@
         // Status badge
         let statusBadge = '';
         if (isExpired) {
-          statusBadge = `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-700 border border-rose-200">EXPIRED</span>`;
+          statusBadge = `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-700 border border-rose-200 whitespace-nowrap">EXPIRED</span>`;
         } else if (u.status === 'on') {
-          statusBadge = `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">ON (Active)</span>`;
+          statusBadge = `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700 border border-emerald-200 whitespace-nowrap">ON (Active)</span>`;
         } else {
-          statusBadge = `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-700 border border-amber-200">OFF (Pending)</span>`;
+          statusBadge = `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-700 border border-amber-200 whitespace-nowrap">OFF (Pending)</span>`;
         }
 
         // Days left badge
         let daysPill = '';
         if (isExpired) {
-          daysPill = `<span class="text-xs text-rose-600 font-bold block mt-0.5">သက်တမ်းကုန်ဆုံးခဲ့သည်</span>`;
+          daysPill = `<span class="text-xs text-rose-600 font-bold block mt-0.5 whitespace-nowrap">သက်တမ်းကုန်ဆုံးခဲ့သည်</span>`;
         } else if (u.daysLeft !== undefined) {
-          daysPill = `<span class="text-xs text-emerald-600 font-semibold block mt-0.5">ကျန်ရှိ: ${u.daysLeft} ရက်</span>`;
+          daysPill = `<span class="text-xs text-emerald-600 font-semibold block mt-0.5 whitespace-nowrap">ကျန်ရှိ: ${u.daysLeft} ရက်</span>`;
         }
 
         return `
           <tr onclick="openAdminDetail('${safePhone}')" class="hover:bg-indigo-50/40 cursor-pointer transition group">
-            <td class="py-4 px-4 pl-6">
+            <td class="py-4 px-4 pl-6 min-w-[260px]">
               <div class="flex items-center space-x-3">
                 <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-200/70 text-indigo-700 flex items-center justify-center font-bold text-sm shrink-0 group-hover:scale-105 transition">
                   ${escapeHtml((u.business_name || u.username || 'U').charAt(0).toUpperCase())}
                 </div>
-                <div>
+                <div class="min-w-0">
                   <div class="flex items-center space-x-2">
-                    <span class="font-bold text-slate-900 text-sm group-hover:text-indigo-700 transition">${escapeHtml(u.business_name || 'UN POS Store')}</span>
-                    <span class="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200/80">
+                    <span class="font-bold text-slate-900 text-sm group-hover:text-indigo-700 transition whitespace-nowrap">${escapeHtml(u.business_name || 'UN POS Store')}</span>
+                    <span class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200/80 whitespace-nowrap">
                       Cashiers: ${cashierCount}
                     </span>
                   </div>
-                  <div class="text-xs text-slate-500 font-mono mt-0.5">${escapeHtml(u.phone_no)} <span class="text-slate-400">(${escapeHtml(u.username || 'User')})</span></div>
-                  <div class="text-[11px] text-slate-400 mt-0.5 flex items-center space-x-2">
+                  <div class="text-xs text-slate-500 font-mono mt-0.5 whitespace-nowrap">${escapeHtml(u.phone_no)} <span class="text-slate-400">(${escapeHtml(u.username || 'User')})</span></div>
+                  <div class="text-[11px] text-slate-400 mt-0.5 flex items-center space-x-2 whitespace-nowrap">
                     <span>Data: ${productsCount} Products · ${vouchersCount} Vouchers</span>
                     <span class="text-indigo-500 font-semibold opacity-0 group-hover:opacity-100 transition">အသေးစိတ်ကြည့်ရန် →</span>
                   </div>
@@ -1460,6 +1546,7 @@
     async function loadAdminDetail(phoneNo, silent = false) {
       const loadingEl = document.getElementById('adminDetailLoading');
       const bodyEl = document.getElementById('adminDetailBody');
+      const noticeEl = document.getElementById('adminDetailLegacyNotice');
 
       if (!silent) {
         loadingEl.classList.remove('hidden');
@@ -1468,11 +1555,85 @@
 
       try {
         const res = await fetch(`${API_BASE}/api/admin/user/details?phoneNo=${encodeURIComponent(phoneNo)}`);
-        const data = await res.json();
-        if (!res.ok || !data.success) {
+        let data = await res.json().catch(() => ({}));
+
+        // Fallback if VPS is still running an older server.js without /api/admin/user/details
+        if (res.status === 404 && (!data || data.message === 'Endpoint not found')) {
+          const baseUser = allUsers.find(u => u.phone_no === phoneNo);
+          if (baseUser) {
+            const [cashiersRes, pullRes] = await Promise.all([
+              fetch(`${API_BASE}/api/cashiers?phoneNo=${encodeURIComponent(phoneNo)}`).then(r => r.json()).catch(() => ({ cashiers: [] })),
+              fetch(`${API_BASE}/api/sync/pull`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userPhone: phoneNo })
+              }).then(r => r.json()).catch(() => ({}))
+            ]);
+
+            const cashiersList = (cashiersRes.cashiers || []).map(c => {
+              const fromAll = allUsers.find(u => u.phone_no === c.phoneNo);
+              return {
+                phone_no: c.phoneNo,
+                username: c.username || 'Cashier',
+                business_name: c.businessName || baseUser.business_name || '',
+                role: 'CASHIER',
+                join_code: c.joinCode || '',
+                admin_phone: c.adminPhone || phoneNo,
+                status: c.status || 'on',
+                password_hash: fromAll?.password_hash || '',
+                deviceCount: fromAll?.deviceCount || 0,
+                created_at: fromAll?.created_at || 0
+              };
+            });
+
+            const products = pullRes.products || [];
+            const vouchers = pullRes.vouchers || [];
+            const expenses = pullRes.expenses || [];
+            const customers = pullRes.customers || [];
+            const suppliers = pullRes.suppliers || [];
+            const sales = vouchers.filter(v => !v.isPurchase);
+            const purchases = vouchers.filter(v => !!v.isPurchase);
+
+            data = {
+              success: true,
+              legacyMode: true,
+              user: baseUser,
+              cashiers: cashiersList,
+              summary: {
+                salesCount: sales.length,
+                salesTotal: sales.reduce((acc, v) => acc + (Number(v.totalAmount) || 0), 0),
+                purchasesCount: purchases.length,
+                purchasesTotal: purchases.reduce((acc, v) => acc + (Number(v.totalAmount) || 0), 0),
+                productsCount: products.length,
+                totalStockUnits: products.reduce((acc, p) => acc + (Number(p.quantity) || 0), 0),
+                customersCount: customers.length,
+                suppliersCount: suppliers.length,
+                expensesCount: expenses.length,
+                expensesTotal: expenses.reduce((acc, e) => acc + (Number(e.amount) || 0), 0)
+              },
+              data: {
+                products,
+                vouchers,
+                customers,
+                suppliers,
+                expenses,
+                payments: pullRes.payments || [],
+                groups: pullRes.groups || [],
+                units: pullRes.units || [],
+                stockAdjustments: pullRes.stockAdjustments || []
+              }
+            };
+          }
+        }
+
+        if ((!res.ok && !data.legacyMode) || !data.success) {
           showToast(data.message || 'အချက်အလက် ရယူ၍ မရပါ', true);
           if (!silent) closeAdminDetailView();
           return;
+        }
+
+        if (noticeEl) {
+          noticeEl.classList.toggle('hidden', !data.legacyMode);
         }
 
         currentAdminDetail = data;
