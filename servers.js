@@ -1,4 +1,4 @@
-/**
+/**a
  * UN POS Backend Server for VPS (Linux / Ubuntu / Debian / Windows)
  * Runs on pure Node.js (NO npm install required!)
  *
@@ -241,6 +241,15 @@ const server = http.createServer(async (req, res) => {
   try {
     const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
+    function resolveTenantPhone(phone) {
+      if (!phone) return phone;
+      const u = db.users[phone];
+      if (u && u.role === 'CASHIER' && u.status === 'on' && u.admin_phone) {
+        return u.admin_phone;
+      }
+      return phone;
+    }
+
     function evaluateUserAccess(u, clientDeviceId) {
       const now = Date.now();
       // Initialize devices array if not present
@@ -275,27 +284,56 @@ const server = http.createServer(async (req, res) => {
         }
       }
 
+      const effectiveExpiresAt = (u.role === 'CASHIER' && u.admin_phone && db.users[u.admin_phone] && db.users[u.admin_phone].expires_at)
+        ? db.users[u.admin_phone].expires_at
+        : u.expires_at;
+
+      const daysLeft = Math.max(0, Math.ceil((effectiveExpiresAt - now) / (24 * 60 * 60 * 1000)));
+
+      if (u.status === 'pending' || (u.role === 'CASHIER' && (!u.admin_phone || u.status !== 'on'))) {
+        return {
+          allowed: false,
+          status: 'pending',
+          message: 'Admin မှ အတည်ပြုပေးရန် စောင့်ဆိုင်းနေပါသည် (Awaiting Admin Approval)',
+          expiresAt: effectiveExpiresAt,
+          daysLeft: daysLeft,
+          deviceCount: u.devices.length,
+          maxDevices: 5
+        };
+      }
+
+      if (u.status === 'off') {
+        return {
+          allowed: false,
+          status: 'off',
+          message: 'အကောင့်ကို Admin မှ မဖွင့်ပေးရသေးပါ (Account Pending)',
+          expiresAt: effectiveExpiresAt,
+          daysLeft: daysLeft,
+          deviceCount: u.devices.length,
+          maxDevices: 5
+        };
+      }
+
       // Check expiration
-      if (now > u.expires_at) {
+      if (now > effectiveExpiresAt) {
         u.status = 'expired';
         saveDatabase();
         return {
           allowed: false,
           status: 'expired',
           message: 'အကောင့် သက်တမ်းကုန်ဆုံးသွားပါပြီ။ သက်တမ်းတိုးရန် ဆက်သွယ်ပါ (Account Expired)',
-          expiresAt: u.expires_at,
+          expiresAt: effectiveExpiresAt,
           daysLeft: 0,
           deviceCount: u.devices.length,
           maxDevices: 5
         };
       }
 
-      const daysLeft = Math.max(0, Math.ceil((u.expires_at - now) / (24 * 60 * 60 * 1000)));
       return {
-        allowed: u.status !== 'off',
-        status: u.status === 'off' ? 'off' : 'on',
+        allowed: u.status === 'on',
+        status: u.status === 'on' ? 'on' : u.status,
         message: 'Active',
-        expiresAt: u.expires_at,
+        expiresAt: effectiveExpiresAt,
         daysLeft: daysLeft,
         isTrial: true,
         deviceCount: u.devices.length,
@@ -324,6 +362,11 @@ const server = http.createServer(async (req, res) => {
           phoneNo: u.phone_no,
           username: u.username,
           businessName: u.business_name,
+          businessType: u.business_type || '',
+          address: u.address || '',
+          role: u.role || 'ADMIN',
+          joinCode: u.join_code || '',
+          adminPhone: u.admin_phone || '',
           deviceId: deviceId || u.device_id,
           devices: u.devices,
           deviceCount: evalResult.deviceCount,
@@ -331,6 +374,14 @@ const server = http.createServer(async (req, res) => {
           expiresAt: evalResult.expiresAt,
           daysLeft: evalResult.daysLeft,
           isTrial: evalResult.isTrial
+        });
+      }
+
+      if (phoneNo) {
+        return sendJson(res, 404, {
+          success: false,
+          status: 'not_found',
+          message: 'Account not found on server'
         });
       }
 
@@ -409,10 +460,11 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 400, { success: false, message: 'Cashier Code လိုအပ်ပါသည်' });
       }
 
+      const cleanJoinCode = String(joinCode).trim();
       const adminUser = adminPhone ? db.users[adminPhone] : null;
       const cashierKey = Object.keys(db.users).find(phone => {
         const u = db.users[phone];
-        return u.role === 'CASHIER' && u.join_code === joinCode;
+        return u.role === 'CASHIER' && String(u.join_code || '').trim() === cleanJoinCode;
       });
 
       if (!cashierKey) {
@@ -425,6 +477,10 @@ const server = http.createServer(async (req, res) => {
       if (adminUser) {
         cashier.business_name = adminUser.business_name || cashier.business_name;
         cashier.business_type = adminUser.business_type || cashier.business_type;
+        cashier.address = adminUser.address || cashier.address;
+        if (adminUser.expires_at) {
+          cashier.expires_at = adminUser.expires_at;
+        }
       }
       saveDatabase();
       console.log(`[CASHIER] Cashier ${cashierKey} joined with Admin ${adminPhone}`);
@@ -437,6 +493,7 @@ const server = http.createServer(async (req, res) => {
           username: cashier.username,
           businessName: cashier.business_name,
           businessType: cashier.business_type,
+          address: cashier.address || '',
           role: 'CASHIER',
           status: 'on',
           joinCode: cashier.join_code,
@@ -445,22 +502,23 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    // Check Status (POST /api/check-status)
-    if (pathname === '/api/check-status' && method === 'POST') {
-      const body = await parseJsonBody(req);
-      const { phoneNo } = body;
-      const user = db.users[phoneNo];
-      if (!user) {
-        return sendJson(res, 404, { success: false, message: 'Account not found' });
-      }
-      return sendJson(res, 200, {
-        success: true,
-        status: user.status,
-        joinCode: user.join_code || '',
-        adminPhone: user.admin_phone || '',
-        businessName: user.business_name || '',
-        role: user.role
-      });
+    // List Cashiers linked to Admin (GET /api/cashiers?phoneNo=...)
+    if (pathname === '/api/cashiers' && method === 'GET') {
+      const adminPhone = parsedUrl.query.phoneNo || parsedUrl.query.adminPhone || '';
+      const cashiers = Object.values(db.users)
+        .filter(u => u.role === 'CASHIER' && u.admin_phone === adminPhone)
+        .map(u => ({
+          phoneNo: u.phone_no,
+          username: u.username,
+          businessName: u.business_name || '',
+          businessType: u.business_type || '',
+          address: u.address || '',
+          role: 'CASHIER',
+          status: u.status,
+          joinCode: u.join_code || '',
+          adminPhone: u.admin_phone || ''
+        }));
+      return sendJson(res, 200, { success: true, cashiers });
     }
 
     // 3. Login (POST /api/login) - Strictly verify from database, NO auto-register!
@@ -525,6 +583,8 @@ const server = http.createServer(async (req, res) => {
           businessType: user.business_type,
           address: user.address,
           role: user.role,
+          joinCode: user.join_code || '',
+          adminPhone: user.admin_phone || '',
           deviceId: deviceId || user.device_id,
           devices: user.devices,
           status: evalResult.status,
@@ -801,7 +861,7 @@ const server = http.createServer(async (req, res) => {
 
     // Admin: Get recent vouchers across users or for specific user (GET /api/admin/vouchers)
     if (pathname === '/api/admin/vouchers' && method === 'GET') {
-      const userPhone = parsedUrl.query.phoneNo;
+      const userPhone = resolveTenantPhone(parsedUrl.query.phoneNo);
       const list = [];
       if (userPhone && db.cloud_vouchers[userPhone]) {
         Object.values(db.cloud_vouchers[userPhone]).forEach(v => {
@@ -824,7 +884,7 @@ const server = http.createServer(async (req, res) => {
 
     // Admin: Get products and stock inventory across users (GET /api/admin/products)
     if (pathname === '/api/admin/products' && method === 'GET') {
-      const userPhone = parsedUrl.query.phoneNo;
+      const userPhone = resolveTenantPhone(parsedUrl.query.phoneNo);
       const list = [];
       if (userPhone && db.cloud_products[userPhone]) {
         Object.values(db.cloud_products[userPhone]).forEach(p => {
@@ -866,6 +926,7 @@ const server = http.createServer(async (req, res) => {
     // 5. Sync Single Voucher (POST /api/sync/voucher)
     if (pathname === '/api/sync/voucher' && method === 'POST') {
       const body = await parseJsonBody(req);
+      if (body && body.userPhone) body.userPhone = resolveTenantPhone(body.userPhone);
       const { userPhone, voucher, items } = body;
 
       if (!userPhone || !voucher) {
@@ -910,6 +971,7 @@ const server = http.createServer(async (req, res) => {
     // 6. Batch Sync Vouchers (POST /api/sync/vouchers) - Offline backlog upload
     if (pathname === '/api/sync/vouchers' && method === 'POST') {
       const body = await parseJsonBody(req);
+      if (body && body.userPhone) body.userPhone = resolveTenantPhone(body.userPhone);
       const { userPhone, vouchers } = body;
 
       if (!userPhone || !Array.isArray(vouchers)) {
@@ -957,6 +1019,7 @@ const server = http.createServer(async (req, res) => {
     // 7. Sync Products (POST /api/sync/products)
     if (pathname === '/api/sync/products' && method === 'POST') {
       const body = await parseJsonBody(req);
+      if (body && body.userPhone) body.userPhone = resolveTenantPhone(body.userPhone);
       const { userPhone, products } = body;
 
       if (!userPhone || !Array.isArray(products)) {
@@ -1054,6 +1117,7 @@ const server = http.createServer(async (req, res) => {
     // 7ab. Explicit Manual Stock Adjustment (POST /api/sync/adjust-stock)
     if (pathname === '/api/sync/adjust-stock' && method === 'POST') {
       const body = await parseJsonBody(req);
+      if (body && body.userPhone) body.userPhone = resolveTenantPhone(body.userPhone);
       const { userPhone, productId, productName, newQuantity, newAlertQuantity } = body;
       if (userPhone && db.cloud_products[userPhone] && (productId || productName) && newQuantity !== undefined) {
         const pId = productId ? String(productId) : null;
@@ -1099,6 +1163,7 @@ const server = http.createServer(async (req, res) => {
     // 7b. Delete Single Product (POST /api/sync/delete-product)
     if (pathname === '/api/sync/delete-product' && method === 'POST') {
       const body = await parseJsonBody(req);
+      if (body && body.userPhone) body.userPhone = resolveTenantPhone(body.userPhone);
       const { userPhone, productId, productName } = body;
       if (userPhone && db.cloud_products[userPhone]) {
         for (const key of Object.keys(db.cloud_products[userPhone])) {
@@ -1123,6 +1188,7 @@ const server = http.createServer(async (req, res) => {
     // 7c. Batch Delete Products (POST /api/sync/delete-products)
     if (pathname === '/api/sync/delete-products' && method === 'POST') {
       const body = await parseJsonBody(req);
+      if (body && body.userPhone) body.userPhone = resolveTenantPhone(body.userPhone);
       const { userPhone, productIds, productNames } = body;
       if (userPhone && db.cloud_products[userPhone]) {
         const ids = Array.isArray(productIds) ? productIds.map(String) : [];
@@ -1142,6 +1208,7 @@ const server = http.createServer(async (req, res) => {
     // 7d. Delete Single Voucher (POST /api/sync/delete-voucher)
     if (pathname === '/api/sync/delete-voucher' && method === 'POST') {
       const body = await parseJsonBody(req);
+      if (body && body.userPhone) body.userPhone = resolveTenantPhone(body.userPhone);
       const { userPhone, receiptNo } = body;
       if (userPhone && receiptNo) {
         if (db.cloud_vouchers[userPhone]) {
@@ -1164,6 +1231,7 @@ const server = http.createServer(async (req, res) => {
     // Atomically mirrors the entire local database state to the cloud
     if (pathname === '/api/sync/mirror' && method === 'POST') {
       const body = await parseJsonBody(req);
+      if (body && body.userPhone) body.userPhone = resolveTenantPhone(body.userPhone);
       const { userPhone, products, vouchers, voucherItems, customers, groups, units, payments, suppliers, expenseCategories, expenses } = body;
 
       if (!userPhone) {
@@ -1359,6 +1427,7 @@ const server = http.createServer(async (req, res) => {
     // 8. Sync Customers (POST /api/sync/customers)
     if (pathname === '/api/sync/customers' && method === 'POST') {
       const body = await parseJsonBody(req);
+      if (body && body.userPhone) body.userPhone = resolveTenantPhone(body.userPhone);
       const { userPhone, customers, deletedCustomers } = body;
 
       if (!userPhone) {
@@ -1407,6 +1476,7 @@ const server = http.createServer(async (req, res) => {
     // 8-del. Delete Customer (POST /api/sync/delete-customer)
     if (pathname === '/api/sync/delete-customer' && method === 'POST') {
       const body = await parseJsonBody(req);
+      if (body && body.userPhone) body.userPhone = resolveTenantPhone(body.userPhone);
       const { userPhone, customerName, customerId } = body;
       if (userPhone) {
         if (!db.cloud_customers[userPhone]) db.cloud_customers[userPhone] = {};
@@ -1435,6 +1505,7 @@ const server = http.createServer(async (req, res) => {
     // 8a. Sync Groups (POST /api/sync/groups)
     if (pathname === '/api/sync/groups' && method === 'POST') {
       const body = await parseJsonBody(req);
+      if (body && body.userPhone) body.userPhone = resolveTenantPhone(body.userPhone);
       const { userPhone, groups, deletedGroups } = body;
       if (userPhone) {
         if (!db.cloud_deleted_groups) db.cloud_deleted_groups = {};
@@ -1455,6 +1526,7 @@ const server = http.createServer(async (req, res) => {
     // 8a-del. Delete Group (POST /api/sync/delete-group)
     if (pathname === '/api/sync/delete-group' && method === 'POST') {
       const body = await parseJsonBody(req);
+      if (body && body.userPhone) body.userPhone = resolveTenantPhone(body.userPhone);
       const { userPhone, groupName } = body;
       if (userPhone && groupName) {
         if (db.cloud_product_groups[userPhone]) {
@@ -1474,6 +1546,7 @@ const server = http.createServer(async (req, res) => {
     // 8b. Sync Units (POST /api/sync/units)
     if (pathname === '/api/sync/units' && method === 'POST') {
       const body = await parseJsonBody(req);
+      if (body && body.userPhone) body.userPhone = resolveTenantPhone(body.userPhone);
       const { userPhone, units, deletedUnits } = body;
       if (userPhone) {
         if (!db.cloud_deleted_units) db.cloud_deleted_units = {};
@@ -1494,6 +1567,7 @@ const server = http.createServer(async (req, res) => {
     // 8b-del. Delete Unit (POST /api/sync/delete-unit)
     if (pathname === '/api/sync/delete-unit' && method === 'POST') {
       const body = await parseJsonBody(req);
+      if (body && body.userPhone) body.userPhone = resolveTenantPhone(body.userPhone);
       const { userPhone, unitName } = body;
       if (userPhone && unitName) {
         if (db.cloud_product_units[userPhone]) {
@@ -1513,6 +1587,7 @@ const server = http.createServer(async (req, res) => {
     // 8c. Sync Payments (POST /api/sync/payments)
     if (pathname === '/api/sync/payments' && method === 'POST') {
       const body = await parseJsonBody(req);
+      if (body && body.userPhone) body.userPhone = resolveTenantPhone(body.userPhone);
       const { userPhone, payments, deletedPayments } = body;
       if (userPhone) {
         if (!db.cloud_deleted_payments) db.cloud_deleted_payments = {};
@@ -1533,6 +1608,7 @@ const server = http.createServer(async (req, res) => {
     // 8c-del. Delete Payment Method (POST /api/sync/delete-payment)
     if (pathname === '/api/sync/delete-payment' && method === 'POST') {
       const body = await parseJsonBody(req);
+      if (body && body.userPhone) body.userPhone = resolveTenantPhone(body.userPhone);
       const { userPhone, method: payMethod } = body;
       if (userPhone && payMethod) {
         if (db.cloud_payments[userPhone]) {
@@ -1552,6 +1628,7 @@ const server = http.createServer(async (req, res) => {
     // 8d. Sync Suppliers (POST /api/sync/suppliers)
     if (pathname === '/api/sync/suppliers' && method === 'POST') {
       const body = await parseJsonBody(req);
+      if (body && body.userPhone) body.userPhone = resolveTenantPhone(body.userPhone);
       const { userPhone, suppliers, deletedSuppliers } = body;
       if (userPhone) {
         if (!db.cloud_suppliers[userPhone]) db.cloud_suppliers[userPhone] = {};
@@ -1591,6 +1668,7 @@ const server = http.createServer(async (req, res) => {
     // 8d-del. Delete Supplier (POST /api/sync/delete-supplier)
     if (pathname === '/api/sync/delete-supplier' && method === 'POST') {
       const body = await parseJsonBody(req);
+      if (body && body.userPhone) body.userPhone = resolveTenantPhone(body.userPhone);
       const { userPhone, supplierName, supplierId } = body;
       if (userPhone) {
         if (!db.cloud_suppliers[userPhone]) db.cloud_suppliers[userPhone] = {};
@@ -1623,6 +1701,7 @@ const server = http.createServer(async (req, res) => {
         const body = await parseJsonBody(req);
         if (body.userPhone) userPhone = body.userPhone;
       }
+      userPhone = resolveTenantPhone(userPhone);
 
       if (!userPhone) {
         return sendJson(res, 400, { success: false, message: 'Missing userPhone' });
@@ -1684,7 +1763,7 @@ const server = http.createServer(async (req, res) => {
 
     // 10. Sync Status (GET /api/sync/status)
     if (pathname === '/api/sync/status' && method === 'GET') {
-      const userPhone = parsedUrl.query.phoneNo || '';
+      const userPhone = resolveTenantPhone(parsedUrl.query.phoneNo || '');
       const userVouchers = Object.values(db.cloud_vouchers[userPhone] || {});
       const salesCount = userVouchers.filter(v => !v.isPurchase).length;
       const purchasesCount = userVouchers.filter(v => v.isPurchase).length;
