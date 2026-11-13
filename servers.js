@@ -1,4 +1,4 @@
-/**a
+/**
  * UN POS Backend Server for VPS (Linux / Ubuntu / Debian / Windows)
  * Runs on pure Node.js (NO npm install required!)
  *
@@ -519,6 +519,29 @@ const server = http.createServer(async (req, res) => {
           adminPhone: u.admin_phone || ''
         }));
       return sendJson(res, 200, { success: true, cashiers });
+    }
+
+    // Remove Cashier (POST /api/remove-cashier)
+    if (pathname === '/api/remove-cashier' && method === 'POST') {
+      const body = await parseJsonBody(req);
+      const { adminPhone, cashierPhone } = body;
+      if (!cashierPhone) {
+        return sendJson(res, 400, { success: false, message: 'Cashier ဖုန်းနံပါတ် လိုအပ်ပါသည်' });
+      }
+      const target = db.users[cashierPhone];
+      if (!target) {
+        return sendJson(res, 200, { success: true, message: 'Cashier account removed' });
+      }
+      if (target.role !== 'CASHIER') {
+        return sendJson(res, 403, { success: false, message: 'Admin အကောင့်ကို ဖျက်ခွင့်မရှိပါ' });
+      }
+      if (adminPhone && target.admin_phone && target.admin_phone !== adminPhone) {
+        return sendJson(res, 403, { success: false, message: 'ခွင့်ပြုချက်မရှိပါ' });
+      }
+      delete db.users[cashierPhone];
+      saveDatabase();
+      console.log(`[CASHIER] Removed cashier ${cashierPhone} by Admin ${adminPhone || ''}`);
+      return sendJson(res, 200, { success: true, message: 'Cashier အကောင့် ဖျက်ပြီးပါပြီ' });
     }
 
     // 3. Login (POST /api/login) - Strictly verify from database, NO auto-register!
