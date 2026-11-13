@@ -1,4 +1,4 @@
-/**
+/**a
  * UN POS Backend Server for VPS (Linux / Ubuntu / Debian / Windows)
  * Runs on pure Node.js (NO npm install required!)
  *
@@ -41,7 +41,8 @@ let db = {
   cloud_payments: {},  // userPhone -> [ payments ]
   cloud_suppliers: {}, // userPhone -> { supplierName -> supplier }
   cloud_expense_categories: {}, // userPhone -> [ expenseCategories ]
-  cloud_expenses: {}   // userPhone -> [ expenses ]
+  cloud_expenses: {},  // userPhone -> [ expenses ]
+  cloud_stock_adjustments: {} // userPhone -> [ stockAdjustments ]
 };
 
 // Absolute Stock Reduction / Delta Sync Engine
@@ -1255,7 +1256,7 @@ const server = http.createServer(async (req, res) => {
     if (pathname === '/api/sync/mirror' && method === 'POST') {
       const body = await parseJsonBody(req);
       if (body && body.userPhone) body.userPhone = resolveTenantPhone(body.userPhone);
-      const { userPhone, products, vouchers, voucherItems, customers, groups, units, payments, suppliers, expenseCategories, expenses } = body;
+      const { userPhone, products, vouchers, voucherItems, customers, groups, units, payments, suppliers, expenseCategories, expenses, stockAdjustments } = body;
 
       if (!userPhone) {
         return sendJson(res, 400, { success: false, message: 'Missing userPhone' });
@@ -1427,6 +1428,22 @@ const server = http.createServer(async (req, res) => {
           timestamp: Number(e.timestamp) || Date.now(),
           dateString: e.dateString || e.date_string || '',
           timeString: e.timeString || e.time_string || ''
+        }));
+      }
+
+      if (Array.isArray(stockAdjustments)) {
+        if (!db.cloud_stock_adjustments) db.cloud_stock_adjustments = {};
+        db.cloud_stock_adjustments[userPhone] = stockAdjustments.map(sa => ({
+          productId: Number(sa.productId) || 0,
+          productName: sa.productName || '',
+          adjustmentType: sa.adjustmentType || 'STOCK_OUT',
+          reasonTitle: sa.reasonTitle || '',
+          description: sa.description || '',
+          quantity: Number(sa.quantity) || 0,
+          beforeQuantity: Number(sa.beforeQuantity) || 0,
+          afterQuantity: Number(sa.afterQuantity) || 0,
+          timestamp: Number(sa.timestamp) || Date.now(),
+          adjustedBy: sa.adjustedBy || ''
         }));
       }
 
@@ -1760,6 +1777,7 @@ const server = http.createServer(async (req, res) => {
 
       const userExpenseCategories = db.cloud_expense_categories[userPhone] || [];
       const userExpenses = db.cloud_expenses[userPhone] || [];
+      const userStockAdjustments = (db.cloud_stock_adjustments && db.cloud_stock_adjustments[userPhone]) ? db.cloud_stock_adjustments[userPhone] : [];
 
       console.log(`[PULL] Pulled data for ${userPhone}: ${userVouchers.length} vouchers, ${userProducts.length} prods, ${userCustomers.length} custs, ${userGroups.length} groups, ${userUnits.length} units, ${userSuppliers.length} suppliers, ${userExpenses.length} expenses`);
 
@@ -1776,6 +1794,7 @@ const server = http.createServer(async (req, res) => {
         suppliers: userSuppliers,
         expenseCategories: userExpenseCategories,
         expenses: userExpenses,
+        stockAdjustments: userStockAdjustments,
         deletedCustomers: userDeletedCustomers,
         deletedSuppliers: userDeletedSuppliers,
         deletedGroups: userDeletedGroups,
