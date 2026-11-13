@@ -1029,6 +1029,56 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    // Helper: Cascade delete user (if Main Admin, delete all linked Cashiers & all cloud data; if Cashier, delete only cashier row)
+    async function deleteUserCascade(client, phoneNo) {
+      const { rows } = await client.query(
+        `SELECT phone_no, role FROM users WHERE phone_no = $1 LIMIT 1`,
+        [phoneNo]
+      );
+      if (rows.length === 0) {
+        return { deleted: false };
+      }
+
+      const target = rows[0];
+      if ((target.role || 'ADMIN').toUpperCase() === 'CASHIER') {
+        await client.query(`DELETE FROM users WHERE phone_no = $1`, [phoneNo]);
+        return { deleted: true, role: 'CASHIER', deletedCashiers: 0 };
+      }
+
+      const { rows: cashierRows } = await client.query(
+        `SELECT phone_no FROM users WHERE role = 'CASHIER' AND admin_phone = $1`,
+        [phoneNo]
+      );
+      const phonesToClean = [phoneNo, ...cashierRows.map(r => r.phone_no)];
+
+      await client.query(`DELETE FROM users WHERE role = 'CASHIER' AND admin_phone = $1`, [phoneNo]);
+
+      const cloudTables = [
+        'cloud_voucher_items',
+        'cloud_vouchers',
+        'cloud_products',
+        'cloud_customers',
+        'cloud_suppliers',
+        'cloud_product_groups',
+        'cloud_product_units',
+        'cloud_payments',
+        'cloud_expense_categories',
+        'cloud_expenses',
+        'cloud_stock_adjustments',
+        'cloud_deleted_entities'
+      ];
+      for (const tableName of cloudTables) {
+        await client.query(`DELETE FROM ${tableName} WHERE user_phone = ANY($1::text[])`, [phonesToClean]);
+      }
+
+      await client.query(`DELETE FROM users WHERE phone_no = $1`, [phoneNo]);
+      return {
+        deleted: true,
+        role: target.role || 'ADMIN',
+        deletedCashiers: cashierRows.length
+      };
+    }
+
     // Self Delete User (POST /api/delete-user)
     if (pathname === '/api/delete-user' && method === 'POST') {
       const body = await parseJsonBody(req);
@@ -1043,8 +1093,10 @@ const server = http.createServer(async (req, res) => {
       if (rows[0].password_hash !== password) {
         return sendJson(res, 401, { success: false, message: 'စကားဝှက် မှားယွင်းနေပါသည်' });
       }
-      await pool.query(`DELETE FROM users WHERE phone_no = $1`, [phoneNo]);
-      return sendJson(res, 200, { success: true, message: 'အကောင့်ကို ဖျက်ပြီးပါပြီ' });
+      await withTransaction(async (client) => {
+        await deleteUserCascade(client, phoneNo);
+      });
+      return sendJson(res, 200, { success: true, message: 'အကောင့်နှင့် Data များကို ဖျက်ပြီးပါပြီ' });
     }
 
     // ==========================================
@@ -1106,12 +1158,15 @@ const server = http.createServer(async (req, res) => {
       const { rows } = await pool.query(`
         SELECT u.*,
                COALESCE(vc.cnt, 0) AS vouchers_count,
-               COALESCE(pc.cnt, 0) AS products_count
+               COALESCE(pc.cnt, 0) AS products_count,
+               COALESCE(cc.cnt, 0) AS cashiers_count
         FROM users u
         LEFT JOIN (SELECT user_phone, COUNT(*)::int AS cnt FROM cloud_vouchers GROUP BY user_phone) vc
           ON vc.user_phone = u.phone_no
         LEFT JOIN (SELECT user_phone, COUNT(*)::int AS cnt FROM cloud_products GROUP BY user_phone) pc
           ON pc.user_phone = u.phone_no
+        LEFT JOIN (SELECT admin_phone, COUNT(*)::int AS cnt FROM users WHERE role = 'CASHIER' AND admin_phone <> '' GROUP BY admin_phone) cc
+          ON cc.admin_phone = u.phone_no
         ORDER BY u.created_at DESC
       `);
 
@@ -1130,6 +1185,8 @@ const server = http.createServer(async (req, res) => {
           business_type: u.business_type || '',
           address: u.address || '',
           role: u.role || 'ADMIN',
+          join_code: u.join_code || '',
+          admin_phone: u.admin_phone || '',
           password_hash: u.password_hash || '',
           devices,
           deviceCount: devCount,
@@ -1141,7 +1198,8 @@ const server = http.createServer(async (req, res) => {
           isExpired,
           isTrial: !!u.trial_days,
           vouchersCount: Number(u.vouchers_count) || 0,
-          productsCount: Number(u.products_count) || 0
+          productsCount: Number(u.products_count) || 0,
+          cashiersCount: Number(u.cashiers_count) || 0
         };
       });
 
@@ -1156,7 +1214,7 @@ const server = http.createServer(async (req, res) => {
     if (pathname === '/api/admin/stats' && method === 'GET') {
       const now = Date.now();
       const [usersRes, vouchersRes, productsRes] = await Promise.all([
-        pool.query(`SELECT status, expires_at FROM users`),
+        pool.query(`SELECT role, status, expires_at FROM users`),
         pool.query(`SELECT COUNT(*)::int AS cnt FROM cloud_vouchers`),
         pool.query(`SELECT COUNT(*)::int AS cnt FROM cloud_products`)
       ]);
@@ -1164,7 +1222,15 @@ const server = http.createServer(async (req, res) => {
       let activeCount = 0;
       let expiredCount = 0;
       let offCount = 0;
+      let mainAdminCount = 0;
+      let cashierCount = 0;
+
       for (const u of usersRes.rows) {
+        if ((u.role || 'ADMIN').toUpperCase() === 'CASHIER') {
+          cashierCount++;
+          continue;
+        }
+        mainAdminCount++;
         const exp = Number(u.expires_at) || 0;
         if (exp > 0 && now > exp) expiredCount++;
         else if (u.status === 'off' || u.status === 'pending') offCount++;
@@ -1173,7 +1239,10 @@ const server = http.createServer(async (req, res) => {
 
       return sendJson(res, 200, {
         success: true,
-        totalUsers: usersRes.rows.length,
+        totalUsers: mainAdminCount,
+        totalMainAdmins: mainAdminCount,
+        totalCashiers: cashierCount,
+        totalAllUsers: usersRes.rows.length,
         activeUsers: activeCount,
         expiredUsers: expiredCount,
         offUsers: offCount,
@@ -1259,12 +1328,15 @@ const server = http.createServer(async (req, res) => {
     // Admin: Update User Info (POST /api/admin/user/update)
     if (pathname === '/api/admin/user/update' && method === 'POST') {
       const body = await parseJsonBody(req);
-      const { phoneNo, username, businessName, businessType, address, role, password, status, expiresAt } = body;
+      const { phoneNo, username, businessName, businessType, address, role, password, status, expiresAt, joinCode, adminPhone } = body;
       const { rows } = await pool.query(`SELECT * FROM users WHERE phone_no = $1 LIMIT 1`, [phoneNo]);
       const user = rows[0];
       if (!user) {
         return sendJson(res, 404, { success: false, message: 'အကောင့် ရှာမတွေ့ပါ' });
       }
+
+      const nextExpiry = expiresAt ? Number(expiresAt) : Number(user.expires_at);
+      const nextRole = role || user.role;
 
       const { rows: updatedRows } = await pool.query(
         `UPDATE users SET
@@ -1275,21 +1347,32 @@ const server = http.createServer(async (req, res) => {
           role = $5,
           password_hash = $6,
           status = $7,
-          expires_at = $8
-         WHERE phone_no = $9
+          expires_at = $8,
+          join_code = $9,
+          admin_phone = $10
+         WHERE phone_no = $11
          RETURNING *`,
         [
           username || user.username,
           businessName !== undefined ? businessName : user.business_name,
           businessType !== undefined ? businessType : user.business_type,
           address !== undefined ? address : user.address,
-          role || user.role,
+          nextRole,
           password || user.password_hash,
           status || user.status,
-          expiresAt ? Number(expiresAt) : Number(user.expires_at),
+          nextExpiry,
+          joinCode !== undefined ? joinCode : (user.join_code || ''),
+          adminPhone !== undefined ? adminPhone : (user.admin_phone || ''),
           phoneNo
         ]
       );
+
+      if ((nextRole || 'ADMIN').toUpperCase() !== 'CASHIER') {
+        await pool.query(
+          `UPDATE users SET expires_at = $1 WHERE role = 'CASHIER' AND admin_phone = $2`,
+          [nextExpiry, phoneNo]
+        );
+      }
 
       return sendJson(res, 200, {
         success: true,
@@ -1331,18 +1414,231 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    // Admin: Delete User (POST /api/admin/user/delete)
+    // Admin: Create Cashier directly under a Main Admin (POST /api/admin/cashier/create)
+    if (pathname === '/api/admin/cashier/create' && method === 'POST') {
+      const body = await parseJsonBody(req);
+      const { adminPhone, phoneNo, username, password, status, joinCode } = body;
+      if (!adminPhone || !phoneNo || !username || !password) {
+        return sendJson(res, 400, { success: false, message: 'Admin ဖုန်း၊ Cashier ဖုန်း၊ အမည် နှင့် Password ဖြည့်ပါ' });
+      }
+
+      const { rows: adminRows } = await pool.query(`SELECT * FROM users WHERE phone_no = $1 LIMIT 1`, [adminPhone]);
+      const adminUser = adminRows[0];
+      if (!adminUser) {
+        return sendJson(res, 404, { success: false, message: 'Main Admin အကောင့် ရှာမတွေ့ပါ' });
+      }
+
+      const existing = await pool.query(`SELECT phone_no FROM users WHERE phone_no = $1 LIMIT 1`, [phoneNo]);
+      if (existing.rows.length > 0) {
+        return sendJson(res, 409, { success: false, message: 'ဤဖုန်းနံပါတ်ဖြင့် အကောင့်ရှိပြီးသားဖြစ်ပါသည်' });
+      }
+
+      const now = Date.now();
+      const finalJoinCode = (joinCode && String(joinCode).trim()) || Math.floor(100000 + Math.random() * 900000).toString();
+      const { rows } = await pool.query(
+        `INSERT INTO users (
+          phone_no, username, business_name, business_type, address, role,
+          password_hash, device_id, devices, status, join_code, admin_phone,
+          created_at, expires_at, trial_days
+        ) VALUES ($1,$2,$3,$4,$5,'CASHIER',$6,'','[]'::jsonb,$7,$8,$9,$10,$11,$12)
+        RETURNING *`,
+        [
+          phoneNo,
+          username,
+          adminUser.business_name || '',
+          adminUser.business_type || '',
+          adminUser.address || '',
+          password,
+          status || 'on',
+          finalJoinCode,
+          adminPhone,
+          now,
+          Number(adminUser.expires_at) || (now + SEVEN_DAYS_MS),
+          Number(adminUser.trial_days) || 7
+        ]
+      );
+
+      return sendJson(res, 200, {
+        success: true,
+        message: 'Cashier အကောင့်အသစ် အောင်မြင်စွာ ဖန်တီးပြီးပါပြီ',
+        cashier: rows[0]
+      });
+    }
+
+    // Admin: Delete User (POST /api/admin/user/delete) - Cascade deletes Admin + Cashiers + all Cloud Data
     if (pathname === '/api/admin/user/delete' && method === 'POST') {
       const body = await parseJsonBody(req);
       const { phoneNo } = body;
       if (!phoneNo) {
         return sendJson(res, 404, { success: false, message: 'အကောင့် ရှာမတွေ့ပါ' });
       }
-      const resDel = await pool.query(`DELETE FROM users WHERE phone_no = $1`, [phoneNo]);
-      if (resDel.rowCount === 0) {
+      const result = await withTransaction(async (client) => {
+        return await deleteUserCascade(client, phoneNo);
+      });
+      if (!result.deleted) {
         return sendJson(res, 404, { success: false, message: 'အကောင့် ရှာမတွေ့ပါ' });
       }
-      return sendJson(res, 200, { success: true, message: 'အကောင့်ကို ဖျက်ပြီးပါပြီ' });
+      const msg = result.role === 'CASHIER'
+        ? 'Cashier အကောင့်ကို ဖျက်ပြီးပါပြီ'
+        : `Main Admin အကောင့်၊ Cashier (${result.deletedCashiers} ခု) နှင့် Cloud Data အားလုံးကို ဖျက်ပြီးပါပြီ`;
+      console.log(`[ADMIN DELETE] Deleted ${result.role} ${phoneNo} (cascade cashiers=${result.deletedCashiers})`);
+      return sendJson(res, 200, { success: true, message: msg, ...result });
+    }
+
+    // Admin: Get full Admin Account Details, Linked Cashiers, and Cloud Business Data (GET /api/admin/user/details?phoneNo=...)
+    if (pathname === '/api/admin/user/details' && method === 'GET') {
+      const phoneNo = (parsedUrl.query.phoneNo || '').trim();
+      if (!phoneNo) {
+        return sendJson(res, 400, { success: false, message: 'phoneNo လိုအပ်ပါသည်' });
+      }
+
+      const now = Date.now();
+      const { rows: adminRows } = await pool.query(`SELECT * FROM users WHERE phone_no = $1 LIMIT 1`, [phoneNo]);
+      const adminUser = adminRows[0];
+      if (!adminUser) {
+        return sendJson(res, 404, { success: false, message: 'အကောင့် ရှာမတွေ့ပါ' });
+      }
+
+      const [
+        cashiersRes,
+        productsRes,
+        vouchersRes,
+        voucherSummaryRes,
+        customersRes,
+        suppliersRes,
+        expensesRes,
+        expenseSummaryRes,
+        paymentsRes,
+        groupsRes,
+        unitsRes,
+        stockAdjRes
+      ] = await Promise.all([
+        pool.query(`SELECT * FROM users WHERE role = 'CASHIER' AND admin_phone = $1 ORDER BY created_at DESC`, [phoneNo]),
+        pool.query(`SELECT * FROM cloud_products WHERE user_phone = $1 ORDER BY name ASC`, [phoneNo]),
+        pool.query(`SELECT * FROM cloud_vouchers WHERE user_phone = $1 ORDER BY timestamp DESC LIMIT 500`, [phoneNo]),
+        pool.query(
+          `SELECT
+             COUNT(*) FILTER (WHERE is_purchase = FALSE)::int AS sales_count,
+             COALESCE(SUM(total_amount) FILTER (WHERE is_purchase = FALSE), 0) AS sales_total,
+             COUNT(*) FILTER (WHERE is_purchase = TRUE)::int AS purchases_count,
+             COALESCE(SUM(total_amount) FILTER (WHERE is_purchase = TRUE), 0) AS purchases_total
+           FROM cloud_vouchers WHERE user_phone = $1`,
+          [phoneNo]
+        ),
+        pool.query(`SELECT * FROM cloud_customers WHERE user_phone = $1 ORDER BY name ASC`, [phoneNo]),
+        pool.query(`SELECT * FROM cloud_suppliers WHERE user_phone = $1 ORDER BY name ASC`, [phoneNo]),
+        pool.query(`SELECT * FROM cloud_expenses WHERE user_phone = $1 ORDER BY timestamp DESC LIMIT 500`, [phoneNo]),
+        pool.query(
+          `SELECT COUNT(*)::int AS expenses_count, COALESCE(SUM(amount), 0) AS expenses_total
+           FROM cloud_expenses WHERE user_phone = $1`,
+          [phoneNo]
+        ),
+        pool.query(`SELECT method, amount, date FROM cloud_payments WHERE user_phone = $1 ORDER BY method ASC`, [phoneNo]),
+        pool.query(`SELECT name FROM cloud_product_groups WHERE user_phone = $1 ORDER BY name ASC`, [phoneNo]),
+        pool.query(`SELECT name FROM cloud_product_units WHERE user_phone = $1 ORDER BY name ASC`, [phoneNo]),
+        pool.query(`SELECT * FROM cloud_stock_adjustments WHERE user_phone = $1 ORDER BY timestamp DESC LIMIT 300`, [phoneNo])
+      ]);
+
+      const mapAccount = (u) => {
+        const devices = Array.isArray(u.devices) ? u.devices : (u.device_id ? [u.device_id] : []);
+        const expiresAt = Number(u.expires_at) || (u.created_at ? Number(u.created_at) + SEVEN_DAYS_MS : now + SEVEN_DAYS_MS);
+        const daysLeft = Math.ceil((expiresAt - now) / (24 * 60 * 60 * 1000));
+        const isExpired = now > expiresAt;
+        const currentStatus = isExpired && (u.role || 'ADMIN').toUpperCase() !== 'CASHIER' ? 'expired' : (u.status || 'on');
+        return {
+          phone_no: u.phone_no,
+          username: u.username || 'User',
+          business_name: u.business_name || '',
+          business_type: u.business_type || '',
+          address: u.address || '',
+          role: u.role || 'ADMIN',
+          join_code: u.join_code || '',
+          admin_phone: u.admin_phone || '',
+          password_hash: u.password_hash || '',
+          devices,
+          deviceCount: devices.length,
+          maxDevices: 5,
+          status: currentStatus,
+          created_at: Number(u.created_at) || now,
+          expires_at: expiresAt,
+          daysLeft: Math.max(0, daysLeft),
+          isExpired
+        };
+      };
+
+      const mappedProducts = productsRes.rows.map(mapProductRow);
+      const totalStockUnits = mappedProducts.reduce((sum, p) => sum + (Number(p.quantity) || 0), 0);
+      const vs = voucherSummaryRes.rows[0] || {};
+      const es = expenseSummaryRes.rows[0] || {};
+
+      return sendJson(res, 200, {
+        success: true,
+        user: mapAccount(adminUser),
+        cashiers: cashiersRes.rows.map(mapAccount),
+        summary: {
+          salesCount: Number(vs.sales_count) || 0,
+          salesTotal: Number(vs.sales_total) || 0,
+          purchasesCount: Number(vs.purchases_count) || 0,
+          purchasesTotal: Number(vs.purchases_total) || 0,
+          productsCount: mappedProducts.length,
+          totalStockUnits,
+          customersCount: customersRes.rows.length,
+          suppliersCount: suppliersRes.rows.length,
+          expensesCount: Number(es.expenses_count) || 0,
+          expensesTotal: Number(es.expenses_total) || 0,
+          paymentsCount: paymentsRes.rows.length,
+          groupsCount: groupsRes.rows.length,
+          unitsCount: unitsRes.rows.length,
+          stockAdjustmentsCount: stockAdjRes.rows.length
+        },
+        data: {
+          products: mappedProducts,
+          vouchers: vouchersRes.rows.map(mapVoucherRow),
+          customers: customersRes.rows.map(c => ({
+            id: Number(c.customer_id) || 0,
+            name: c.name,
+            phone: c.phone || '',
+            address: c.address || '',
+            note: c.note || ''
+          })),
+          suppliers: suppliersRes.rows.map(s => ({
+            id: Number(s.supplier_id) || 0,
+            name: s.name,
+            phone: s.phone || '',
+            address: s.address || '',
+            note: s.note || ''
+          })),
+          expenses: expensesRes.rows.map(e => ({
+            categoryName: e.category_name || '',
+            description: e.description || '',
+            amount: Number(e.amount) || 0,
+            paymentMethod: e.payment_method || 'CASH',
+            note: e.note || '',
+            timestamp: Number(e.timestamp) || 0,
+            dateString: e.date_string || '',
+            timeString: e.time_string || ''
+          })),
+          payments: paymentsRes.rows.map(p => ({
+            method: p.method,
+            amount: Number(p.amount) || 0,
+            date: Number(p.date) || 0
+          })),
+          groups: groupsRes.rows.map(r => r.name),
+          units: unitsRes.rows.map(r => r.name),
+          stockAdjustments: stockAdjRes.rows.map(sa => ({
+            productId: Number(sa.product_id) || 0,
+            productName: sa.product_name || '',
+            adjustmentType: sa.adjustment_type || 'STOCK_OUT',
+            reasonTitle: sa.reason_title || '',
+            description: sa.description || '',
+            quantity: Number(sa.quantity) || 0,
+            beforeQuantity: Number(sa.before_quantity) || 0,
+            afterQuantity: Number(sa.after_quantity) || 0,
+            timestamp: Number(sa.timestamp) || 0,
+            adjustedBy: sa.adjusted_by || ''
+          }))
+        }
+      });
     }
 
     // Admin: Get recent vouchers across users or for specific user (GET /api/admin/vouchers)
