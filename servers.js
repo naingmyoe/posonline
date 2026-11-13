@@ -1,4 +1,4 @@
-/**
+/**a
  * UN POS Backend Server for VPS (Linux / Ubuntu / Debian / Windows)
  * Direct PostgreSQL Database Storage (NO .json files, NO in-memory database cache!)
  *
@@ -1029,6 +1029,21 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    const CLOUD_TABLES = [
+      'cloud_voucher_items',
+      'cloud_vouchers',
+      'cloud_products',
+      'cloud_customers',
+      'cloud_suppliers',
+      'cloud_product_groups',
+      'cloud_product_units',
+      'cloud_payments',
+      'cloud_expense_categories',
+      'cloud_expenses',
+      'cloud_stock_adjustments',
+      'cloud_deleted_entities'
+    ];
+
     // Helper: Cascade delete user (if Main Admin, delete all linked Cashiers & all cloud data; if Cashier, delete only cashier row)
     async function deleteUserCascade(client, phoneNo) {
       const { rows } = await client.query(
@@ -1053,21 +1068,7 @@ const server = http.createServer(async (req, res) => {
 
       await client.query(`DELETE FROM users WHERE role = 'CASHIER' AND admin_phone = $1`, [phoneNo]);
 
-      const cloudTables = [
-        'cloud_voucher_items',
-        'cloud_vouchers',
-        'cloud_products',
-        'cloud_customers',
-        'cloud_suppliers',
-        'cloud_product_groups',
-        'cloud_product_units',
-        'cloud_payments',
-        'cloud_expense_categories',
-        'cloud_expenses',
-        'cloud_stock_adjustments',
-        'cloud_deleted_entities'
-      ];
-      for (const tableName of cloudTables) {
+      for (const tableName of CLOUD_TABLES) {
         await client.query(`DELETE FROM ${tableName} WHERE user_phone = ANY($1::text[])`, [phonesToClean]);
       }
 
@@ -1641,6 +1642,115 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    // Admin: Scan Orphaned Cloud Data whose owner account no longer exists (GET /api/admin/orphans)
+    if (pathname === '/api/admin/orphans' && method === 'GET') {
+      const tableCounts = {};
+      const byPhoneMap = {};
+      let totalOrphanRows = 0;
+
+      for (const tableName of CLOUD_TABLES) {
+        const { rows } = await pool.query(
+          `SELECT COALESCE(NULLIF(TRIM(t.user_phone), ''), '(empty)') AS orphan_phone, COUNT(*)::int AS cnt
+           FROM ${tableName} t
+           WHERE NOT EXISTS (SELECT 1 FROM users u WHERE u.phone_no = t.user_phone)
+              OR TRIM(COALESCE(t.user_phone, '')) = ''
+           GROUP BY 1`
+        );
+        let tableTotal = 0;
+        for (const r of rows) {
+          const cnt = Number(r.cnt) || 0;
+          tableTotal += cnt;
+          if (!byPhoneMap[r.orphan_phone]) {
+            byPhoneMap[r.orphan_phone] = {
+              phone: r.orphan_phone,
+              vouchers: 0,
+              products: 0,
+              others: 0,
+              total: 0
+            };
+          }
+          if (tableName === 'cloud_vouchers') {
+            byPhoneMap[r.orphan_phone].vouchers += cnt;
+          } else if (tableName === 'cloud_products') {
+            byPhoneMap[r.orphan_phone].products += cnt;
+          } else {
+            byPhoneMap[r.orphan_phone].others += cnt;
+          }
+          byPhoneMap[r.orphan_phone].total += cnt;
+        }
+        tableCounts[tableName] = tableTotal;
+        totalOrphanRows += tableTotal;
+      }
+
+      const [validVouchersRes, validProductsRes] = await Promise.all([
+        pool.query(
+          `SELECT COUNT(*)::int AS cnt FROM cloud_vouchers t
+           WHERE EXISTS (SELECT 1 FROM users u WHERE u.phone_no = t.user_phone)`
+        ),
+        pool.query(
+          `SELECT COUNT(*)::int AS cnt FROM cloud_products t
+           WHERE EXISTS (SELECT 1 FROM users u WHERE u.phone_no = t.user_phone)`
+        )
+      ]);
+
+      const orphanPhones = Object.values(byPhoneMap).sort((a, b) => b.total - a.total);
+      const otherTablesTotal = totalOrphanRows - (tableCounts.cloud_vouchers || 0) - (tableCounts.cloud_products || 0);
+
+      return sendJson(res, 200, {
+        success: true,
+        totalOrphanRows,
+        orphanPhonesCount: orphanPhones.length,
+        orphanPhones,
+        summary: {
+          vouchers: tableCounts.cloud_vouchers || 0,
+          voucherItems: tableCounts.cloud_voucher_items || 0,
+          products: tableCounts.cloud_products || 0,
+          customers: tableCounts.cloud_customers || 0,
+          suppliers: tableCounts.cloud_suppliers || 0,
+          expenses: tableCounts.cloud_expenses || 0,
+          payments: tableCounts.cloud_payments || 0,
+          stockAdjustments: tableCounts.cloud_stock_adjustments || 0,
+          others: otherTablesTotal
+        },
+        tableCounts,
+        protectedValid: {
+          vouchers: Number(validVouchersRes.rows[0]?.cnt) || 0,
+          products: Number(validProductsRes.rows[0]?.cnt) || 0
+        }
+      });
+    }
+
+    // Admin: Cleanup ONLY Orphaned Cloud Data (POST /api/admin/orphans/cleanup)
+    // Strictly preserves all data belonging to any existing user in `users`
+    if (pathname === '/api/admin/orphans/cleanup' && method === 'POST') {
+      const deletedCounts = {};
+      let totalDeleted = 0;
+
+      await withTransaction(async (client) => {
+        for (const tableName of CLOUD_TABLES) {
+          const result = await client.query(
+            `DELETE FROM ${tableName} t
+             WHERE NOT EXISTS (SELECT 1 FROM users u WHERE u.phone_no = t.user_phone)
+                OR TRIM(COALESCE(t.user_phone, '')) = ''`
+          );
+          const count = Number(result.rowCount) || 0;
+          deletedCounts[tableName] = count;
+          totalDeleted += count;
+        }
+      });
+
+      console.log(`[ORPHAN CLEANUP] Deleted ${totalDeleted} orphaned cloud rows across ${CLOUD_TABLES.length} tables.`);
+
+      return sendJson(res, 200, {
+        success: true,
+        totalDeleted,
+        deletedCounts,
+        message: totalDeleted > 0
+          ? `အကောင့်မရှိတော့သော Cloud Data စုစုပေါင်း (${totalDeleted}) ခုကို ဖျက်သိမ်းရှင်းလင်းပြီးပါပြီ (Account ရှိသော Data များကို မဖျက်ဘဲ ထိန်းသိမ်းထားပါသည်)`
+          : 'အကောင့်မရှိဘဲ ကျန်နေသော Cloud Data မရှိပါ'
+      });
+    }
+
     // Admin: Get recent vouchers across users or for specific user (GET /api/admin/vouchers)
     if (pathname === '/api/admin/vouchers' && method === 'GET') {
       const rawPhone = parsedUrl.query.phoneNo;
@@ -1648,7 +1758,7 @@ const server = http.createServer(async (req, res) => {
 
       const { rows } = userPhone
         ? await pool.query(
-            `SELECT v.*, COALESCE(u.business_name, '') AS owner_shop
+            `SELECT v.*, COALESCE(u.business_name, '') AS owner_shop, (u.phone_no IS NOT NULL) AS owner_exists
              FROM cloud_vouchers v
              LEFT JOIN users u ON u.phone_no = v.user_phone
              WHERE v.user_phone = $1
@@ -1657,7 +1767,7 @@ const server = http.createServer(async (req, res) => {
             [userPhone]
           )
         : await pool.query(
-            `SELECT v.*, COALESCE(u.business_name, '') AS owner_shop
+            `SELECT v.*, COALESCE(u.business_name, '') AS owner_shop, (u.phone_no IS NOT NULL) AS owner_exists
              FROM cloud_vouchers v
              LEFT JOIN users u ON u.phone_no = v.user_phone
              ORDER BY v.timestamp DESC
@@ -1667,7 +1777,8 @@ const server = http.createServer(async (req, res) => {
       const list = rows.map(r => ({
         ...mapVoucherRow(r),
         ownerPhone: r.user_phone,
-        ownerShop: r.owner_shop || ''
+        ownerShop: r.owner_shop || '',
+        hasAccount: Boolean(r.owner_exists)
       }));
 
       return sendJson(res, 200, {
@@ -1684,7 +1795,7 @@ const server = http.createServer(async (req, res) => {
 
       const { rows } = userPhone
         ? await pool.query(
-            `SELECT p.*, COALESCE(u.business_name, '') AS owner_shop
+            `SELECT p.*, COALESCE(u.business_name, '') AS owner_shop, (u.phone_no IS NOT NULL) AS owner_exists
              FROM cloud_products p
              LEFT JOIN users u ON u.phone_no = p.user_phone
              WHERE p.user_phone = $1
@@ -1692,7 +1803,7 @@ const server = http.createServer(async (req, res) => {
             [userPhone]
           )
         : await pool.query(
-            `SELECT p.*, COALESCE(u.business_name, '') AS owner_shop
+            `SELECT p.*, COALESCE(u.business_name, '') AS owner_shop, (u.phone_no IS NOT NULL) AS owner_exists
              FROM cloud_products p
              LEFT JOIN users u ON u.phone_no = p.user_phone
              ORDER BY p.name ASC`
@@ -1701,7 +1812,8 @@ const server = http.createServer(async (req, res) => {
       const list = rows.map(r => ({
         ...mapProductRow(r),
         ownerPhone: r.user_phone,
-        ownerShop: r.owner_shop || ''
+        ownerShop: r.owner_shop || '',
+        hasAccount: Boolean(r.owner_exists)
       }));
 
       return sendJson(res, 200, {
