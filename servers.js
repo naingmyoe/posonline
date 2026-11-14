@@ -1,4 +1,4 @@
-/**a
+/**
  * UN POS Backend Server for VPS (Linux / Ubuntu / Debian / Windows)
  * Direct PostgreSQL Database Storage (NO .json files, NO in-memory database cache!)
  *
@@ -1912,7 +1912,8 @@ const server = http.createServer(async (req, res) => {
           const { rows: existingRows } = await client.query(
             `SELECT * FROM cloud_products
              WHERE user_phone = $1
-               AND (($2::bigint IS NOT NULL AND product_id = $2) OR LOWER(TRIM(name)) = LOWER(TRIM($3)))
+               AND (LOWER(TRIM(name)) = LOWER(TRIM($3)) OR ($2::bigint IS NOT NULL AND product_id = $2))
+             ORDER BY CASE WHEN LOWER(TRIM(name)) = LOWER(TRIM($3)) THEN 0 ELSE 1 END
              LIMIT 1`,
             [userPhone, pId, pName]
           );
@@ -1926,8 +1927,8 @@ const server = http.createServer(async (req, res) => {
 
             if (p.isManualStockAdjustment === true && incomingQty !== oldQty && !isNaN(incomingQty)) {
               const { soldSoFar, purchasedSoFar } = await getProductTransactionDeltas(client, userPhone, pId || existing.product_id, pName);
-              newInitialQty = Math.max(0, incomingQty + soldSoFar - purchasedSoFar);
-              newQty = incomingQty;
+              newInitialQty = incomingQty + soldSoFar - purchasedSoFar;
+              newQty = Math.max(0, incomingQty);
             }
 
             await client.query(
@@ -2043,14 +2044,15 @@ const server = http.createServer(async (req, res) => {
             const target = rows[0];
             if (target) {
               const { soldSoFar, purchasedSoFar } = await getProductTransactionDeltas(client, userPhone, pId || target.product_id, pName || target.name);
-              const adjustedBaseline = Math.max(0, incomingQty + soldSoFar - purchasedSoFar);
+              const adjustedBaseline = incomingQty + soldSoFar - purchasedSoFar;
+              const safeQty = Math.max(0, incomingQty);
               const alertQty = newAlertQuantity !== undefined ? (Number(newAlertQuantity) || 0) : target.alert_quantity;
 
               await client.query(
                 `UPDATE cloud_products
                  SET initial_quantity = $1, quantity = $2, alert_quantity = $3, updated_at = $4
                  WHERE user_phone = $5 AND product_key = $6`,
-                [adjustedBaseline, incomingQty, alertQty, Date.now(), userPhone, target.product_key]
+                [adjustedBaseline, safeQty, alertQty, Date.now(), userPhone, target.product_key]
               );
               await recalculateUserProductStock(client, userPhone);
             }
@@ -2139,91 +2141,14 @@ const server = http.createServer(async (req, res) => {
       await withTransaction(async (client) => {
         const now = Date.now();
 
-        // 1. Mirror products (merge metadata, preserve server quantity & initial_quantity)
-        if (Array.isArray(products)) {
-          for (const p of products) {
-            const pId = p.id !== undefined && p.id !== null && Number(p.id) > 0 ? Number(p.id) : null;
-            const pName = (p.name || '').trim();
-            if (!pName) continue;
-            const k = pId ? String(pId) : pName;
-            const initialQty = Number(p.initial_quantity !== undefined ? p.initial_quantity : p.quantity) || 0;
-
-            const { rows: existingRows } = await client.query(
-              `SELECT product_key, quantity, initial_quantity FROM cloud_products WHERE user_phone = $1 AND product_key = $2 LIMIT 1`,
-              [userPhone, k]
-            );
-            if (existingRows[0]) {
-              const ex = existingRows[0];
-              await client.query(
-                `UPDATE cloud_products SET
-                  product_id = COALESCE($1, product_id),
-                  name = $2,
-                  group_name = $3,
-                  purchase_price = $4,
-                  selling_price = $5,
-                  unit = $6,
-                  note = $7,
-                  track_stock = $8,
-                  barcode = $9,
-                  alert_quantity = $10,
-                  image_uri = $11,
-                  updated_at = $12
-                 WHERE user_phone = $13 AND product_key = $14`,
-                [
-                  pId,
-                  pName,
-                  p.groupName || p.group_name || '',
-                  Number(p.purchasePrice !== undefined ? p.purchasePrice : p.purchase_price) || 0,
-                  Number(p.sellingPrice !== undefined ? p.sellingPrice : p.selling_price) || 0,
-                  p.unit || '',
-                  p.note || '',
-                  p.trackStock !== undefined ? !!p.trackStock : true,
-                  p.barcode || '',
-                  Number(p.alertQuantity !== undefined ? p.alertQuantity : p.alert_quantity) || 0,
-                  p.imageUri || '',
-                  now,
-                  userPhone,
-                  ex.product_key
-                ]
-              );
-            } else {
-              await client.query(
-                `INSERT INTO cloud_products (
-                  user_phone, product_key, product_id, name, group_name, purchase_price,
-                  selling_price, unit, note, track_stock, barcode, quantity,
-                  initial_quantity, alert_quantity, image_uri, updated_at
-                ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
-                [
-                  userPhone,
-                  k,
-                  pId,
-                  pName,
-                  p.groupName || p.group_name || '',
-                  Number(p.purchasePrice !== undefined ? p.purchasePrice : p.purchase_price) || 0,
-                  Number(p.sellingPrice !== undefined ? p.sellingPrice : p.selling_price) || 0,
-                  p.unit || '',
-                  p.note || '',
-                  p.trackStock !== undefined ? !!p.trackStock : true,
-                  p.barcode || '',
-                  Number(p.quantity) || 0,
-                  initialQty,
-                  Number(p.alertQuantity !== undefined ? p.alertQuantity : p.alert_quantity) || 0,
-                  p.imageUri || '',
-                  now
-                ]
-              );
-            }
-          }
-        }
-
-        // 2. Mirror vouchers (MERGE by receiptNo)
+        // 1. Mirror vouchers first so voucher_items deltas match restored/mirrored history
         if (Array.isArray(vouchers)) {
           for (const v of vouchers) {
             await upsertVoucherAndItems(client, userPhone, v, null);
           }
         }
 
-        // 3. Mirror voucher items (MERGE without wiping items from other devices)
+        // 2. Mirror voucher items (MERGE without wiping items from other devices)
         if (Array.isArray(voucherItems)) {
           const incomingIds = [...new Set(voucherItems.map(it => it.voucherId || it.voucher_id).filter(Boolean))];
           if (incomingIds.length > 0) {
@@ -2247,6 +2172,127 @@ const server = http.createServer(async (req, res) => {
                 Number(it.quantity) || 1,
                 Number(it.purchasePrice !== undefined ? it.purchasePrice : it.purchase_price) || 0,
                 Number(it.sellingPrice !== undefined ? it.sellingPrice : it.selling_price) || 0
+              ]
+            );
+          }
+        }
+
+        // 3. Mirror products (exact snapshot replacement with back-computed initial_quantity so stocks match 100%)
+        if (Array.isArray(products)) {
+          await client.query(`DELETE FROM cloud_products WHERE user_phone = $1`, [userPhone]);
+
+          const mirroredProducts = [];
+          const seenKeys = new Set();
+          const prodByIdMap = {};
+          const prodByNameMap = {};
+
+          for (const p of products) {
+            const pId = p.id !== undefined && p.id !== null && Number(p.id) > 0 ? Number(p.id) : null;
+            const pName = (p.name || '').trim();
+            if (!pName) continue;
+            const normName = pName.toLowerCase();
+            let k = pId ? String(pId) : normName;
+            if (seenKeys.has(k)) {
+              k = `${k}_${normName}`;
+              if (seenKeys.has(k)) continue;
+            }
+            seenKeys.add(k);
+
+            const targetQty = Math.max(0, Number(p.quantity) || 0);
+            const entry = {
+              productKey: k,
+              pId,
+              pName,
+              normName,
+              groupName: p.groupName || p.group_name || '',
+              purchasePrice: Number(p.purchasePrice !== undefined ? p.purchasePrice : p.purchase_price) || 0,
+              sellingPrice: Number(p.sellingPrice !== undefined ? p.sellingPrice : p.selling_price) || 0,
+              unit: p.unit || '',
+              note: p.note || '',
+              trackStock: p.trackStock !== undefined ? !!p.trackStock : true,
+              barcode: p.barcode || '',
+              targetQty,
+              alertQuantity: Number(p.alertQuantity !== undefined ? p.alertQuantity : p.alert_quantity) || 0,
+              imageUri: p.imageUri || ''
+            };
+            mirroredProducts.push(entry);
+            if (pId) prodByIdMap[String(pId)] = entry;
+            prodByNameMap[normName] = entry;
+          }
+
+          // Compute completed voucher deltas once in O(N) using the exact same matching order as recalculateUserProductStock
+          const { rows: allVItems } = await client.query(
+            `SELECT vi.product_id, vi.product_name, vi.quantity,
+                    COALESCE(v.is_completed, TRUE) AS is_completed,
+                    COALESCE(v.is_purchase, FALSE) AS is_purchase
+             FROM cloud_voucher_items vi
+             LEFT JOIN cloud_vouchers v
+               ON v.user_phone = vi.user_phone AND v.receipt_no = vi.voucher_id
+             WHERE vi.user_phone = $1`,
+            [userPhone]
+          );
+
+          const soldByKey = {};
+          const purchasedByKey = {};
+          for (const it of allVItems) {
+            if (!it.is_completed) continue;
+            const q = Number(it.quantity) || 1;
+            const itPid = it.product_id !== null && it.product_id !== undefined && Number(it.product_id) > 0
+              ? String(it.product_id)
+              : null;
+            const itPname = it.product_name ? String(it.product_name).trim().toLowerCase() : null;
+            const canonical = (itPid && prodByIdMap[itPid]) || (itPname && prodByNameMap[itPname]);
+            if (canonical) {
+              if (it.is_purchase) {
+                purchasedByKey[canonical.productKey] = (purchasedByKey[canonical.productKey] || 0) + q;
+              } else {
+                soldByKey[canonical.productKey] = (soldByKey[canonical.productKey] || 0) + q;
+              }
+            }
+          }
+
+          for (const mp of mirroredProducts) {
+            const sold = soldByKey[mp.productKey] || 0;
+            const purchased = purchasedByKey[mp.productKey] || 0;
+            const exactInitialQty = mp.targetQty + sold - purchased;
+            await client.query(
+              `INSERT INTO cloud_products (
+                user_phone, product_key, product_id, name, group_name, purchase_price,
+                selling_price, unit, note, track_stock, barcode, quantity,
+                initial_quantity, alert_quantity, image_uri, updated_at
+              ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+              ON CONFLICT (user_phone, product_key) DO UPDATE SET
+                product_id = EXCLUDED.product_id,
+                name = EXCLUDED.name,
+                group_name = EXCLUDED.group_name,
+                purchase_price = EXCLUDED.purchase_price,
+                selling_price = EXCLUDED.selling_price,
+                unit = EXCLUDED.unit,
+                note = EXCLUDED.note,
+                track_stock = EXCLUDED.track_stock,
+                barcode = EXCLUDED.barcode,
+                quantity = EXCLUDED.quantity,
+                initial_quantity = EXCLUDED.initial_quantity,
+                alert_quantity = EXCLUDED.alert_quantity,
+                image_uri = EXCLUDED.image_uri,
+                updated_at = EXCLUDED.updated_at`,
+              [
+                userPhone,
+                mp.productKey,
+                mp.pId,
+                mp.pName,
+                mp.groupName,
+                mp.purchasePrice,
+                mp.sellingPrice,
+                mp.unit,
+                mp.note,
+                mp.trackStock,
+                mp.barcode,
+                mp.targetQty,
+                exactInitialQty,
+                mp.alertQuantity,
+                mp.imageUri,
+                now
               ]
             );
           }
