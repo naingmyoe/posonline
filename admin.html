@@ -182,7 +182,7 @@
             <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
             </span>
-            <input type="password" id="loginPassword" placeholder="Default: unposadmin" required class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none font-medium">
+            <input type="password" id="loginPassword" placeholder="Admin Password" required class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none font-medium">
           </div>
         </div>
 
@@ -194,7 +194,7 @@
         </button>
       </form>
       <div class="text-center text-[11px] text-slate-400">
-        Default Login: <b>admin</b> / <b>unposadmin</b>
+        UN POS Secure Admin Portal · Session Token Protected
       </div>
     </div>
   </div>
@@ -543,7 +543,7 @@
           <form id="changeAdminPassForm" onsubmit="handleChangeAdminPassword(event)" class="space-y-4">
             <div>
               <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">လက်ရှိ Admin Password *</label>
-              <input type="password" id="oldAdminPass" placeholder="Default: unposadmin" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+              <input type="password" id="oldAdminPass" placeholder="လက်ရှိ Password ထည့်ပါ" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
             </div>
             <div>
               <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Password အသစ် *</label>
@@ -619,8 +619,63 @@
             <span>အကောင့်မရှိသော Cloud Data များ Remove လုပ်မည်</span>
           </button>
         </div>
+
+        <!-- Card 3: Full PostgreSQL Database Backup & Restore -->
+        <div class="lg:col-span-2 bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm space-y-5">
+          <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <h2 class="text-lg font-bold text-slate-900">Database တစ်ခုလုံး Backup နှင့် Restore ပြုလုပ်ခြင်း (Full DB Backup & Restore)</h2>
+              <p class="text-xs text-slate-500 mt-1 leading-relaxed">
+                PostgreSQL Server ပေါ်ရှိ အကောင့်များအားလုံး (Main Admin + Cashier) နှင့် Cloud Data Table (၁၂) ခုလုံးကို JSON ဖိုင်အဖြစ် Backup သိမ်းဆည်းခြင်း သို့မဟုတ် Backup ဖိုင်မှ ပြန်လည် Restore လုပ်နိုင်ပါသည်။
+              </p>
+            </div>
+            <span class="shrink-0 inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+              Format: UN_POS_FULL_BACKUP_V1
+            </span>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="rounded-2xl border border-indigo-200 bg-indigo-50/50 p-5 space-y-3">
+              <div class="flex items-center space-x-2.5">
+                <div class="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0">
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                </div>
+                <div>
+                  <h3 class="text-sm font-bold text-slate-900">Full Database Backup Download</h3>
+                  <p class="text-[11px] text-slate-600">အကောင့်များနှင့် Cloud Data အားလုံးကို .json ဖိုင်အဖြစ် သိမ်းမည်</p>
+                </div>
+              </div>
+              <button type="button" id="fullBackupBtn" onclick="downloadFullBackup()" class="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-600/20 transition flex items-center justify-center space-x-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                <span>Database တစ်ခုလုံး Backup Download လုပ်မည်</span>
+              </button>
+            </div>
+
+            <div class="rounded-2xl border border-amber-200 bg-amber-50/50 p-5 space-y-3">
+              <div class="flex items-center space-x-2.5">
+                <div class="w-9 h-9 rounded-xl bg-amber-600 text-white flex items-center justify-center shrink-0">
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                </div>
+                <div>
+                  <h3 class="text-sm font-bold text-slate-900">Full Database Restore from File</h3>
+                  <p class="text-[11px] text-slate-600">သိမ်းထားသော Full Backup (.json) ဖိုင်ကို ရွေးချယ်၍ Restore တင်မည်</p>
+                </div>
+              </div>
+              <input type="file" id="fullBackupFileInput" accept=".json,application/json" onchange="handleFullBackupFileSelect(event)" class="hidden">
+              <button type="button" onclick="document.getElementById('fullBackupFileInput').click()" class="w-full py-2.5 px-4 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold shadow-md shadow-amber-600/20 transition flex items-center justify-center space-x-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                <span>Full Backup ဖိုင် ရွေး၍ Restore လုပ်မည်</span>
+              </button>
+            </div>
+          </div>
+          <p class="text-[11px] text-slate-500">
+            * Backup ဖိုင်ထဲတွင် User Password Hash များ ပါဝင်သောကြောင့် Backup ဖိုင်ကို လုံခြုံသော နေရာတွင် သိမ်းဆည်းပါ။ Admin Password ကိုမူ Restore လုပ်သည့်အခါ အပြောင်းအလဲမရှိ ဆက်လက်ထိန်းသိမ်းပေးထားပါသည်။
+          </p>
+        </div>
       </div>
     </div>
+
+    <input type="file" id="accountBackupFileInput" accept=".json,application/json" onchange="handleAccountBackupFileSelect(event)" class="hidden">
 
   </main>
 
@@ -656,8 +711,8 @@
         </div>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">စကားဝှက် (Password)</label>
-            <input type="text" id="editPassword" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+            <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Password အသစ် (ပြောင်းလိုမှသာ ဖြည့်ပါ)</label>
+            <input type="password" id="editPassword" placeholder="မပြောင်းလိုပါက ဗလာထားပါ" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-none">
           </div>
           <div id="editJoinCodeGroup" class="hidden">
             <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Cashier Join Code</label>
@@ -835,6 +890,52 @@
     </div>
   </div>
 
+  <!-- Receipt / Voucher Line-Item Detail Modal -->
+  <div id="voucherDetailModal" class="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm hidden items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-2xl w-full shadow-2xl border border-slate-200 overflow-hidden max-h-[90vh] flex flex-col">
+      <div class="px-6 py-4 bg-slate-900 text-white flex items-center justify-between shrink-0">
+        <div>
+          <h3 class="text-base font-bold flex items-center space-x-2">
+            <span>ဘောက်ချာ အသေးစိတ် (Receipt Detail)</span>
+            <span id="vDetailTypeBadge" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-200 border border-emerald-400/40">SALE</span>
+          </h3>
+          <p id="vDetailReceiptSubtitle" class="text-xs text-slate-300 font-mono mt-0.5"></p>
+        </div>
+        <button onclick="closeVoucherDetailModal()" class="text-slate-400 hover:text-white">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+        </button>
+      </div>
+      <div id="voucherDetailBody" class="p-6 overflow-y-auto custom-scrollbar space-y-5 text-xs">
+        <div class="py-10 text-center text-slate-400">ဘောက်ချာ အချက်အလက်များ ရယူနေပါသည်...</div>
+      </div>
+      <div class="px-6 py-3 bg-slate-50 border-t border-slate-200 flex justify-end shrink-0">
+        <button type="button" onclick="closeVoucherDetailModal()" class="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold">ပိတ်မည်</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Backup Restore Confirmation Modal (Full & Per-Account) -->
+  <div id="backupRestoreConfirmModal" class="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm hidden items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden">
+      <div class="px-6 py-4 bg-amber-600 text-white flex items-center justify-between">
+        <h3 id="restoreModalTitle" class="text-base font-bold">Backup Restore ပြုလုပ်ရန် အတည်ပြုပါ</h3>
+        <button onclick="closeBackupRestoreModal()" class="text-amber-100 hover:text-white">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+        </button>
+      </div>
+      <div class="p-6 space-y-4">
+        <div id="restoreModalSummary" class="text-xs text-slate-700 leading-relaxed space-y-1.5"></div>
+        <div class="bg-rose-50 border border-rose-200 rounded-xl p-3 text-xs text-rose-800 font-medium">
+          သတိပြုရန်: Restore ပြုလုပ်လိုက်ပါက သက်ဆိုင်ရာ လက်ရှိ Data များကို Backup ဖိုင်ထဲရှိ Data များဖြင့် အစားထိုးသွားပါမည်။
+        </div>
+        <div class="pt-2 flex items-center justify-end space-x-2 border-t border-slate-100">
+          <button type="button" onclick="closeBackupRestoreModal()" class="px-4 py-2 border border-slate-300 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50">မလုပ်တော့ပါ</button>
+          <button type="button" id="confirmRestoreBtn" onclick="executePendingBackupRestore()" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-sm font-bold shadow-md">Restore တင်မည်</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast Container -->
   <div id="toast" class="fixed bottom-5 right-5 z-50 transform transition-all duration-300 translate-y-24 opacity-0 pointer-events-none">
     <div id="toastInner" class="bg-slate-900 text-white px-5 py-3 rounded-xl shadow-xl flex items-center space-x-3 border border-slate-700 text-sm font-medium">
@@ -853,6 +954,7 @@
     let currentVoucherTypeFilter = 'all';
     let pendingDeleteTarget = null;
     let latestOrphanReport = null;
+    let pendingRestoreAction = null;
 
     document.getElementById('serverHostDisplay').textContent = window.location.host;
 
@@ -874,6 +976,33 @@
 
     function getMainAdminUsers() {
       return allUsers.filter(u => (u.role || 'ADMIN').toUpperCase() !== 'CASHIER');
+    }
+
+    function forceShowLoginOverlay(msg = '') {
+      localStorage.removeItem('unpos_admin_token');
+      const overlay = document.getElementById('loginOverlay');
+      overlay.classList.remove('hidden');
+      overlay.classList.add('flex');
+      if (msg) {
+        const errBox = document.getElementById('loginError');
+        if (errBox) {
+          errBox.textContent = msg;
+          errBox.classList.remove('hidden');
+        }
+      }
+    }
+
+    async function adminFetch(url, options = {}) {
+      const token = localStorage.getItem('unpos_admin_token') || '';
+      const headers = Object.assign({}, options.headers || {});
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      const res = await fetch(url, Object.assign({}, options, { headers }));
+      if (res.status === 401) {
+        forceShowLoginOverlay('Session သက်တမ်းကုန်ဆုံးသွားပါပြီ။ ကျေးဇူးပြု၍ Admin Login ထပ်မံဝင်ပါ။');
+      }
+      return res;
     }
 
     // Admin Auth State Check
@@ -905,9 +1034,10 @@
           body: JSON.stringify({ username: user, password: pass })
         });
         const data = await res.json();
-        if (data.success) {
-          localStorage.setItem('unpos_admin_token', data.token || 'valid');
+        if (data.success && data.token) {
+          localStorage.setItem('unpos_admin_token', data.token);
           localStorage.setItem('unpos_admin_user', data.username || user);
+          document.getElementById('loginPassword').value = '';
           document.getElementById('loginOverlay').classList.add('hidden');
           document.getElementById('loginOverlay').classList.remove('flex');
           showToast('Admin Login အောင်မြင်ပါသည်');
@@ -922,8 +1052,11 @@
       }
     }
 
-    function handleAdminLogout() {
+    async function handleAdminLogout() {
       if (confirm('Admin Dashboard မှ Logout ထွက်မှာ သေချာပါသလား?')) {
+        try {
+          await adminFetch(`${API_BASE}/api/admin/logout`, { method: 'POST' });
+        } catch (_) {}
         localStorage.removeItem('unpos_admin_token');
         localStorage.removeItem('unpos_admin_user');
         checkAuth();
@@ -1016,11 +1149,14 @@
 
     // Fetch all users and overall stats
     async function fetchUsersAndStats() {
+      if (!localStorage.getItem('unpos_admin_token')) return;
       try {
         const [usersRes, statsRes] = await Promise.all([
-          fetch(`${API_BASE}/api/admin/users`),
-          fetch(`${API_BASE}/api/admin/stats`)
+          adminFetch(`${API_BASE}/api/admin/users`),
+          adminFetch(`${API_BASE}/api/admin/stats`)
         ]);
+
+        if (usersRes.status === 401 || statsRes.status === 401) return;
 
         if (usersRes.ok) {
           const data = await usersRes.json();
@@ -1137,7 +1273,8 @@
           const productsCount = Number(u.productsCount) || 0;
           const vouchersCount = Number(u.vouchersCount) || 0;
           const safePhone = escapeJs(u.phone_no);
-          const safePass = escapeJs(u.password_hash || '');
+          const modelLabel = u.lastLoginModel || (Array.isArray(u.deviceDetails) && u.deviceDetails[0]?.model) || '';
+          const lastLoginLabel = u.lastLoginAt > 0 ? formatDate(u.lastLoginAt) : 'မဝင်ရသေးပါ';
 
           let statusBadge = '';
           if (isExpired) {
@@ -1166,15 +1303,16 @@
               <div class="flex flex-wrap items-center gap-1.5 text-[11px]">
                 <span class="px-2 py-0.5 rounded-md font-bold bg-indigo-50 text-indigo-700 border border-indigo-200/80 whitespace-nowrap">Cashiers: ${cashierCount}</span>
                 <span class="px-2 py-0.5 rounded-md font-semibold bg-slate-100 text-slate-700 whitespace-nowrap">${devCount}/${maxDevs} Devices</span>
+                ${modelLabel ? `<span class="px-2 py-0.5 rounded-md font-semibold bg-sky-50 text-sky-700 border border-sky-200 truncate max-w-[180px]">📱 ${escapeHtml(modelLabel)}</span>` : ''}
                 <span class="px-2 py-0.5 rounded-md font-medium bg-slate-100 text-slate-600 whitespace-nowrap">${productsCount} Products · ${vouchersCount} Vouchers</span>
               </div>
 
               <div class="flex items-center justify-between gap-2 text-xs text-slate-500" onclick="event.stopPropagation()">
-                <div class="flex items-center space-x-1.5 font-mono">
-                  <span id="mpass-${escapeHtml(u.phone_no)}" class="bg-slate-100 px-2 py-0.5 rounded border border-slate-200 text-slate-700">••••••</span>
-                  <button onclick="event.stopPropagation(); togglePass('${safePhone}', '${safePass}', 'mpass-${safePhone}')" class="text-indigo-600 font-sans text-[11px] font-semibold">Show</button>
+                <div class="flex items-center space-x-1.5">
+                  <span class="inline-flex items-center px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-semibold">🔒 Encrypted</span>
+                  <button onclick="event.stopPropagation(); openEditModal('${safePhone}')" class="text-indigo-600 text-[11px] font-semibold hover:underline">Reset</button>
                 </div>
-                <span class="text-[11px] text-slate-400">${formatDate(u.expires_at)}</span>
+                <span class="text-[11px] text-slate-400">Login: ${escapeHtml(lastLoginLabel)}</span>
               </div>
 
               <div class="flex items-center justify-between gap-2 pt-1 border-t border-slate-100" onclick="event.stopPropagation()">
@@ -1207,7 +1345,8 @@
         const productsCount = Number(u.productsCount) || 0;
         const vouchersCount = Number(u.vouchersCount) || 0;
         const safePhone = escapeJs(u.phone_no);
-        const safePass = escapeJs(u.password_hash || '');
+        const modelLabel = u.lastLoginModel || (Array.isArray(u.deviceDetails) && u.deviceDetails[0]?.model) || '';
+        const lastLoginLabel = u.lastLoginAt > 0 ? formatDate(u.lastLoginAt) : 'မရှိသေးပါ';
 
         // Status badge
         let statusBadge = '';
@@ -1250,11 +1389,9 @@
               </div>
             </td>
             <td class="py-4 px-4" onclick="event.stopPropagation()">
-              <div class="flex items-center space-x-1.5 font-mono text-xs">
-                <span id="pass-${escapeHtml(u.phone_no)}" class="bg-slate-100 px-2 py-1 rounded text-slate-700 border border-slate-200">••••••</span>
-                <button onclick="event.stopPropagation(); togglePass('${safePhone}', '${safePass}')" title="Show/Hide" class="text-slate-400 hover:text-slate-600 p-1">
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
-                </button>
+              <div class="flex items-center space-x-1.5 text-xs">
+                <span class="inline-flex items-center px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold">🔒 Encrypted</span>
+                <button onclick="event.stopPropagation(); openEditModal('${safePhone}')" class="text-indigo-600 hover:underline font-semibold text-[11px]">Reset</button>
               </div>
             </td>
             <td class="py-4 px-4" onclick="event.stopPropagation()">
@@ -1266,6 +1403,8 @@
                   Reset
                 </button>
               </div>
+              ${modelLabel ? `<div class="text-[11px] text-sky-700 font-semibold mt-1 truncate max-w-[180px]" title="${escapeHtml(modelLabel)}">📱 ${escapeHtml(modelLabel)}</div>` : ''}
+              <div class="text-[10px] text-slate-400 mt-0.5">Login: ${escapeHtml(lastLoginLabel)}</div>
             </td>
             <td class="py-4 px-4">
               ${statusBadge}
@@ -1311,21 +1450,10 @@
       }).join('');
     }
 
-    // Toggle password visibility
-    function togglePass(phone, pass, elementId) {
-      const el = document.getElementById(elementId || `pass-${phone}`);
-      if (!el) return;
-      if (el.textContent === '••••••') {
-        el.textContent = pass;
-      } else {
-        el.textContent = '••••••';
-      }
-    }
-
     // Quick renew
     async function handleQuickRenew(phoneNo, days) {
       try {
-        const res = await fetch(`${API_BASE}/api/admin/renew`, {
+        const res = await adminFetch(`${API_BASE}/api/admin/renew`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ phoneNo, days })
@@ -1351,7 +1479,7 @@
         return;
       }
       try {
-        const res = await fetch(`${API_BASE}/api/admin/renew`, {
+        const res = await adminFetch(`${API_BASE}/api/admin/renew`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ phoneNo, action: 'reset_devices' })
@@ -1374,7 +1502,7 @@
     // Toggle status (ON/OFF)
     async function handleToggleStatus(phoneNo, newStatus) {
       try {
-        const res = await fetch(`${API_BASE}/api/admin/renew`, {
+        const res = await adminFetch(`${API_BASE}/api/admin/renew`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ phoneNo, action: 'set_status', newStatus })
@@ -1410,7 +1538,7 @@
         msgEl.innerHTML = `Cashier <b>${escapeHtml(target.username || phoneNo)}</b> (<span class="font-mono">${escapeHtml(phoneNo)}</span>) ကို ဖျက်ပစ်မှာ သေချာပါသလား?`;
         warnEl.className = 'bg-amber-50 border border-amber-200 rounded-xl p-3.5 text-xs text-amber-800 space-y-1';
         warnEl.innerHTML = `
-          <div>• ဤ Cashier အကောင့်သာ ပျက်သွားမည်ဖြစ်ပါသည်။</div>
+          <div>• ဤ Cashier အကောင့်သာ Database ထဲမှ ပျက်သွားမည်ဖြစ်ပါသည်။</div>
           <div>• Main Admin အကောင့်နှင့် Cloud Business Data များကို ထိခိုက်မည်မဟုတ်ပါ။</div>
         `;
         btnEl.textContent = 'Cashier ကို ဖျက်မည်';
@@ -1418,10 +1546,10 @@
         const cashierCnt = target ? (Number(target.cashiersCount) || (currentAdminDetail?.user?.phone_no === phoneNo ? currentAdminDetail.cashiers.length : 0)) : 0;
         const shopName = target ? (target.business_name || target.username || phoneNo) : phoneNo;
         titleEl.textContent = 'Main Admin နှင့် Data အားလုံး ဖျက်ရန်';
-        msgEl.innerHTML = `Main Admin <b>${escapeHtml(shopName)}</b> (<span class="font-mono">${escapeHtml(phoneNo)}</span>) ကို စနစ်မှ လုံးဝ ဖျက်ပစ်မှာ သေချာပါသလား?`;
+        msgEl.innerHTML = `Main Admin <b>${escapeHtml(shopName)}</b> (<span class="font-mono">${escapeHtml(phoneNo)}</span>) ကို Database မှ လုံးဝ ဖျက်ပစ်မှာ သေချာပါသလား?`;
         warnEl.className = 'bg-rose-50 border border-rose-200 rounded-xl p-3.5 text-xs text-rose-800 space-y-1.5 font-medium';
         warnEl.innerHTML = `
-          <div class="font-bold text-rose-900">သတိပြုရန် - အောက်ပါအချက်အလက်များ အားလုံး အပြီးတိုင် ပျက်သွားပါမည်:</div>
+          <div class="font-bold text-rose-900">သတိပြုရန် - PostgreSQL Database ထဲမှ အောက်ပါအချက်အလက်များ ချက်ချင်း အပြီးတိုင် ပျက်သွားပါမည်:</div>
           <div>• Main Admin အကောင့် (<span class="font-mono">${escapeHtml(phoneNo)}</span>)</div>
           <div>• ချိတ်ဆက်ထားသော Cashier အကောင့်များအားလုံး (${cashierCnt} ခု)</div>
           <div>• Cloud Data များအားလုံး (ကုန်ပစ္စည်း၊ ဘောက်ချာ၊ Customer၊ Supplier၊ အသုံးစရိတ်၊ Stock မှတ်တမ်းများ)</div>
@@ -1448,7 +1576,7 @@
       btn.textContent = 'ဖျက်နေပါသည်...';
 
       try {
-        const res = await fetch(`${API_BASE}/api/admin/user/delete`, {
+        const res = await adminFetch(`${API_BASE}/api/admin/user/delete`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ phoneNo })
@@ -1490,7 +1618,7 @@
       document.getElementById('editPhoneDisplay').value = user.phone_no;
       document.getElementById('editBusinessName').value = user.business_name || '';
       document.getElementById('editUsername').value = user.username || '';
-      document.getElementById('editPassword').value = user.password_hash || '';
+      document.getElementById('editPassword').value = '';
       document.getElementById('editStatus').value = user.status || 'on';
       document.getElementById('editExpiresAt').value = formatForInput(user.expires_at);
       document.getElementById('editJoinCode').value = user.join_code || '';
@@ -1519,7 +1647,7 @@
       const adminPhone = document.getElementById('editAdminPhone').value || '';
       const businessName = document.getElementById('editBusinessName').value;
       const username = document.getElementById('editUsername').value;
-      const password = document.getElementById('editPassword').value;
+      const password = document.getElementById('editPassword').value.trim();
       const status = document.getElementById('editStatus').value;
       const expiresAtInput = document.getElementById('editExpiresAt').value;
       const joinCode = document.getElementById('editJoinCode').value.trim();
@@ -1529,20 +1657,22 @@
         : undefined;
 
       try {
-        const res = await fetch(`${API_BASE}/api/admin/user/update`, {
+        const payload = {
+          phoneNo,
+          role,
+          adminPhone,
+          businessName,
+          username,
+          status,
+          expiresAt,
+          joinCode: role.toUpperCase() === 'CASHIER' ? joinCode : undefined
+        };
+        if (password) payload.password = password;
+
+        const res = await adminFetch(`${API_BASE}/api/admin/user/update`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            phoneNo,
-            role,
-            adminPhone,
-            businessName,
-            username,
-            password,
-            status,
-            expiresAt,
-            joinCode: role.toUpperCase() === 'CASHIER' ? joinCode : undefined
-          })
+          body: JSON.stringify(payload)
         });
         const data = await res.json();
         if (data.success) {
@@ -1591,7 +1721,7 @@
       const joinCode = document.getElementById('createCashierJoinCode').value.trim();
 
       try {
-        const res = await fetch(`${API_BASE}/api/admin/cashier/create`, {
+        const res = await adminFetch(`${API_BASE}/api/admin/cashier/create`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ adminPhone, phoneNo, username, password, status, joinCode })
@@ -1646,86 +1776,19 @@
       }
 
       try {
-        const res = await fetch(`${API_BASE}/api/admin/user/details?phoneNo=${encodeURIComponent(phoneNo)}`);
+        const res = await adminFetch(`${API_BASE}/api/admin/user/details?phoneNo=${encodeURIComponent(phoneNo)}`);
         let data = await res.json().catch(() => ({}));
 
-        // Fallback if VPS is still running an older server.js without /api/admin/user/details
-        if (res.status === 404 && (!data || data.message === 'Endpoint not found')) {
-          const baseUser = allUsers.find(u => u.phone_no === phoneNo);
-          if (baseUser) {
-            const [cashiersRes, pullRes] = await Promise.all([
-              fetch(`${API_BASE}/api/cashiers?phoneNo=${encodeURIComponent(phoneNo)}`).then(r => r.json()).catch(() => ({ cashiers: [] })),
-              fetch(`${API_BASE}/api/sync/pull`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userPhone: phoneNo })
-              }).then(r => r.json()).catch(() => ({}))
-            ]);
+        if (res.status === 401) return;
 
-            const cashiersList = (cashiersRes.cashiers || []).map(c => {
-              const fromAll = allUsers.find(u => u.phone_no === c.phoneNo);
-              return {
-                phone_no: c.phoneNo,
-                username: c.username || 'Cashier',
-                business_name: c.businessName || baseUser.business_name || '',
-                role: 'CASHIER',
-                join_code: c.joinCode || '',
-                admin_phone: c.adminPhone || phoneNo,
-                status: c.status || 'on',
-                password_hash: fromAll?.password_hash || '',
-                deviceCount: fromAll?.deviceCount || 0,
-                created_at: fromAll?.created_at || 0
-              };
-            });
-
-            const products = pullRes.products || [];
-            const vouchers = pullRes.vouchers || [];
-            const expenses = pullRes.expenses || [];
-            const customers = pullRes.customers || [];
-            const suppliers = pullRes.suppliers || [];
-            const sales = vouchers.filter(v => !v.isPurchase);
-            const purchases = vouchers.filter(v => !!v.isPurchase);
-
-            data = {
-              success: true,
-              legacyMode: true,
-              user: baseUser,
-              cashiers: cashiersList,
-              summary: {
-                salesCount: sales.length,
-                salesTotal: sales.reduce((acc, v) => acc + (Number(v.totalAmount) || 0), 0),
-                purchasesCount: purchases.length,
-                purchasesTotal: purchases.reduce((acc, v) => acc + (Number(v.totalAmount) || 0), 0),
-                productsCount: products.length,
-                totalStockUnits: products.reduce((acc, p) => acc + (Number(p.quantity) || 0), 0),
-                customersCount: customers.length,
-                suppliersCount: suppliers.length,
-                expensesCount: expenses.length,
-                expensesTotal: expenses.reduce((acc, e) => acc + (Number(e.amount) || 0), 0)
-              },
-              data: {
-                products,
-                vouchers,
-                customers,
-                suppliers,
-                expenses,
-                payments: pullRes.payments || [],
-                groups: pullRes.groups || [],
-                units: pullRes.units || [],
-                stockAdjustments: pullRes.stockAdjustments || []
-              }
-            };
-          }
-        }
-
-        if ((!res.ok && !data.legacyMode) || !data.success) {
+        if (!res.ok || !data.success) {
           showToast(data.message || 'အချက်အလက် ရယူ၍ မရပါ', true);
           if (!silent) closeAdminDetailView();
           return;
         }
 
         if (noticeEl) {
-          noticeEl.classList.toggle('hidden', !data.legacyMode);
+          noticeEl.classList.add('hidden');
         }
 
         currentAdminDetail = data;
@@ -1745,10 +1808,10 @@
     function renderAdminDetailHero(u, cashiers) {
       const hero = document.getElementById('adminDetailHero');
       const safePhone = escapeJs(u.phone_no);
-      const safePass = escapeJs(u.password_hash || '');
       const devCount = u.deviceCount || 0;
       const maxDevs = u.maxDevices || 5;
       const isExpired = u.isExpired;
+      const devDetails = Array.isArray(u.deviceDetails) ? u.deviceDetails : [];
 
       let statusPill = '';
       if (isExpired) {
@@ -1782,15 +1845,23 @@
             </div>
 
             <div class="flex flex-wrap items-center gap-2">
-              <button onclick="openEditModal('${safePhone}')" class="inline-flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold border border-white/15 transition">
+              <button onclick="downloadAccountBackup('${safePhone}')" class="inline-flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-sky-500/20 hover:bg-sky-500/30 text-sky-200 text-xs font-bold border border-sky-400/30 transition">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                <span>Account Backup (.json)</span>
+              </button>
+              <button onclick="triggerAccountRestore('${safePhone}')" class="inline-flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 text-xs font-bold border border-amber-400/30 transition">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                <span>Account Restore</span>
+              </button>
+              <button onclick="openEditModal('${safePhone}')" class="inline-flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold border border-white/15 transition">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
                 <span>Admin ပြင်ဆင်မည်</span>
               </button>
-              <button onclick="handleToggleStatus('${safePhone}', '${isExpired ? 'on' : (u.status === 'on' ? 'off' : 'on')}')" class="inline-flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 text-xs font-bold border border-emerald-400/30 transition">
+              <button onclick="handleToggleStatus('${safePhone}', '${isExpired ? 'on' : (u.status === 'on' ? 'off' : 'on')}')" class="inline-flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 text-xs font-bold border border-emerald-400/30 transition">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
                 <span>${u.status === 'on' ? 'ပိတ်မည် (OFF)' : 'ဖွင့်မည် (ON)'}</span>
               </button>
-              <button onclick="openDeleteConfirmModal('${safePhone}')" class="inline-flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-lg shadow-rose-900/40 transition">
+              <button onclick="openDeleteConfirmModal('${safePhone}')" class="inline-flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-lg shadow-rose-900/40 transition">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                 <span>Admin + Data အားလုံးဖျက်မည်</span>
               </button>
@@ -1798,22 +1869,19 @@
           </div>
         </div>
 
-        <div class="px-6 py-4 bg-white grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-center text-xs">
+        <div class="px-6 py-4 bg-white grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-start text-xs border-b border-slate-100">
           <div>
-            <span class="text-slate-400 font-semibold uppercase tracking-wider block">Password</span>
-            <div class="flex items-center space-x-2 mt-1 font-mono">
-              <span id="detail-admin-pass" class="bg-slate-100 px-2.5 py-1 rounded-lg text-slate-800 border border-slate-200 font-semibold">••••••</span>
-              <button onclick="togglePass('${safePhone}', '${safePass}', 'detail-admin-pass')" class="text-indigo-600 hover:underline font-sans font-semibold">Show/Hide</button>
+            <span class="text-slate-400 font-semibold uppercase tracking-wider block">Security & Password</span>
+            <div class="flex items-center space-x-2 mt-1">
+              <span class="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold">🔒 Encrypted (Scrypt)</span>
+              <button onclick="openEditModal('${safePhone}')" class="text-indigo-600 hover:underline font-semibold">Reset</button>
             </div>
           </div>
           <div>
-            <span class="text-slate-400 font-semibold uppercase tracking-wider block">ချိတ်ဆက်စက် & Cashier</span>
-            <div class="flex items-center space-x-2 mt-1">
-              <span class="px-2 py-0.5 rounded-md font-bold bg-slate-100 text-slate-700">${devCount} / ${maxDevs} Devices</span>
-              <button onclick="handleResetDevices('${safePhone}')" class="text-indigo-600 hover:underline font-semibold">Reset</button>
-              <span class="text-slate-300">|</span>
-              <span class="font-bold text-indigo-700">${cashiers.length} Cashiers</span>
-            </div>
+            <span class="text-slate-400 font-semibold uppercase tracking-wider block">နောက်ဆုံး Login နှင့် ဖုန်း Model</span>
+            <div class="font-bold text-slate-800 mt-1">${u.lastLoginModel ? `📱 ${escapeHtml(u.lastLoginModel)}` : 'Model မှတ်တမ်းမရှိသေးပါ'}</div>
+            <div class="text-[11px] text-slate-500 mt-0.5">Login: ${u.lastLoginAt > 0 ? formatDate(u.lastLoginAt) : 'မရှိသေးပါ'}</div>
+            ${u.lastLoginDevice ? `<div class="text-[10px] font-mono text-slate-400 truncate max-w-[200px]" title="${escapeHtml(u.lastLoginDevice)}">ID: ${escapeHtml(u.lastLoginDevice)}</div>` : ''}
           </div>
           <div>
             <span class="text-slate-400 font-semibold uppercase tracking-wider block">သက်တမ်းကုန်ဆုံးချိန်</span>
@@ -1828,6 +1896,25 @@
               <button onclick="handleQuickRenew('${safePhone}', 90)" class="px-2.5 py-1 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold border border-purple-200 transition">+90d</button>
               <button onclick="handleQuickRenew('${safePhone}', 365)" class="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold border border-emerald-200 transition">+1y</button>
             </div>
+          </div>
+        </div>
+
+        <div class="px-6 py-3 bg-slate-50/70 flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="font-bold text-slate-600">Devices (${devCount}/${maxDevs}):</span>
+            ${devDetails.length === 0 ? `<span class="text-slate-400 italic">စက်ချိတ်ဆက်ထားခြင်း မရှိသေးပါ</span>` : devDetails.map((d, idx) => `
+              <span class="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-[11px]">
+                <span class="font-bold text-indigo-600">#${idx + 1}</span>
+                <span class="font-semibold text-slate-800">${escapeHtml(d.model || 'Android')}</span>
+                <span class="font-mono text-slate-400">(${escapeHtml(String(d.deviceId).slice(0, 10))})</span>
+                ${d.lastLoginAt ? `<span class="text-slate-400">· ${formatDate(d.lastLoginAt)}</span>` : ''}
+              </span>
+            `).join('')}
+          </div>
+          <div class="flex items-center space-x-2">
+            <button onclick="handleResetDevices('${safePhone}')" class="text-amber-600 hover:underline font-semibold">Reset All Devices</button>
+            <span class="text-slate-300">|</span>
+            <span class="font-bold text-indigo-700">${cashiers.length} Cashiers</span>
           </div>
         </div>
       `;
@@ -1951,7 +2038,6 @@
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             ${list.map(c => {
               const safePhone = escapeJs(c.phone_no);
-              const safePass = escapeJs(c.password_hash || '');
               const st = (c.status || 'pending').toLowerCase();
               let statusBadge = '';
               if (st === 'on') {
@@ -1962,6 +2048,7 @@
                 statusBadge = `<span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-100 text-rose-700 border border-rose-200">OFF</span>`;
               }
               const nextStatus = st === 'on' ? 'off' : 'on';
+              const cModel = c.lastLoginModel || (Array.isArray(c.deviceDetails) && c.deviceDetails[0]?.model) || '';
 
               return `
                 <div class="rounded-2xl border border-slate-200 bg-slate-50/50 hover:bg-white hover:shadow-md transition p-5 space-y-4">
@@ -1985,11 +2072,11 @@
 
                   <div class="grid grid-cols-2 gap-3 text-xs bg-white rounded-xl p-3 border border-slate-100">
                     <div>
-                      <span class="text-slate-400 block text-[11px]">Password</span>
-                      <div class="flex items-center space-x-1.5 font-mono mt-0.5">
-                        <span id="cpass-${escapeHtml(c.phone_no)}" class="text-slate-700 font-semibold">••••••</span>
-                        <button onclick="togglePass('${safePhone}', '${safePass}', 'cpass-${safePhone}')" class="text-indigo-600 hover:underline font-sans text-[11px]">Show</button>
+                      <span class="text-slate-400 block text-[11px]">Security & Model</span>
+                      <div class="flex items-center space-x-1.5 mt-0.5">
+                        <span class="text-emerald-700 font-semibold">🔒 Encrypted</span>
                       </div>
+                      ${cModel ? `<div class="text-[11px] text-sky-700 font-semibold mt-0.5 truncate">📱 ${escapeHtml(cModel)}</div>` : ''}
                     </div>
                     <div>
                       <span class="text-slate-400 block text-[11px]">Devices (${c.deviceCount || 0}/5)</span>
@@ -1997,6 +2084,7 @@
                         <span class="font-semibold text-slate-700">${c.deviceCount || 0} / 5</span>
                         <button onclick="handleResetDevices('${safePhone}')" class="text-amber-600 hover:underline font-semibold text-[11px]">Reset</button>
                       </div>
+                      <div class="text-[10px] text-slate-400 mt-0.5">Login: ${c.lastLoginAt > 0 ? formatDate(c.lastLoginAt) : 'မရှိသေးပါ'}</div>
                     </div>
                   </div>
 
@@ -2077,6 +2165,7 @@
                  (v.customerName || '').toLowerCase().includes(q) ||
                  (v.cashierName || '').toLowerCase().includes(q);
         });
+        const ownerPhoneJs = escapeJs(currentDetailAdminPhone || '');
 
         container.innerHTML = `
           <div class="flex items-center space-x-2 mb-4">
@@ -2089,7 +2178,7 @@
             <table class="w-full text-left border-collapse text-xs">
               <thead>
                 <tr class="bg-slate-50 text-slate-500 uppercase tracking-wider border-b border-slate-200">
-                  <th class="py-3 px-3">Receipt No</th>
+                  <th class="py-3 px-3">Receipt No (နှိပ်ကြည့်ရန်)</th>
                   <th class="py-3 px-3">အမျိုးအစား</th>
                   <th class="py-3 px-3">Cashier</th>
                   <th class="py-3 px-3">Customer / Supplier</th>
@@ -2101,8 +2190,12 @@
               </thead>
               <tbody class="divide-y divide-slate-100">
                 ${list.map(v => `
-                  <tr class="hover:bg-slate-50">
-                    <td class="py-2.5 px-3 font-mono font-bold text-indigo-600">${escapeHtml(v.receiptNo)}</td>
+                  <tr onclick="openVoucherDetailModal('${ownerPhoneJs}', '${escapeJs(v.receiptNo)}')" class="hover:bg-indigo-50/50 cursor-pointer transition">
+                    <td class="py-2.5 px-3 font-mono font-bold text-indigo-600">
+                      <button type="button" onclick="event.stopPropagation(); openVoucherDetailModal('${ownerPhoneJs}', '${escapeJs(v.receiptNo)}')" class="hover:underline text-left font-mono font-bold text-indigo-600">
+                        ${escapeHtml(v.receiptNo)} →
+                      </button>
+                    </td>
                     <td class="py-2.5 px-3">
                       <span class="px-2 py-0.5 rounded text-[11px] font-semibold ${v.isPurchase ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}">
                         ${v.isPurchase ? 'အဝယ်' : 'အရောင်း'}
@@ -2297,7 +2390,10 @@
 
       container.innerHTML = allUsers.map(u => {
         const devs = Array.isArray(u.devices) ? u.devices : (u.device_id ? [u.device_id] : []);
-        const devCount = devs.length;
+        const details = Array.isArray(u.deviceDetails) && u.deviceDetails.length > 0
+          ? u.deviceDetails
+          : devs.map(id => ({ deviceId: id, model: u.lastLoginModel || 'Android Device', firstLoginAt: u.lastLoginAt || 0, lastLoginAt: u.lastLoginAt || 0, lastSeenAt: u.lastLoginAt || 0 }));
+        const devCount = Math.max(devs.length, details.length);
         const maxDevs = 5;
         const isCashier = (u.role || 'ADMIN').toUpperCase() === 'CASHIER';
         const safePhone = escapeJs(u.phone_no);
@@ -2311,6 +2407,7 @@
                   <span class="px-1.5 py-0.5 rounded text-[10px] font-bold ${isCashier ? 'bg-emerald-50 text-emerald-700' : 'bg-indigo-50 text-indigo-700'}">${isCashier ? 'CASHIER' : 'ADMIN'}</span>
                 </div>
                 <p class="text-xs text-slate-500 font-mono">${escapeHtml(u.phone_no)} (${escapeHtml(u.username)})</p>
+                <p class="text-[11px] text-slate-400 mt-0.5">Last Login: ${u.lastLoginAt > 0 ? formatDate(u.lastLoginAt) : 'မရှိသေးပါ'}</p>
               </div>
               <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${devCount >= maxDevs ? 'bg-amber-100 text-amber-800' : 'bg-indigo-50 text-indigo-700'}">
                 ${devCount} / ${maxDevs} Devices
@@ -2319,15 +2416,21 @@
 
             <div class="space-y-2">
               <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">ချိတ်ဆက်ထားသော စက်များ:</p>
-              ${devs.length === 0 ? `
+              ${details.length === 0 ? `
                 <p class="text-xs text-slate-400 italic">စက်ချိတ်ဆက်ထားခြင်း မရှိသေးပါ</p>
-              ` : devs.map((d, idx) => `
-                <div class="flex items-center justify-between bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-xs">
-                  <div class="flex items-center space-x-2">
-                    <span class="w-5 h-5 rounded-md bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-[10px]">#${idx + 1}</span>
-                    <span class="font-mono text-slate-700 truncate max-w-[170px]" title="${escapeHtml(d)}">${escapeHtml(d)}</span>
+              ` : details.map((d, idx) => `
+                <div class="bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-xs space-y-1">
+                  <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-2 min-w-0">
+                      <span class="w-5 h-5 rounded-md bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-[10px] shrink-0">#${idx + 1}</span>
+                      <span class="font-bold text-slate-800 truncate">${escapeHtml(d.model || 'Android Device')}</span>
+                    </div>
+                    <span class="w-2 h-2 rounded-full bg-emerald-500 shrink-0" title="Active"></span>
                   </div>
-                  <span class="w-2 h-2 rounded-full bg-emerald-500" title="Active"></span>
+                  <div class="flex items-center justify-between text-[11px] text-slate-500 pl-7">
+                    <span class="font-mono truncate max-w-[140px]" title="${escapeHtml(d.deviceId)}">${escapeHtml(d.deviceId)}</span>
+                    <span>${d.lastLoginAt > 0 ? formatDate(d.lastLoginAt) : '-'}</span>
+                  </div>
                 </div>
               `).join('')}
             </div>
@@ -2349,7 +2452,8 @@
       tbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-slate-400">ဘောက်ချာများ ရယူနေပါသည်...</td></tr>`;
 
       try {
-        const res = await fetch(`${API_BASE}/api/admin/vouchers`);
+        const res = await adminFetch(`${API_BASE}/api/admin/vouchers`);
+        if (res.status === 401) return;
         const data = await res.json();
         const list = data.vouchers || [];
         if (list.length === 0) {
@@ -2357,29 +2461,156 @@
           return;
         }
 
-        tbody.innerHTML = list.map(v => `
-          <tr class="hover:bg-slate-50/80 transition ${v.hasAccount === false ? 'bg-rose-50/40' : ''}">
-            <td class="py-3 px-4 pl-6 font-mono font-bold text-xs text-indigo-600">${escapeHtml(v.receiptNo || v.receipt_no || '-')}</td>
-            <td class="py-3 px-4 text-xs">
-              ${v.hasAccount === false
-                ? `<div class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-200 mb-0.5">အကောင့်မရှိတော့ပါ</div>`
-                : `<div class="font-bold text-slate-800">${escapeHtml(v.ownerShop || '-')}</div>`}
-              <div class="text-slate-400 font-mono">${escapeHtml(v.ownerPhone || '')}</div>
-            </td>
-            <td class="py-3 px-4 text-xs font-semibold">
-              <span class="px-2 py-0.5 rounded text-[11px] ${v.isPurchase ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}">
-                ${v.isPurchase ? 'အဝယ် (Purchase)' : 'အရောင်း (Sale)'}
-              </span>
-            </td>
-            <td class="py-3 px-4 text-xs font-bold text-slate-900">${(Number(v.totalAmount || v.total_amount) || 0).toLocaleString()} Ks</td>
-            <td class="py-3 px-4 text-xs text-slate-600">${escapeHtml(v.customerName || v.customer_name || 'General')}</td>
-            <td class="py-3 px-4 text-xs font-mono text-slate-600">${escapeHtml(v.paymentMethod || v.payment_method || 'CASH')}</td>
-            <td class="py-3 px-4 pr-6 text-right text-xs text-slate-500">${formatDate(v.timestamp)}</td>
-          </tr>
-        `).join('');
+        tbody.innerHTML = list.map(v => {
+          const rNo = v.receiptNo || v.receipt_no || '';
+          const ownerPhoneJs = escapeJs(v.ownerPhone || '');
+          const rNoJs = escapeJs(rNo);
+          return `
+            <tr onclick="openVoucherDetailModal('${ownerPhoneJs}', '${rNoJs}')" class="hover:bg-indigo-50/50 cursor-pointer transition ${v.hasAccount === false ? 'bg-rose-50/40' : ''}">
+              <td class="py-3 px-4 pl-6 font-mono font-bold text-xs text-indigo-600">
+                <button type="button" onclick="event.stopPropagation(); openVoucherDetailModal('${ownerPhoneJs}', '${rNoJs}')" class="hover:underline font-mono font-bold text-indigo-600">
+                  ${escapeHtml(rNo || '-')} →
+                </button>
+              </td>
+              <td class="py-3 px-4 text-xs">
+                ${v.hasAccount === false
+                  ? `<div class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-200 mb-0.5">အကောင့်မရှိတော့ပါ</div>`
+                  : `<div class="font-bold text-slate-800">${escapeHtml(v.ownerShop || '-')}</div>`}
+                <div class="text-slate-400 font-mono">${escapeHtml(v.ownerPhone || '')}</div>
+              </td>
+              <td class="py-3 px-4 text-xs font-semibold">
+                <span class="px-2 py-0.5 rounded text-[11px] ${v.isPurchase ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}">
+                  ${v.isPurchase ? 'အဝယ် (Purchase)' : 'အရောင်း (Sale)'}
+                </span>
+              </td>
+              <td class="py-3 px-4 text-xs font-bold text-slate-900">${(Number(v.totalAmount || v.total_amount) || 0).toLocaleString()} Ks</td>
+              <td class="py-3 px-4 text-xs text-slate-600">${escapeHtml(v.customerName || v.customer_name || 'General')}</td>
+              <td class="py-3 px-4 text-xs font-mono text-slate-600">${escapeHtml(v.paymentMethod || v.payment_method || 'CASH')}</td>
+              <td class="py-3 px-4 pr-6 text-right text-xs text-slate-500">${formatDate(v.timestamp)}</td>
+            </tr>
+          `;
+        }).join('');
       } catch (err) {
         tbody.innerHTML = `<tr><td colspan="7" class="py-6 text-center text-rose-500">Error: ${escapeHtml(err.message)}</td></tr>`;
       }
+    }
+
+    // Open Voucher / Receipt Line-Item Detail Modal
+    async function openVoucherDetailModal(userPhone, receiptNo) {
+      if (!userPhone || !receiptNo) return;
+      const modal = document.getElementById('voucherDetailModal');
+      const bodyEl = document.getElementById('voucherDetailBody');
+      const badgeEl = document.getElementById('vDetailTypeBadge');
+      const subEl = document.getElementById('vDetailReceiptSubtitle');
+
+      subEl.textContent = `${receiptNo} · ${userPhone}`;
+      badgeEl.textContent = 'LOADING';
+      badgeEl.className = 'px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-600 text-slate-200';
+      bodyEl.innerHTML = `<div class="py-10 text-center text-slate-400">ဘောက်ချာ အချက်အလက်များ ရယူနေပါသည်...</div>`;
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+
+      try {
+        const res = await adminFetch(`${API_BASE}/api/admin/voucher/details?userPhone=${encodeURIComponent(userPhone)}&receiptNo=${encodeURIComponent(receiptNo)}`);
+        if (res.status === 401) {
+          closeVoucherDetailModal();
+          return;
+        }
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          bodyEl.innerHTML = `<div class="py-8 text-center text-rose-600 font-semibold">${escapeHtml(data.message || 'ဘောက်ချာ ရှာမတွေ့ပါ')}</div>`;
+          return;
+        }
+
+        const v = data.voucher || {};
+        const items = data.items || [];
+        const owner = data.owner || {};
+        const isPurchase = !!v.isPurchase;
+
+        badgeEl.textContent = isPurchase ? 'PURCHASE (အဝယ်)' : 'SALE (အရောင်း)';
+        badgeEl.className = isPurchase
+          ? 'px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-200 border border-amber-400/40'
+          : 'px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-200 border border-emerald-400/40';
+
+        const subtotal = items.reduce((sum, it) => sum + (Number(it.lineTotal) || 0), 0);
+        const totalAmt = Number(v.totalAmount) || 0;
+        const discountAmt = Number(v.discount) || 0;
+        const feeAmt = Number(v.fee) || 0;
+        const paidAmt = Number(v.paidAmount) || 0;
+        const changeAmt = Number(v.changeAmount) || 0;
+        const balanceAmt = Number(v.balanceAmount) || 0;
+
+        bodyEl.innerHTML = `
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 border border-slate-200 rounded-xl p-4">
+            <div class="space-y-1">
+              <div class="text-slate-400 font-semibold uppercase text-[10px]">ဆိုင်နှင့် အကောင့်</div>
+              <div class="font-bold text-slate-900 text-sm">${escapeHtml(owner.businessName || owner.username || userPhone)}</div>
+              <div class="font-mono text-slate-500">${escapeHtml(owner.phoneNo || userPhone)}</div>
+              ${owner.address ? `<div class="text-slate-500">${escapeHtml(owner.address)}</div>` : ''}
+            </div>
+            <div class="space-y-1 sm:text-right">
+              <div class="text-slate-400 font-semibold uppercase text-[10px]">ဘောက်ချာ အချက်အလက်</div>
+              <div class="font-mono font-bold text-indigo-700 text-sm">${escapeHtml(v.receiptNo)}</div>
+              <div class="text-slate-600">${formatDate(v.timestamp)}</div>
+              <div class="text-slate-600">Cashier: <b>${escapeHtml(v.cashierName || '-')}</b> · ${isPurchase ? 'Supplier' : 'Customer'}: <b>${escapeHtml(v.customerName || 'Not Register')}</b></div>
+            </div>
+          </div>
+
+          <div class="border border-slate-200 rounded-xl overflow-hidden">
+            <table class="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr class="bg-slate-100 text-slate-600 font-bold border-b border-slate-200">
+                  <th class="py-2.5 px-3">#</th>
+                  <th class="py-2.5 px-3">ကုန်ပစ္စည်းအမည်</th>
+                  <th class="py-2.5 px-3 text-right">အရေအတွက်</th>
+                  <th class="py-2.5 px-3 text-right">ဈေးနှုန်း</th>
+                  <th class="py-2.5 px-3 text-right">သင့်ငွေ</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100">
+                ${items.length === 0 ? `
+                  <tr><td colspan="5" class="py-6 text-center text-slate-400">ကုန်ပစ္စည်းစာရင်း (Line Items) မရှိပါ</td></tr>
+                ` : items.map((it, i) => {
+                  const unitPrice = isPurchase ? (Number(it.purchasePrice) || 0) : (Number(it.sellingPrice) || 0);
+                  return `
+                    <tr>
+                      <td class="py-2 px-3 text-slate-400">${i + 1}</td>
+                      <td class="py-2 px-3 font-bold text-slate-800">${escapeHtml(it.productName || '-')}</td>
+                      <td class="py-2 px-3 text-right font-mono">${Number(it.quantity) || 1}</td>
+                      <td class="py-2 px-3 text-right font-mono text-slate-600">${unitPrice.toLocaleString()} Ks</td>
+                      <td class="py-2 px-3 text-right font-mono font-bold text-slate-900">${(Number(it.lineTotal) || 0).toLocaleString()} Ks</td>
+                    </tr>
+                  `;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-1.5">
+            <div class="flex justify-between text-slate-600"><span>Subtotal (${items.length} မျိုး)</span><span class="font-mono font-semibold">${subtotal.toLocaleString()} Ks</span></div>
+            ${discountAmt > 0 ? `<div class="flex justify-between text-rose-600"><span>Discount</span><span class="font-mono font-semibold">- ${discountAmt.toLocaleString()} Ks</span></div>` : ''}
+            ${feeAmt > 0 ? `<div class="flex justify-between text-slate-600"><span>Fee / Tax / Delivery</span><span class="font-mono font-semibold">+ ${feeAmt.toLocaleString()} Ks</span></div>` : ''}
+            <div class="flex justify-between text-sm font-extrabold text-slate-900 pt-1.5 border-t border-slate-200">
+              <span>စုစုပေါင်း ကျသင့်ငွေ (Total)</span>
+              <span class="font-mono text-indigo-700">${totalAmt.toLocaleString()} Ks</span>
+            </div>
+            <div class="flex justify-between text-slate-600 pt-1">
+              <span>ပေးငွေ (Paid · ${escapeHtml(v.paymentMethod || 'CASH')})</span>
+              <span class="font-mono font-semibold text-emerald-700">${paidAmt.toLocaleString()} Ks</span>
+            </div>
+            ${changeAmt > 0 ? `<div class="flex justify-between text-slate-600"><span>ပြန်အမ်းငွေ (Change)</span><span class="font-mono">${changeAmt.toLocaleString()} Ks</span></div>` : ''}
+            ${balanceAmt > 0 ? `<div class="flex justify-between text-rose-600 font-bold"><span>ကျန်ငွေ / အကြွေး (Balance)</span><span class="font-mono">${balanceAmt.toLocaleString()} Ks</span></div>` : ''}
+            ${v.note ? `<div class="pt-2 mt-1 border-t border-slate-200 text-slate-500">မှတ်ချက်: ${escapeHtml(v.note)}</div>` : ''}
+          </div>
+        `;
+      } catch (err) {
+        bodyEl.innerHTML = `<div class="py-8 text-center text-rose-600">Error: ${escapeHtml(err.message)}</div>`;
+      }
+    }
+
+    function closeVoucherDetailModal() {
+      document.getElementById('voucherDetailModal').classList.add('hidden');
+      document.getElementById('voucherDetailModal').classList.remove('flex');
     }
 
     // Fetch and display Cloud Products (Stock Reconciliation)
@@ -2388,7 +2619,8 @@
       tbody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-slate-400">Stock ပစ္စည်းများ ရယူနေပါသည်...</td></tr>`;
 
       try {
-        const res = await fetch(`${API_BASE}/api/admin/products`);
+        const res = await adminFetch(`${API_BASE}/api/admin/products`);
+        if (res.status === 401) return;
         const data = await res.json();
         const list = data.products || [];
         if (list.length === 0) {
@@ -2421,6 +2653,181 @@
       }
     }
 
+    // ====================================================
+    // FULL DB BACKUP/RESTORE & PER-ACCOUNT BACKUP/RESTORE
+    // ====================================================
+    async function triggerBlobDownload(url, fallbackFilename) {
+      const res = await adminFetch(url);
+      if (res.status === 401) return;
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.message || 'Download မအောင်မြင်ပါ');
+      }
+      const disp = res.headers.get('Content-Disposition') || '';
+      const match = disp.match(/filename="?([^"]+)"?/i);
+      const filename = (match && match[1]) || fallbackFilename;
+      const blob = await res.blob();
+      const objUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(objUrl), 2000);
+    }
+
+    async function downloadFullBackup() {
+      const btn = document.getElementById('fullBackupBtn');
+      if (btn) btn.disabled = true;
+      try {
+        await triggerBlobDownload(`${API_BASE}/api/admin/backup/all`, `unpos-full-backup-${Date.now()}.json`);
+        showToast('Database တစ်ခုလုံး Backup ဖိုင် Download ပြုလုပ်ပြီးပါပြီ');
+      } catch (err) {
+        showToast('Error: ' + err.message, true);
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    async function downloadAccountBackup(phoneNo) {
+      if (!phoneNo) return;
+      try {
+        await triggerBlobDownload(
+          `${API_BASE}/api/admin/backup/user?phoneNo=${encodeURIComponent(phoneNo)}`,
+          `unpos-account-${phoneNo}-${Date.now()}.json`
+        );
+        showToast(`${phoneNo} အကောင့် Backup ဖိုင် Download ပြုလုပ်ပြီးပါပြီ`);
+      } catch (err) {
+        showToast('Error: ' + err.message, true);
+      }
+    }
+
+    function handleFullBackupFileSelect(event) {
+      const file = event.target.files && event.target.files[0];
+      event.target.value = '';
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const parsed = JSON.parse(String(reader.result || '{}'));
+          if (parsed.backupVersion !== 'UN_POS_FULL_BACKUP_V1' || !Array.isArray(parsed.users) || !parsed.cloudData) {
+            showToast('Full Backup ဖိုင် Format မမှန်ကန်ပါ (UN_POS_FULL_BACKUP_V1 ဖြစ်ရပါမည်)', true);
+            return;
+          }
+          pendingRestoreAction = { mode: 'full', backup: parsed };
+          document.getElementById('restoreModalTitle').textContent = 'Full Database Restore အတည်ပြုပါ';
+          document.getElementById('restoreModalSummary').innerHTML = `
+            <div>• ဖိုင်အမည်: <b class="font-mono">${escapeHtml(file.name)}</b></div>
+            <div>• Backup ရက်စွဲ: <b>${formatDate(parsed.exportedAt)}</b></div>
+            <div>• အကောင့်များ (Users): <b>${parsed.users.length}</b> ခု</div>
+            <div>• ကုန်ပစ္စည်းများ: <b>${(parsed.cloudData.cloud_products || []).length}</b> မျိုး</div>
+            <div>• ဘောက်ချာများ: <b>${(parsed.cloudData.cloud_vouchers || []).length}</b> စောင်</div>
+            <div>• Customers: <b>${(parsed.cloudData.cloud_customers || []).length}</b> ဦး</div>
+          `;
+          document.getElementById('backupRestoreConfirmModal').classList.remove('hidden');
+          document.getElementById('backupRestoreConfirmModal').classList.add('flex');
+        } catch (err) {
+          showToast('JSON ဖိုင် ဖတ်၍မရပါ: ' + err.message, true);
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    let pendingAccountRestoreTargetPhone = '';
+    function triggerAccountRestore(targetPhoneNo) {
+      pendingAccountRestoreTargetPhone = targetPhoneNo;
+      const input = document.getElementById('accountBackupFileInput');
+      if (input) input.click();
+    }
+
+    function handleAccountBackupFileSelect(event) {
+      const file = event.target.files && event.target.files[0];
+      event.target.value = '';
+      if (!file) return;
+      const targetPhoneNo = pendingAccountRestoreTargetPhone || currentDetailAdminPhone || '';
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const parsed = JSON.parse(String(reader.result || '{}'));
+          if (parsed.backupVersion !== 'UN_POS_ACCOUNT_BACKUP_V1' || !parsed.cloudData) {
+            showToast('Account Backup ဖိုင် Format မမှန်ကန်ပါ (UN_POS_ACCOUNT_BACKUP_V1 ဖြစ်ရပါမည်)', true);
+            return;
+          }
+          pendingRestoreAction = { mode: 'account', targetPhoneNo, backup: parsed };
+          document.getElementById('restoreModalTitle').textContent = 'Account Restore အတည်ပြုပါ';
+          document.getElementById('restoreModalSummary').innerHTML = `
+            <div>• Restore တင်မည့် အကောင့်: <b class="font-mono text-indigo-700">${escapeHtml(targetPhoneNo)}</b></div>
+            <div>• မူရင်း Backup အကောင့်: <b class="font-mono">${escapeHtml(parsed.ownerPhone || '-')}</b></div>
+            <div>• ဖိုင်အမည်: <b class="font-mono">${escapeHtml(file.name)}</b></div>
+            <div>• Cashier များ: <b>${(parsed.cashiers || []).length}</b> ခု</div>
+            <div>• ကုန်ပစ္စည်းများ: <b>${(parsed.cloudData.cloud_products || []).length}</b> မျိုး</div>
+            <div>• ဘောက်ချာများ: <b>${(parsed.cloudData.cloud_vouchers || []).length}</b> စောင်</div>
+            <div>• Customers: <b>${(parsed.cloudData.cloud_customers || []).length}</b> ဦး</div>
+          `;
+          document.getElementById('backupRestoreConfirmModal').classList.remove('hidden');
+          document.getElementById('backupRestoreConfirmModal').classList.add('flex');
+        } catch (err) {
+          showToast('JSON ဖိုင် ဖတ်၍မရပါ: ' + err.message, true);
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    function closeBackupRestoreModal() {
+      pendingRestoreAction = null;
+      document.getElementById('backupRestoreConfirmModal').classList.add('hidden');
+      document.getElementById('backupRestoreConfirmModal').classList.remove('flex');
+    }
+
+    async function executePendingBackupRestore() {
+      if (!pendingRestoreAction) return;
+      const btn = document.getElementById('confirmRestoreBtn');
+      const prevText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Restore တင်နေပါသည်...';
+
+      try {
+        const isFull = pendingRestoreAction.mode === 'full';
+        const url = isFull ? `${API_BASE}/api/admin/restore/all` : `${API_BASE}/api/admin/restore/user`;
+        const payload = isFull
+          ? { backup: pendingRestoreAction.backup }
+          : { targetPhoneNo: pendingRestoreAction.targetPhoneNo, backup: pendingRestoreAction.backup };
+
+        const res = await adminFetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (res.status === 401) {
+          closeBackupRestoreModal();
+          return;
+        }
+        const data = await res.json();
+        if (res.ok && data.success) {
+          const modeWasAccount = !isFull;
+          const restoredPhone = pendingRestoreAction.targetPhoneNo;
+          closeBackupRestoreModal();
+          showToast(data.message || 'Restore ပြုလုပ်ပြီးပါပြီ');
+          await fetchUsersAndStats();
+          if (modeWasAccount && currentView === 'adminDetail' && restoredPhone) {
+            await loadAdminDetail(restoredPhone, false);
+          } else if (isFull && currentView === 'settings') {
+            await loadOrphanSummary();
+          }
+        } else {
+          showToast(data.message || 'Restore မအောင်မြင်ပါ', true);
+        }
+      } catch (err) {
+        showToast('Error: ' + err.message, true);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = prevText;
+      }
+    }
+
     // Scan Orphaned Cloud Data (Settings View)
     async function loadOrphanSummary() {
       const banner = document.getElementById('orphanScanBanner');
@@ -2438,7 +2845,8 @@
       btn.disabled = true;
 
       try {
-        const res = await fetch(`${API_BASE}/api/admin/orphans`);
+        const res = await adminFetch(`${API_BASE}/api/admin/orphans`);
+        if (res.status === 401) return;
         const data = await res.json();
         if (!res.ok || !data.success) {
           throw new Error(data.message || 'Endpoint not found (VPS တွင် server.js ကို Update/Restart လုပ်ပေးပါ)');
@@ -2521,11 +2929,12 @@
       btn.textContent = 'ရှင်းလင်းနေသည်...';
 
       try {
-        const res = await fetch(`${API_BASE}/api/admin/orphans/cleanup`, {
+        const res = await adminFetch(`${API_BASE}/api/admin/orphans/cleanup`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({})
         });
+        if (res.status === 401) return;
         const data = await res.json();
         if (res.ok && data.success) {
           closeOrphanCleanupModal();
@@ -2555,11 +2964,12 @@
       }
 
       try {
-        const res = await fetch(`${API_BASE}/api/admin/change-admin-password`, {
+        const res = await adminFetch(`${API_BASE}/api/admin/change-admin-password`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ oldPassword, newPassword })
         });
+        if (res.status === 401) return;
         const data = await res.json();
         if (data.success) {
           showToast('Admin Password ကို အောင်မြင်စွာ ပြောင်းလဲပြီးပါပြီ');
@@ -2593,7 +3003,7 @@
       const days = document.getElementById('createDays').value;
 
       try {
-        const res = await fetch(`${API_BASE}/api/admin/user/create`, {
+        const res = await adminFetch(`${API_BASE}/api/admin/user/create`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -2604,6 +3014,7 @@
             days
           })
         });
+        if (res.status === 401) return;
         const data = await res.json();
         if (data.success) {
           showToast('အကောင့်အသစ် အောင်မြင်စွာ ဖန်တီးပြီးပါပြီ');
@@ -2617,18 +3028,28 @@
       }
     }
 
-    // Check Auth on page load and guarantee default view is visible
-    try {
-      checkAuth();
-      switchView('users');
-    } catch (e) {
-      console.error('Init view error:', e);
+    // Verify existing session and load initial data
+    async function initDashboard() {
+      try {
+        switchView('users');
+        const hasToken = checkAuth();
+        if (!hasToken) return;
+        const verifyRes = await adminFetch(`${API_BASE}/api/admin/verify`);
+        if (verifyRes.ok) {
+          await fetchUsersAndStats();
+        }
+      } catch (e) {
+        console.error('Init view error:', e);
+      }
     }
 
-    // Initial load
-    fetchUsersAndStats();
-    // Auto-refresh every 30 seconds
-    setInterval(fetchUsersAndStats, 30000);
+    initDashboard();
+    // Auto-refresh every 30 seconds while authenticated
+    setInterval(() => {
+      if (localStorage.getItem('unpos_admin_token')) {
+        fetchUsersAndStats();
+      }
+    }, 30000);
   </script>
 </body>
 </html>
