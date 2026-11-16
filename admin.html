@@ -1042,6 +1042,9 @@
           document.getElementById('loginOverlay').classList.remove('flex');
           showToast('Admin Login အောင်မြင်ပါသည်');
           fetchUsersAndStats();
+        } else if (data.success && !data.token) {
+          errBox.textContent = 'VPS ပေါ်ရှိ server.js ကို အသစ်တင်ပြီး pm2 restart လုပ်ရန် လိုအပ်နေပါသည် (Session Token API မပါသေးပါ)။';
+          errBox.classList.remove('hidden');
         } else {
           errBox.textContent = data.message || 'Login မှားယွင်းနေပါသည်';
           errBox.classList.remove('hidden');
@@ -1150,6 +1153,8 @@
     // Fetch all users and overall stats
     async function fetchUsersAndStats() {
       if (!localStorage.getItem('unpos_admin_token')) return;
+      const tbody = document.getElementById('usersTableBody');
+      const mobileContainer = document.getElementById('usersMobileCards');
       try {
         const [usersRes, statsRes] = await Promise.all([
           adminFetch(`${API_BASE}/api/admin/users`),
@@ -1160,10 +1165,19 @@
 
         if (usersRes.ok) {
           const data = await usersRes.json();
-          allUsers = data.users || [];
+          allUsers = Array.isArray(data.users) ? data.users : [];
           renderUsers();
           updateCounts();
           if (currentView === 'devices') renderDevicesView();
+        } else {
+          const errJson = await usersRes.json().catch(() => ({}));
+          const errMsg = usersRes.status === 404
+            ? 'Server API Endpoint မတွေ့ပါ (VPS ပေါ်တွင် server.js အသစ်ကို တင်ပြီး pm2 restart ပြုလုပ်ပေးပါ)'
+            : (errJson.message || `Server Error (HTTP ${usersRes.status})`);
+          const errHtml = `<div class="py-10 px-4 text-center text-rose-600 text-xs font-semibold">${escapeHtml(errMsg)}</div>`;
+          if (tbody) tbody.innerHTML = `<tr><td colspan="7">${errHtml}</td></tr>`;
+          if (mobileContainer) mobileContainer.innerHTML = errHtml;
+          showToast(errMsg, true);
         }
 
         if (statsRes.ok) {
@@ -1181,6 +1195,9 @@
         }
       } catch (err) {
         console.error('Fetch error:', err);
+        const netHtml = `<div class="py-10 px-4 text-center text-rose-600 text-xs font-semibold">ဆာဗာနှင့် ချိတ်ဆက်၍မရပါ: ${escapeHtml(err.message)}</div>`;
+        if (tbody) tbody.innerHTML = `<tr><td colspan="7">${netHtml}</td></tr>`;
+        if (mobileContainer) mobileContainer.innerHTML = netHtml;
         showToast('ဆာဗာနှင့် ချိတ်ဆက်၍မရပါ: ' + err.message, true);
       }
     }
@@ -3037,9 +3054,17 @@
         const verifyRes = await adminFetch(`${API_BASE}/api/admin/verify`);
         if (verifyRes.ok) {
           await fetchUsersAndStats();
+        } else if (verifyRes.status === 404) {
+          forceShowLoginOverlay('VPS ပေါ်ရှိ server.js ကို အသစ်တင်ပြီး pm2 restart လုပ်ရန် လိုအပ်နေပါသည် (/api/admin/verify မတွေ့ပါ)။');
+        } else if (verifyRes.status !== 401) {
+          const errData = await verifyRes.json().catch(() => ({}));
+          const msg = errData.message || `Server error (HTTP ${verifyRes.status})`;
+          showToast(msg, true);
+          await fetchUsersAndStats();
         }
       } catch (e) {
         console.error('Init view error:', e);
+        showToast('Server ချိတ်ဆက်၍မရပါ: ' + e.message, true);
       }
     }
 
