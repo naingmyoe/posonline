@@ -1,4 +1,4 @@
-/**
+/**a
  * UN POS Backend Server for VPS (Linux / Ubuntu / Debian / Windows)
  * Direct PostgreSQL Database Storage (NO .json files, NO in-memory database cache!)
  *
@@ -27,6 +27,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const url = require('url');
+const crypto = require('crypto');
 const { Pool, types } = require('pg');
 
 // Parse PostgreSQL BIGINT (OID 20) as JavaScript Number so timestamps and IDs remain numeric
@@ -61,6 +62,86 @@ loadEnvFile();
 
 const PORT = Number(process.env.PORT || 8081);
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+const ADMIN_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+const USER_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+// Password hashing & timing-safe verification (Node built-in scrypt)
+function isScryptHash(val) {
+  return typeof val === 'string' && val.startsWith('scrypt$');
+}
+
+function hashPassword(plain) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const derived = crypto.scryptSync(String(plain || ''), salt, 64).toString('hex');
+  return `scrypt$${salt}$${derived}`;
+}
+
+function verifyPassword(plain, stored) {
+  if (!stored || plain === undefined || plain === null) return false;
+  const candidate = String(plain);
+  if (isScryptHash(stored)) {
+    const parts = stored.split('$');
+    if (parts.length !== 3) return false;
+    const [, salt, expectedHex] = parts;
+    try {
+      const derived = crypto.scryptSync(candidate, salt, 64);
+      const expected = Buffer.from(expectedHex, 'hex');
+      if (derived.length !== expected.length) return false;
+      return crypto.timingSafeEqual(derived, expected);
+    } catch (_) {
+      return false;
+    }
+  }
+  const a = Buffer.from(candidate, 'utf8');
+  const b = Buffer.from(String(stored), 'utf8');
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
+function hashToken(rawToken) {
+  return crypto.createHash('sha256').update(String(rawToken || '')).digest('hex');
+}
+
+function generateSessionToken() {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+// Sliding-window brute-force protection for login/register endpoints
+const authRateMap = new Map();
+function getClientIp(req) {
+  const xff = req.headers['x-forwarded-for'];
+  if (xff) return String(xff).split(',')[0].trim();
+  return req.socket?.remoteAddress || 'unknown';
+}
+
+function checkRateLimit(bucketKey, maxAttempts = 10, windowMs = 10 * 60 * 1000) {
+  const now = Date.now();
+  const entry = authRateMap.get(bucketKey);
+  if (!entry) return { blocked: false };
+  if (now - entry.firstAt > windowMs) {
+    authRateMap.delete(bucketKey);
+    return { blocked: false };
+  }
+  if (entry.count >= maxAttempts) {
+    const retrySec = Math.max(1, Math.ceil((windowMs - (now - entry.firstAt)) / 1000));
+    return { blocked: true, retrySec };
+  }
+  return { blocked: false };
+}
+
+function recordFailedAttempt(bucketKey, windowMs = 10 * 60 * 1000) {
+  const now = Date.now();
+  const entry = authRateMap.get(bucketKey);
+  if (!entry || now - entry.firstAt > windowMs) {
+    authRateMap.set(bucketKey, { count: 1, firstAt: now });
+  } else {
+    entry.count += 1;
+  }
+}
+
+function clearFailedAttempts(bucketKey) {
+  authRateMap.delete(bucketKey);
+}
 
 const poolConfig = process.env.DATABASE_URL
   ? {
@@ -128,6 +209,10 @@ async function initDatabase() {
         password_hash TEXT NOT NULL,
         device_id TEXT NOT NULL DEFAULT '',
         devices JSONB NOT NULL DEFAULT '[]'::jsonb,
+        device_details JSONB NOT NULL DEFAULT '[]'::jsonb,
+        last_login_at BIGINT NOT NULL DEFAULT 0,
+        last_login_device TEXT NOT NULL DEFAULT '',
+        last_login_model TEXT NOT NULL DEFAULT '',
         status TEXT NOT NULL DEFAULT 'on',
         join_code TEXT NOT NULL DEFAULT '',
         admin_phone TEXT NOT NULL DEFAULT '',
@@ -136,7 +221,56 @@ async function initDatabase() {
         trial_days INTEGER NOT NULL DEFAULT 7
       );
     `);
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS device_details JSONB NOT NULL DEFAULT '[]'::jsonb;`);
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at BIGINT NOT NULL DEFAULT 0;`);
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_device TEXT NOT NULL DEFAULT '';`);
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_model TEXT NOT NULL DEFAULT '';`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_users_admin_phone ON users (admin_phone);`);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS admin_sessions (
+        token_hash TEXT PRIMARY KEY,
+        username TEXT NOT NULL,
+        created_at BIGINT NOT NULL,
+        expires_at BIGINT NOT NULL,
+        last_used_at BIGINT NOT NULL DEFAULT 0,
+        ip TEXT NOT NULL DEFAULT '',
+        user_agent TEXT NOT NULL DEFAULT ''
+      );
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_admin_sessions_exp ON admin_sessions (expires_at);`);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS user_sessions (
+        token_hash TEXT PRIMARY KEY,
+        phone_no TEXT NOT NULL,
+        device_id TEXT NOT NULL DEFAULT '',
+        phone_model TEXT NOT NULL DEFAULT '',
+        created_at BIGINT NOT NULL,
+        expires_at BIGINT NOT NULL,
+        last_used_at BIGINT NOT NULL DEFAULT 0
+      );
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_user_sessions_phone ON user_sessions (phone_no);`);
+
+    // Ensure admin_password is stored as salted scrypt hash in app_settings
+    const { rows: adminPassRows } = await client.query(`SELECT value FROM app_settings WHERE key = 'admin_password' LIMIT 1`);
+    const existingAdminVal = adminPassRows[0]?.value;
+    if (!existingAdminVal) {
+      const initialAdminPass = process.env.ADMIN_PASS || 'unposadmin';
+      const hashed = isScryptHash(initialAdminPass) ? initialAdminPass : hashPassword(initialAdminPass);
+      await client.query(
+        `INSERT INTO app_settings (key, value, updated_at) VALUES ('admin_password', $1, $2)
+         ON CONFLICT (key) DO NOTHING`,
+        [hashed, Date.now()]
+      );
+    } else if (!isScryptHash(existingAdminVal)) {
+      const hashed = hashPassword(existingAdminVal);
+      await client.query(
+        `UPDATE app_settings SET value = $1, updated_at = $2 WHERE key = 'admin_password'`,
+        [hashed, Date.now()]
+      );
+    }
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS cloud_products (
@@ -413,27 +547,59 @@ async function getProductTransactionDeltas(dbClient, userPhone, productId, produ
 }
 
 async function resolveTenantPhone(dbClient, phone) {
-  if (!phone) return phone;
+  if (!phone) return null;
   const { rows } = await dbClient.query(
-    `SELECT role, status, admin_phone FROM users WHERE phone_no = $1 LIMIT 1`,
+    `SELECT phone_no, role, status, admin_phone FROM users WHERE phone_no = $1 LIMIT 1`,
     [phone]
   );
   const u = rows[0];
-  if (u && u.role === 'CASHIER' && u.status === 'on' && u.admin_phone) {
+  if (!u) return null;
+  if (u.role === 'CASHIER' && u.status === 'on' && u.admin_phone) {
+    const { rows: adminRows } = await dbClient.query(
+      `SELECT phone_no, status FROM users WHERE phone_no = $1 LIMIT 1`,
+      [u.admin_phone]
+    );
+    if (!adminRows[0] || adminRows[0].status === 'off') return null;
     return u.admin_phone;
   }
-  return phone;
+  return u.phone_no;
 }
 
-async function evaluateUserAccess(dbClient, u, clientDeviceId) {
+function normalizeDeviceDetails(rawDetails, legacyDevices, legacyDeviceId, fallbackTime = 0) {
+  const details = Array.isArray(rawDetails) ? rawDetails.map(d => ({
+    deviceId: String(d.deviceId || ''),
+    model: String(d.model || ''),
+    firstLoginAt: Number(d.firstLoginAt) || fallbackTime || 0,
+    lastLoginAt: Number(d.lastLoginAt) || fallbackTime || 0,
+    lastSeenAt: Number(d.lastSeenAt) || Number(d.lastLoginAt) || fallbackTime || 0
+  })).filter(d => d.deviceId) : [];
+
+  const byId = new Map(details.map(d => [d.deviceId, d]));
+  const ids = Array.isArray(legacyDevices) ? [...legacyDevices] : [];
+  if (ids.length === 0 && legacyDeviceId) ids.push(legacyDeviceId);
+  for (const id of ids) {
+    if (id && !byId.has(id)) {
+      byId.set(id, {
+        deviceId: id,
+        model: '',
+        firstLoginAt: fallbackTime || 0,
+        lastLoginAt: fallbackTime || 0,
+        lastSeenAt: fallbackTime || 0
+      });
+    }
+  }
+  return Array.from(byId.values());
+}
+
+async function evaluateUserAccess(dbClient, u, clientDeviceId, phoneModel = '', isLoginEvent = false) {
   const now = Date.now();
   let devices = Array.isArray(u.devices) ? [...u.devices] : [];
   if (devices.length === 0 && u.device_id) {
     devices.push(u.device_id);
   }
-
-  const createdAt = Number(u.created_at) || now;
-  const expiresAt = Number(u.expires_at) || (createdAt + SEVEN_DAYS_MS);
+  const cleanModel = String(phoneModel || '').trim().slice(0, 80);
+  let deviceDetails = normalizeDeviceDetails(u.device_details, devices, u.device_id, Number(u.last_login_at) || Number(u.created_at) || now);
+  let metadataDirty = false;
 
   if (clientDeviceId && !devices.includes(clientDeviceId)) {
     if (devices.length >= 5) {
@@ -441,21 +607,74 @@ async function evaluateUserAccess(dbClient, u, clientDeviceId) {
         allowed: false,
         status: 'device_limit_reached',
         message: 'ဤအကောင့်ကို အများဆုံး စက် ၅ လုံးအထိသာ သုံးခွင့်ပြုထားပါသည် (Device limit of 5 reached)',
-        expiresAt,
-        daysLeft: Math.max(0, Math.ceil((expiresAt - now) / (24 * 60 * 60 * 1000))),
+        expiresAt: Number(u.expires_at) || (Number(u.created_at) + SEVEN_DAYS_MS),
+        daysLeft: Math.max(0, Math.ceil(((Number(u.expires_at) || now) - now) / (24 * 60 * 60 * 1000))),
         deviceCount: devices.length,
         maxDevices: 5,
-        devices
+        devices,
+        deviceDetails
       };
     }
     devices.push(clientDeviceId);
     u.devices = devices;
     u.device_id = clientDeviceId;
+    deviceDetails.push({
+      deviceId: clientDeviceId,
+      model: cleanModel || 'Android Device',
+      firstLoginAt: now,
+      lastLoginAt: now,
+      lastSeenAt: now
+    });
+    metadataDirty = true;
+  } else if (clientDeviceId) {
+    const existingEntry = deviceDetails.find(d => d.deviceId === clientDeviceId);
+    if (existingEntry) {
+      if (cleanModel && existingEntry.model !== cleanModel) {
+        existingEntry.model = cleanModel;
+        metadataDirty = true;
+      }
+      if (isLoginEvent) {
+        existingEntry.lastLoginAt = now;
+        existingEntry.lastSeenAt = now;
+        metadataDirty = true;
+      } else if (!existingEntry.lastSeenAt || now - existingEntry.lastSeenAt > 30000) {
+        existingEntry.lastSeenAt = now;
+        metadataDirty = true;
+      }
+    }
+  }
+
+  if (metadataDirty || isLoginEvent) {
+    const nextLastLoginAt = isLoginEvent ? now : (Number(u.last_login_at) || now);
+    const nextLastDevice = isLoginEvent && clientDeviceId ? clientDeviceId : (u.last_login_device || clientDeviceId || u.device_id || '');
+    const nextLastModel = (cleanModel || u.last_login_model || '');
+    u.device_details = deviceDetails;
+    u.last_login_at = nextLastLoginAt;
+    u.last_login_device = nextLastDevice;
+    u.last_login_model = nextLastModel;
     await dbClient.query(
-      `UPDATE users SET devices = $1::jsonb, device_id = $2 WHERE phone_no = $3`,
-      [JSON.stringify(devices), clientDeviceId, u.phone_no]
+      `UPDATE users
+       SET devices = $1::jsonb,
+           device_id = $2,
+           device_details = $3::jsonb,
+           last_login_at = $4,
+           last_login_device = $5,
+           last_login_model = $6
+       WHERE phone_no = $7`,
+      [
+        JSON.stringify(devices),
+        clientDeviceId || u.device_id || '',
+        JSON.stringify(deviceDetails),
+        nextLastLoginAt,
+        nextLastDevice,
+        nextLastModel,
+        u.phone_no
+      ]
     );
   }
+
+  const createdAt = Number(u.created_at) || now;
+  const expiresAt = Number(u.expires_at) || (createdAt + SEVEN_DAYS_MS);
 
   let effectiveExpiresAt = expiresAt;
   if (u.role === 'CASHIER' && u.admin_phone) {
@@ -479,7 +698,8 @@ async function evaluateUserAccess(dbClient, u, clientDeviceId) {
       daysLeft,
       deviceCount: devices.length,
       maxDevices: 5,
-      devices
+      devices,
+      deviceDetails
     };
   }
 
@@ -492,7 +712,8 @@ async function evaluateUserAccess(dbClient, u, clientDeviceId) {
       daysLeft,
       deviceCount: devices.length,
       maxDevices: 5,
-      devices
+      devices,
+      deviceDetails
     };
   }
 
@@ -509,7 +730,8 @@ async function evaluateUserAccess(dbClient, u, clientDeviceId) {
       daysLeft: 0,
       deviceCount: devices.length,
       maxDevices: 5,
-      devices
+      devices,
+      deviceDetails
     };
   }
 
@@ -522,7 +744,8 @@ async function evaluateUserAccess(dbClient, u, clientDeviceId) {
     isTrial: true,
     deviceCount: devices.length,
     maxDevices: 5,
-    devices
+    devices,
+    deviceDetails
   };
 }
 
@@ -660,7 +883,7 @@ async function upsertVoucherAndItems(client, userPhone, v, items) {
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Device-Id',
   'Content-Type': 'application/json'
 };
 
@@ -669,20 +892,129 @@ function sendJson(res, statusCode, data) {
   res.end(JSON.stringify(data));
 }
 
-function parseJsonBody(req) {
+function parseJsonBody(req, maxBytes = 64 * 1024 * 1024) {
   return new Promise((resolve, reject) => {
-    let body = '';
-    req.on('data', chunk => { body += chunk.toString(); });
+    const chunks = [];
+    let totalBytes = 0;
+    let aborted = false;
+    req.on('data', chunk => {
+      if (aborted) return;
+      totalBytes += chunk.length;
+      if (totalBytes > maxBytes) {
+        aborted = true;
+        reject(new Error('Payload too large'));
+        return;
+      }
+      chunks.push(chunk);
+    });
     req.on('end', () => {
-      if (!body) return resolve({});
+      if (aborted) return;
+      if (chunks.length === 0) return resolve({});
       try {
-        resolve(JSON.parse(body));
+        const body = Buffer.concat(chunks).toString('utf8');
+        resolve(body ? JSON.parse(body) : {});
       } catch (e) {
         reject(e);
       }
     });
-    req.on('error', err => reject(err));
+    req.on('error', err => {
+      if (!aborted) reject(err);
+    });
   });
+}
+
+function extractBearerToken(req) {
+  const auth = req.headers['authorization'] || req.headers['Authorization'] || '';
+  const match = String(auth).match(/^Bearer\s+(.+)$/i);
+  return match ? match[1].trim() : '';
+}
+
+async function createAdminSession(username, req) {
+  const rawToken = generateSessionToken();
+  const tokenHash = hashToken(rawToken);
+  const now = Date.now();
+  const expiresAt = now + ADMIN_SESSION_TTL_MS;
+  await pool.query(
+    `INSERT INTO admin_sessions (token_hash, username, created_at, expires_at, last_used_at, ip, user_agent)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [tokenHash, username, now, expiresAt, now, getClientIp(req), String(req.headers['user-agent'] || '').slice(0, 200)]
+  );
+  // Prune expired sessions opportunistically
+  await pool.query(`DELETE FROM admin_sessions WHERE expires_at < $1`, [now]).catch(() => {});
+  return { rawToken, expiresAt };
+}
+
+async function requireAdminAuth(req, res) {
+  const rawToken = extractBearerToken(req);
+  if (!rawToken) {
+    sendJson(res, 401, { success: false, code: 'unauthorized', message: 'Admin Login ဝင်ရန် လိုအပ်ပါသည် (Unauthorized)' });
+    return null;
+  }
+  const tokenHash = hashToken(rawToken);
+  const now = Date.now();
+  const { rows } = await pool.query(
+    `SELECT * FROM admin_sessions WHERE token_hash = $1 AND expires_at > $2 LIMIT 1`,
+    [tokenHash, now]
+  );
+  if (rows.length === 0) {
+    sendJson(res, 401, { success: false, code: 'session_expired', message: 'Admin Session သက်တမ်းကုန်ဆုံးသွားပါပြီ။ ထပ်မံ Login ဝင်ပါ။' });
+    return null;
+  }
+  await pool.query(`UPDATE admin_sessions SET last_used_at = $1 WHERE token_hash = $2`, [now, tokenHash]).catch(() => {});
+  return { session: rows[0], rawToken, tokenHash };
+}
+
+async function createUserSession(phoneNo, deviceId = '', phoneModel = '') {
+  const rawToken = generateSessionToken();
+  const tokenHash = hashToken(rawToken);
+  const now = Date.now();
+  const expiresAt = now + USER_SESSION_TTL_MS;
+  await pool.query(
+    `INSERT INTO user_sessions (token_hash, phone_no, device_id, phone_model, created_at, expires_at, last_used_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [tokenHash, phoneNo, deviceId || '', phoneModel || '', now, expiresAt, now]
+  );
+  await pool.query(`DELETE FROM user_sessions WHERE expires_at < $1`, [now]).catch(() => {});
+  return { rawToken, expiresAt };
+}
+
+async function authenticateSyncOrUserRequest(req, res, claimedPhone) {
+  const rawToken = extractBearerToken(req);
+  const deviceHeader = String(req.headers['x-device-id'] || '').trim();
+  if (!rawToken) {
+    sendJson(res, 401, { success: false, code: 'auth_required', message: 'လုံခြုံရေး Token မရှိပါ။ ကျေးဇူးပြု၍ Login ပြန်ဝင်ပါ။' });
+    return null;
+  }
+  const tokenHash = hashToken(rawToken);
+  const now = Date.now();
+  const { rows } = await pool.query(
+    `SELECT s.*, u.role, u.status, u.admin_phone, u.expires_at AS user_expires_at, u.devices
+     FROM user_sessions s
+     JOIN users u ON u.phone_no = s.phone_no
+     WHERE s.token_hash = $1 AND s.expires_at > $2
+     LIMIT 1`,
+    [tokenHash, now]
+  );
+  if (rows.length === 0) {
+    sendJson(res, 401, { success: false, code: 'session_expired', message: 'Session သက်တမ်းကုန်ဆုံးသွားပါပြီ။ Login ပြန်ဝင်ပါ။' });
+    return null;
+  }
+  const sess = rows[0];
+  if (sess.device_id && deviceHeader && sess.device_id !== deviceHeader) {
+    sendJson(res, 401, { success: false, code: 'device_mismatch', message: 'Device မကိုက်ညီပါ။ Login ပြန်ဝင်ပါ။' });
+    return null;
+  }
+  const tenantPhone = await resolveTenantPhone(pool, sess.phone_no);
+  if (!tenantPhone) {
+    sendJson(res, 403, { success: false, code: 'account_inactive', message: 'အကောင့်ကို ပိတ်ထားပါသည် သို့မဟုတ် ဖျက်လိုက်ပြီးဖြစ်ပါသည်' });
+    return null;
+  }
+  if (claimedPhone && claimedPhone !== sess.phone_no && claimedPhone !== tenantPhone) {
+    sendJson(res, 403, { success: false, code: 'forbidden', message: 'အခြားအကောင့်၏ Data ကို ဝင်ရောက်ခွင့်မရှိပါ' });
+    return null;
+  }
+  await pool.query(`UPDATE user_sessions SET last_used_at = $1 WHERE token_hash = $2`, [now, tokenHash]).catch(() => {});
+  return { session: sess, tenantPhone, actorPhone: sess.phone_no };
 }
 
 const server = http.createServer(async (req, res) => {
@@ -727,18 +1059,20 @@ const server = http.createServer(async (req, res) => {
     if (pathname === '/api/check-status') {
       let phoneNo = parsedUrl.query.phoneNo;
       let deviceId = parsedUrl.query.deviceId;
+      let phoneModel = parsedUrl.query.phoneModel || '';
 
       if (method === 'POST') {
         const body = await parseJsonBody(req);
         if (body.phoneNo) phoneNo = body.phoneNo;
         if (body.deviceId) deviceId = body.deviceId;
+        if (body.phoneModel) phoneModel = body.phoneModel;
       }
 
       if (phoneNo) {
         const { rows } = await pool.query(`SELECT * FROM users WHERE phone_no = $1 LIMIT 1`, [phoneNo]);
         const u = rows[0];
         if (u) {
-          const evalResult = await evaluateUserAccess(pool, u, deviceId);
+          const evalResult = await evaluateUserAccess(pool, u, deviceId, phoneModel, false);
           return sendJson(res, 200, {
             success: evalResult.allowed,
             status: evalResult.status,
@@ -753,6 +1087,10 @@ const server = http.createServer(async (req, res) => {
             adminPhone: u.admin_phone || '',
             deviceId: deviceId || u.device_id,
             devices: evalResult.devices,
+            deviceDetails: evalResult.deviceDetails,
+            lastLoginAt: Number(u.last_login_at) || 0,
+            lastLoginModel: u.last_login_model || '',
+            lastLoginDevice: u.last_login_device || '',
             deviceCount: evalResult.deviceCount,
             maxDevices: 5,
             expiresAt: evalResult.expiresAt,
@@ -779,8 +1117,17 @@ const server = http.createServer(async (req, res) => {
 
     // 2. Register (POST /api/register)
     if (pathname === '/api/register' && method === 'POST') {
+      const clientIp = getClientIp(req);
+      const rateCheck = checkRateLimit(`register:${clientIp}`, 15, 10 * 60 * 1000);
+      if (rateCheck.blocked) {
+        return sendJson(res, 429, {
+          success: false,
+          message: `တောင်းဆိုမှု များလွန်းပါသဖြင့် ${rateCheck.retrySec} စက္ကန့်အကြာတွင် ထပ်မံကြိုးစားပါ`
+        });
+      }
+
       const body = await parseJsonBody(req);
-      const { phoneNo, username, businessName, businessType, address, role, password, deviceId } = body;
+      const { phoneNo, username, businessName, businessType, address, role, password, deviceId, phoneModel } = body;
 
       if (!phoneNo || !username || !password) {
         return sendJson(res, 400, {
@@ -788,6 +1135,8 @@ const server = http.createServer(async (req, res) => {
           message: 'လိုအပ်သော အချက်အလက်များ မပြည့်စုံပါ (Missing required fields)'
         });
       }
+
+      recordFailedAttempt(`register:${clientIp}`, 10 * 60 * 1000);
 
       const existing = await pool.query(`SELECT phone_no FROM users WHERE phone_no = $1 LIMIT 1`, [phoneNo]);
       if (existing.rows.length > 0) {
@@ -799,21 +1148,29 @@ const server = http.createServer(async (req, res) => {
       }
 
       const now = Date.now();
+      const cleanModel = String(phoneModel || '').trim().slice(0, 80);
       const initialDevices = deviceId ? [deviceId] : [];
+      const initialDeviceDetails = deviceId
+        ? [{ deviceId, model: cleanModel || 'Android Device', firstLoginAt: now, lastLoginAt: now, lastSeenAt: now }]
+        : [];
       const isCashier = (role === 'CASHIER');
       const cashierJoinCode = body.joinCode || Math.floor(100000 + Math.random() * 900000).toString();
       const finalRole = role || 'ADMIN';
       const status = isCashier ? 'pending' : 'on';
       const joinCode = isCashier ? cashierJoinCode : '';
       const expiresAt = now + SEVEN_DAYS_MS;
+      const hashedPassword = hashPassword(password);
 
       const { rows } = await pool.query(
         `INSERT INTO users (
           phone_no, username, business_name, business_type, address, role,
-          password_hash, device_id, devices, status, join_code, admin_phone,
-          created_at, expires_at, trial_days
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15)
-        RETURNING *`,
+          password_hash, device_id, devices, device_details,
+          last_login_at, last_login_device, last_login_model,
+          status, join_code, admin_phone, created_at, expires_at, trial_days
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+        RETURNING phone_no, username, business_name, business_type, address, role,
+                  device_id, devices, device_details, last_login_at, last_login_device, last_login_model,
+                  status, join_code, admin_phone, created_at, expires_at, trial_days`,
         [
           phoneNo,
           username,
@@ -821,9 +1178,13 @@ const server = http.createServer(async (req, res) => {
           businessType || '',
           address || '',
           finalRole,
-          password,
+          hashedPassword,
           deviceId || '',
           JSON.stringify(initialDevices),
+          JSON.stringify(initialDeviceDetails),
+          now,
+          deviceId || '',
+          cleanModel,
           status,
           joinCode,
           '',
@@ -833,7 +1194,8 @@ const server = http.createServer(async (req, res) => {
         ]
       );
 
-      console.log(`[USER] Registered new ${finalRole} user in PostgreSQL: ${phoneNo} (${businessName || username})`);
+      const session = await createUserSession(phoneNo, deviceId || '', cleanModel);
+      console.log(`[USER] Registered new ${finalRole} user in PostgreSQL: ${phoneNo} (${businessName || username}, model=${cleanModel || 'N/A'})`);
       return sendJson(res, 200, {
         success: true,
         message: isCashier ? 'Cashier account created. Awaiting admin approval.' : 'အကောင့် အောင်မြင်စွာ ပြုလုပ်ပြီးပါပြီ (၇ ရက် အခမဲ့ စမ်းသပ်ခွင့် ရရှိပါသည်)',
@@ -842,6 +1204,11 @@ const server = http.createServer(async (req, res) => {
         expiresAt,
         daysLeft: 7,
         maxDevices: 5,
+        authToken: session.rawToken,
+        deviceDetails: initialDeviceDetails,
+        lastLoginAt: now,
+        lastLoginModel: cleanModel,
+        lastLoginDevice: deviceId || '',
         user: rows[0]
       });
     }
@@ -849,7 +1216,12 @@ const server = http.createServer(async (req, res) => {
     // Join Cashier (POST /api/join-cashier)
     if (pathname === '/api/join-cashier' && method === 'POST') {
       const body = await parseJsonBody(req);
-      const { adminPhone, joinCode } = body;
+      const auth = await authenticateSyncOrUserRequest(req, res, body?.adminPhone);
+      if (!auth) return;
+      if ((auth.session.role || '').toUpperCase() === 'CASHIER') {
+        return sendJson(res, 403, { success: false, message: 'Admin အကောင့်ဖြင့်သာ Cashier ချိတ်ဆက်နိုင်ပါသည်' });
+      }
+      const { joinCode } = body;
 
       if (!joinCode) {
         return sendJson(res, 400, { success: false, message: 'Cashier Code လိုအပ်ပါသည်' });
@@ -866,13 +1238,10 @@ const server = http.createServer(async (req, res) => {
       }
 
       const cashier = cashierRows[0];
-      let adminUser = null;
-      if (adminPhone) {
-        const { rows: adminRows } = await pool.query(`SELECT * FROM users WHERE phone_no = $1 LIMIT 1`, [adminPhone]);
-        adminUser = adminRows[0] || null;
-      }
+      const newAdminPhone = auth.tenantPhone;
+      const { rows: adminRows } = await pool.query(`SELECT * FROM users WHERE phone_no = $1 LIMIT 1`, [newAdminPhone]);
+      const adminUser = adminRows[0] || null;
 
-      const newAdminPhone = adminPhone || cashier.admin_phone || '';
       const newBusinessName = (adminUser && adminUser.business_name) ? adminUser.business_name : cashier.business_name;
       const newBusinessType = (adminUser && adminUser.business_type) ? adminUser.business_type : cashier.business_type;
       const newAddress = (adminUser && adminUser.address) ? adminUser.address : cashier.address;
@@ -890,7 +1259,7 @@ const server = http.createServer(async (req, res) => {
         [newAdminPhone, newBusinessName, newBusinessType, newAddress, newExpiresAt, cashier.phone_no]
       );
 
-      console.log(`[CASHIER] Cashier ${cashier.phone_no} joined with Admin ${adminPhone}`);
+      console.log(`[CASHIER] Cashier ${cashier.phone_no} joined with Admin ${newAdminPhone}`);
       return sendJson(res, 200, {
         success: true,
         message: `Cashier '${cashier.username}' (${cashier.phone_no}) ကို အောင်မြင်စွာ Join ပေးပြီးပါပြီ`,
@@ -910,13 +1279,16 @@ const server = http.createServer(async (req, res) => {
 
     // List Cashiers linked to Admin (GET /api/cashiers?phoneNo=...)
     if (pathname === '/api/cashiers' && method === 'GET') {
-      const adminPhone = parsedUrl.query.phoneNo || parsedUrl.query.adminPhone || '';
+      const requestedAdmin = parsedUrl.query.phoneNo || parsedUrl.query.adminPhone || '';
+      const auth = await authenticateSyncOrUserRequest(req, res, requestedAdmin);
+      if (!auth) return;
+
       const { rows } = await pool.query(
         `SELECT phone_no, username, business_name, business_type, address, status, join_code, admin_phone
          FROM users
          WHERE role = 'CASHIER' AND admin_phone = $1
          ORDER BY created_at ASC`,
-        [adminPhone]
+        [auth.tenantPhone]
       );
       const cashiers = rows.map(u => ({
         phoneNo: u.phone_no,
@@ -935,7 +1307,12 @@ const server = http.createServer(async (req, res) => {
     // Remove Cashier (POST /api/remove-cashier)
     if (pathname === '/api/remove-cashier' && method === 'POST') {
       const body = await parseJsonBody(req);
-      const { adminPhone, cashierPhone } = body;
+      const auth = await authenticateSyncOrUserRequest(req, res, body?.adminPhone);
+      if (!auth) return;
+      if ((auth.session.role || '').toUpperCase() === 'CASHIER') {
+        return sendJson(res, 403, { success: false, message: 'Admin အကောင့်ဖြင့်သာ Cashier ဖျက်နိုင်ပါသည်' });
+      }
+      const { cashierPhone } = body;
       if (!cashierPhone) {
         return sendJson(res, 400, { success: false, message: 'Cashier ဖုန်းနံပါတ် လိုအပ်ပါသည်' });
       }
@@ -947,26 +1324,38 @@ const server = http.createServer(async (req, res) => {
       if (target.role !== 'CASHIER') {
         return sendJson(res, 403, { success: false, message: 'Admin အကောင့်ကို ဖျက်ခွင့်မရှိပါ' });
       }
-      if (adminPhone && target.admin_phone && target.admin_phone !== adminPhone) {
+      if (target.admin_phone && target.admin_phone !== auth.tenantPhone) {
         return sendJson(res, 403, { success: false, message: 'ခွင့်ပြုချက်မရှိပါ' });
       }
+      await pool.query(`DELETE FROM user_sessions WHERE phone_no = $1`, [cashierPhone]);
       await pool.query(`DELETE FROM users WHERE phone_no = $1`, [cashierPhone]);
-      console.log(`[CASHIER] Removed cashier ${cashierPhone} by Admin ${adminPhone || ''}`);
+      console.log(`[CASHIER] Removed cashier ${cashierPhone} by Admin ${auth.tenantPhone}`);
       return sendJson(res, 200, { success: true, message: 'Cashier အကောင့် ဖျက်ပြီးပါပြီ' });
     }
 
     // 3. Login (POST /api/login)
     if (pathname === '/api/login' && method === 'POST') {
       const body = await parseJsonBody(req);
-      const { phoneNo, password, deviceId } = body;
+      const { phoneNo, password, deviceId, phoneModel } = body;
 
       if (!phoneNo || !password) {
         return sendJson(res, 400, { success: false, message: 'ဖုန်းနံပါတ် နှင့် Password ဖြည့်ပါ' });
       }
 
+      const rateKey = `login:${getClientIp(req)}:${String(phoneNo).trim()}`;
+      const rateCheck = checkRateLimit(rateKey, 10, 10 * 60 * 1000);
+      if (rateCheck.blocked) {
+        return sendJson(res, 429, {
+          success: false,
+          status: 'rate_limited',
+          message: `Password မှားယွင်းမှု များလွန်းပါသဖြင့် ${rateCheck.retrySec} စက္ကန့်အကြာတွင် ပြန်လည်ကြိုးစားပါ`
+        });
+      }
+
       const { rows } = await pool.query(`SELECT * FROM users WHERE phone_no = $1 LIMIT 1`, [phoneNo]);
       const user = rows[0];
       if (!user) {
+        recordFailedAttempt(rateKey, 10 * 60 * 1000);
         return sendJson(res, 404, {
           success: false,
           status: 'not_found',
@@ -974,7 +1363,8 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
-      if (user.password_hash !== password) {
+      if (!verifyPassword(password, user.password_hash)) {
+        recordFailedAttempt(rateKey, 10 * 60 * 1000);
         return sendJson(res, 401, {
           success: false,
           status: 'invalid_password',
@@ -982,7 +1372,17 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
-      const evalResult = await evaluateUserAccess(pool, user, deviceId);
+      clearFailedAttempts(rateKey);
+
+      // Upgrade legacy plaintext passwords seamlessly on verified login
+      if (!isScryptHash(user.password_hash)) {
+        const upgraded = hashPassword(password);
+        await pool.query(`UPDATE users SET password_hash = $1 WHERE phone_no = $2`, [upgraded, user.phone_no]);
+        user.password_hash = upgraded;
+      }
+
+      const cleanModel = String(phoneModel || '').trim().slice(0, 80);
+      const evalResult = await evaluateUserAccess(pool, user, deviceId, cleanModel, true);
       if (!evalResult.allowed) {
         return sendJson(res, 200, {
           success: false,
@@ -992,6 +1392,7 @@ const server = http.createServer(async (req, res) => {
           daysLeft: evalResult.daysLeft,
           deviceCount: evalResult.deviceCount,
           maxDevices: 5,
+          deviceDetails: evalResult.deviceDetails,
           user: {
             phoneNo: user.phone_no,
             username: user.username,
@@ -1002,6 +1403,8 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
+      const session = await createUserSession(user.phone_no, deviceId || '', cleanModel);
+
       return sendJson(res, 200, {
         success: true,
         status: evalResult.status,
@@ -1011,6 +1414,11 @@ const server = http.createServer(async (req, res) => {
         isTrial: evalResult.isTrial,
         deviceCount: evalResult.deviceCount,
         maxDevices: 5,
+        authToken: session.rawToken,
+        deviceDetails: evalResult.deviceDetails,
+        lastLoginAt: Number(user.last_login_at) || Date.now(),
+        lastLoginModel: user.last_login_model || cleanModel,
+        lastLoginDevice: user.last_login_device || deviceId || '',
         user: {
           phoneNo: user.phone_no,
           username: user.username,
@@ -1022,6 +1430,10 @@ const server = http.createServer(async (req, res) => {
           adminPhone: user.admin_phone || '',
           deviceId: deviceId || user.device_id,
           devices: evalResult.devices,
+          deviceDetails: evalResult.deviceDetails,
+          lastLoginAt: Number(user.last_login_at) || Date.now(),
+          lastLoginModel: user.last_login_model || cleanModel,
+          lastLoginDevice: user.last_login_device || deviceId || '',
           status: evalResult.status,
           expiresAt: evalResult.expiresAt,
           daysLeft: evalResult.daysLeft
@@ -1044,7 +1456,7 @@ const server = http.createServer(async (req, res) => {
       'cloud_deleted_entities'
     ];
 
-    // Helper: Cascade delete user (if Main Admin, delete all linked Cashiers & all cloud data; if Cashier, delete only cashier row)
+    // Helper: Cascade delete user (if Main Admin, delete all linked Cashiers, sessions & all cloud data; if Cashier, delete only cashier row)
     async function deleteUserCascade(client, phoneNo) {
       const { rows } = await client.query(
         `SELECT phone_no, role FROM users WHERE phone_no = $1 LIMIT 1`,
@@ -1056,6 +1468,7 @@ const server = http.createServer(async (req, res) => {
 
       const target = rows[0];
       if ((target.role || 'ADMIN').toUpperCase() === 'CASHIER') {
+        await client.query(`DELETE FROM user_sessions WHERE phone_no = $1`, [phoneNo]);
         await client.query(`DELETE FROM users WHERE phone_no = $1`, [phoneNo]);
         return { deleted: true, role: 'CASHIER', deletedCashiers: 0 };
       }
@@ -1066,6 +1479,7 @@ const server = http.createServer(async (req, res) => {
       );
       const phonesToClean = [phoneNo, ...cashierRows.map(r => r.phone_no)];
 
+      await client.query(`DELETE FROM user_sessions WHERE phone_no = ANY($1::text[])`, [phonesToClean]);
       await client.query(`DELETE FROM users WHERE role = 'CASHIER' AND admin_phone = $1`, [phoneNo]);
 
       for (const tableName of CLOUD_TABLES) {
@@ -1084,14 +1498,19 @@ const server = http.createServer(async (req, res) => {
     if (pathname === '/api/delete-user' && method === 'POST') {
       const body = await parseJsonBody(req);
       const { phoneNo, password } = body;
+      const auth = await authenticateSyncOrUserRequest(req, res, phoneNo);
+      if (!auth) return;
       if (!phoneNo || !password) {
         return sendJson(res, 400, { success: false, message: 'ဖုန်းနံပါတ် နှင့် Password ဖြည့်ပါ' });
+      }
+      if (auth.actorPhone !== phoneNo) {
+        return sendJson(res, 403, { success: false, message: 'မိမိအကောင့်ကိုသာ ဖျက်ပိုင်ခွင့်ရှိပါသည်' });
       }
       const { rows } = await pool.query(`SELECT phone_no, password_hash FROM users WHERE phone_no = $1 LIMIT 1`, [phoneNo]);
       if (rows.length === 0) {
         return sendJson(res, 404, { success: false, message: 'အကောင့် ရှာမတွေ့ပါ' });
       }
-      if (rows[0].password_hash !== password) {
+      if (!verifyPassword(password, rows[0].password_hash)) {
         return sendJson(res, 401, { success: false, message: 'စကားဝှက် မှားယွင်းနေပါသည်' });
       }
       await withTransaction(async (client) => {
@@ -1111,19 +1530,43 @@ const server = http.createServer(async (req, res) => {
 
     // Admin: Login Authentication (POST /api/admin/login)
     if (pathname === '/api/admin/login' && method === 'POST') {
+      const rateKey = `admin_login:${getClientIp(req)}`;
+      const rateCheck = checkRateLimit(rateKey, 10, 10 * 60 * 1000);
+      if (rateCheck.blocked) {
+        return sendJson(res, 429, {
+          success: false,
+          message: `Admin Login မှားယွင်းမှု များလွန်းပါသဖြင့် ${rateCheck.retrySec} စက္ကန့်အကြာတွင် ပြန်လည်ကြိုးစားပါ`
+        });
+      }
+
       const body = await parseJsonBody(req);
       const { username, password } = body;
       const adminUser = process.env.ADMIN_USER || 'admin';
-      const adminPass = await getAdminPassword();
+      const adminPassStored = await getAdminPassword();
 
-      if (username === adminUser && password === adminPass) {
+      const uA = Buffer.from(String(username || ''), 'utf8');
+      const uB = Buffer.from(adminUser, 'utf8');
+      const userMatches = uA.length === uB.length && crypto.timingSafeEqual(uA, uB);
+
+      if (userMatches && verifyPassword(password, adminPassStored)) {
+        clearFailedAttempts(rateKey);
+        if (!isScryptHash(adminPassStored)) {
+          await pool.query(
+            `INSERT INTO app_settings (key, value, updated_at) VALUES ('admin_password', $1, $2)
+             ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at`,
+            [hashPassword(password), Date.now()]
+          );
+        }
+        const session = await createAdminSession(adminUser, req);
         return sendJson(res, 200, {
           success: true,
           message: 'Admin Login အောင်မြင်ပါသည်',
-          token: 'admin_token_' + Date.now(),
+          token: session.rawToken,
+          expiresAt: session.expiresAt,
           username: adminUser
         });
       } else {
+        recordFailedAttempt(rateKey, 10 * 60 * 1000);
         return sendJson(res, 401, {
           success: false,
           message: 'Admin အမည် သို့မဟုတ် စကားဝှက် မှားယွင်းနေပါသည်'
@@ -1131,13 +1574,36 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    // Admin: Verify Session (GET /api/admin/verify)
+    if (pathname === '/api/admin/verify' && method === 'GET') {
+      const adminAuth = await requireAdminAuth(req, res);
+      if (!adminAuth) return;
+      return sendJson(res, 200, {
+        success: true,
+        username: adminAuth.session.username,
+        expiresAt: Number(adminAuth.session.expires_at) || 0
+      });
+    }
+
+    // Admin: Logout Session (POST /api/admin/logout)
+    if (pathname === '/api/admin/logout' && method === 'POST') {
+      const rawToken = extractBearerToken(req);
+      if (rawToken) {
+        await pool.query(`DELETE FROM admin_sessions WHERE token_hash = $1`, [hashToken(rawToken)]).catch(() => {});
+      }
+      return sendJson(res, 200, { success: true, message: 'Admin Logged out' });
+    }
+
     // Admin: Change Admin Password (POST /api/admin/change-admin-password)
     if (pathname === '/api/admin/change-admin-password' && method === 'POST') {
+      const adminAuth = await requireAdminAuth(req, res);
+      if (!adminAuth) return;
+
       const body = await parseJsonBody(req);
       const { oldPassword, newPassword } = body;
       const currentAdminPass = await getAdminPassword();
 
-      if (oldPassword !== currentAdminPass) {
+      if (!verifyPassword(oldPassword, currentAdminPass)) {
         return sendJson(res, 400, { success: false, message: 'လက်ရှိ Admin စကားဝှက် မှားယွင်းနေပါသည်' });
       }
       if (!newPassword || newPassword.length < 4) {
@@ -1148,13 +1614,17 @@ const server = http.createServer(async (req, res) => {
         `INSERT INTO app_settings (key, value, updated_at)
          VALUES ('admin_password', $1, $2)
          ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at`,
-        [newPassword, Date.now()]
+        [hashPassword(newPassword), Date.now()]
       );
+      await pool.query(`DELETE FROM admin_sessions WHERE token_hash <> $1`, [adminAuth.tokenHash]).catch(() => {});
       return sendJson(res, 200, { success: true, message: 'Admin စကားဝှက်ကို အောင်မြင်စွာ ပြောင်းလဲပြီးပါပြီ' });
     }
 
     // Admin: Get all registered users (GET /api/admin/users)
     if (pathname === '/api/admin/users' && method === 'GET') {
+      const adminAuth = await requireAdminAuth(req, res);
+      if (!adminAuth) return;
+
       const now = Date.now();
       const { rows } = await pool.query(`
         SELECT u.*,
@@ -1173,6 +1643,7 @@ const server = http.createServer(async (req, res) => {
 
       const usersList = rows.map(u => {
         const devices = Array.isArray(u.devices) ? u.devices : (u.device_id ? [u.device_id] : []);
+        const deviceDetails = normalizeDeviceDetails(u.device_details, devices, u.device_id, Number(u.last_login_at) || Number(u.created_at) || 0);
         const devCount = devices.length;
         const expiresAt = Number(u.expires_at) || (u.created_at ? Number(u.created_at) + SEVEN_DAYS_MS : now + SEVEN_DAYS_MS);
         const daysLeft = Math.ceil((expiresAt - now) / (24 * 60 * 60 * 1000));
@@ -1188,8 +1659,12 @@ const server = http.createServer(async (req, res) => {
           role: u.role || 'ADMIN',
           join_code: u.join_code || '',
           admin_phone: u.admin_phone || '',
-          password_hash: u.password_hash || '',
+          hasPassword: Boolean(u.password_hash),
           devices,
+          deviceDetails,
+          lastLoginAt: Number(u.last_login_at) || 0,
+          lastLoginDevice: u.last_login_device || '',
+          lastLoginModel: u.last_login_model || '',
           deviceCount: devCount,
           maxDevices: 5,
           status: currentStatus,
@@ -1213,6 +1688,9 @@ const server = http.createServer(async (req, res) => {
 
     // Admin: Overall Stats (GET /api/admin/stats)
     if (pathname === '/api/admin/stats' && method === 'GET') {
+      const adminAuth = await requireAdminAuth(req, res);
+      if (!adminAuth) return;
+
       const now = Date.now();
       const [usersRes, vouchersRes, productsRes] = await Promise.all([
         pool.query(`SELECT role, status, expires_at FROM users`),
@@ -1255,6 +1733,9 @@ const server = http.createServer(async (req, res) => {
 
     // Admin: Renew / Extend Subscription / Reset Devices / Set Expiration (POST /api/renew or /api/admin/renew)
     if ((pathname === '/api/renew' || pathname === '/api/admin/renew') && method === 'POST') {
+      const adminAuth = await requireAdminAuth(req, res);
+      if (!adminAuth) return;
+
       const body = await parseJsonBody(req);
       const { phoneNo, days, action, newStatus, customExpiry } = body;
       const { rows } = await pool.query(`SELECT * FROM users WHERE phone_no = $1 LIMIT 1`, [phoneNo]);
@@ -1267,9 +1748,10 @@ const server = http.createServer(async (req, res) => {
 
       if (action === 'reset_devices') {
         await pool.query(
-          `UPDATE users SET devices = '[]'::jsonb, device_id = '' WHERE phone_no = $1`,
+          `UPDATE users SET devices = '[]'::jsonb, device_id = '', device_details = '[]'::jsonb, last_login_device = '' WHERE phone_no = $1`,
           [phoneNo]
         );
+        await pool.query(`DELETE FROM user_sessions WHERE phone_no = $1`, [phoneNo]).catch(() => {});
         return sendJson(res, 200, {
           success: true,
           message: 'စက်စာရင်း (Devices) များကို အောင်မြင်စွာ Reset ပြုလုပ်ပြီးပါပြီ'
@@ -1285,6 +1767,9 @@ const server = http.createServer(async (req, res) => {
           `UPDATE users SET status = $1, expires_at = $2 WHERE phone_no = $3`,
           [newStatus, updatedExpiry, phoneNo]
         );
+        if (newStatus === 'off') {
+          await pool.query(`DELETE FROM user_sessions WHERE phone_no = $1`, [phoneNo]).catch(() => {});
+        }
         return sendJson(res, 200, {
           success: true,
           message: `အကောင့် Status ကို ${newStatus.toUpperCase()} သို့ ပြောင်းလဲပြီးပါပြီ`,
@@ -1328,6 +1813,9 @@ const server = http.createServer(async (req, res) => {
 
     // Admin: Update User Info (POST /api/admin/user/update)
     if (pathname === '/api/admin/user/update' && method === 'POST') {
+      const adminAuth = await requireAdminAuth(req, res);
+      if (!adminAuth) return;
+
       const body = await parseJsonBody(req);
       const { phoneNo, username, businessName, businessType, address, role, password, status, expiresAt, joinCode, adminPhone } = body;
       const { rows } = await pool.query(`SELECT * FROM users WHERE phone_no = $1 LIMIT 1`, [phoneNo]);
@@ -1338,6 +1826,8 @@ const server = http.createServer(async (req, res) => {
 
       const nextExpiry = expiresAt ? Number(expiresAt) : Number(user.expires_at);
       const nextRole = role || user.role;
+      const hasNewPass = password !== undefined && password !== null && String(password).trim().length > 0;
+      const nextPassHash = hasNewPass ? hashPassword(String(password).trim()) : user.password_hash;
 
       const { rows: updatedRows } = await pool.query(
         `UPDATE users SET
@@ -1352,14 +1842,16 @@ const server = http.createServer(async (req, res) => {
           join_code = $9,
           admin_phone = $10
          WHERE phone_no = $11
-         RETURNING *`,
+         RETURNING phone_no, username, business_name, business_type, address, role,
+                   device_id, devices, device_details, last_login_at, last_login_device, last_login_model,
+                   status, join_code, admin_phone, created_at, expires_at, trial_days`,
         [
           username || user.username,
           businessName !== undefined ? businessName : user.business_name,
           businessType !== undefined ? businessType : user.business_type,
           address !== undefined ? address : user.address,
           nextRole,
-          password || user.password_hash,
+          nextPassHash,
           status || user.status,
           nextExpiry,
           joinCode !== undefined ? joinCode : (user.join_code || ''),
@@ -1384,6 +1876,9 @@ const server = http.createServer(async (req, res) => {
 
     // Admin: Create User directly (POST /api/admin/user/create)
     if (pathname === '/api/admin/user/create' && method === 'POST') {
+      const adminAuth = await requireAdminAuth(req, res);
+      if (!adminAuth) return;
+
       const body = await parseJsonBody(req);
       const { phoneNo, username, businessName, password, days } = body;
       if (!phoneNo || !username || !password) {
@@ -1401,11 +1896,13 @@ const server = http.createServer(async (req, res) => {
       const { rows } = await pool.query(
         `INSERT INTO users (
           phone_no, username, business_name, business_type, address, role,
-          password_hash, device_id, devices, status, join_code, admin_phone,
+          password_hash, device_id, devices, device_details, status, join_code, admin_phone,
           created_at, expires_at, trial_days
-        ) VALUES ($1,$2,$3,'','','ADMIN',$4,'','[]'::jsonb,'on','','',$5,$6,$7)
-        RETURNING *`,
-        [phoneNo, username, businessName || '', password, now, expiresAt, trialDays]
+        ) VALUES ($1,$2,$3,'','','ADMIN',$4,'','[]'::jsonb,'[]'::jsonb,'on','','',$5,$6,$7)
+        RETURNING phone_no, username, business_name, business_type, address, role,
+                  device_id, devices, device_details, last_login_at, last_login_device, last_login_model,
+                  status, join_code, admin_phone, created_at, expires_at, trial_days`,
+        [phoneNo, username, businessName || '', hashPassword(password), now, expiresAt, trialDays]
       );
 
       return sendJson(res, 200, {
@@ -1417,6 +1914,9 @@ const server = http.createServer(async (req, res) => {
 
     // Admin: Create Cashier directly under a Main Admin (POST /api/admin/cashier/create)
     if (pathname === '/api/admin/cashier/create' && method === 'POST') {
+      const adminAuth = await requireAdminAuth(req, res);
+      if (!adminAuth) return;
+
       const body = await parseJsonBody(req);
       const { adminPhone, phoneNo, username, password, status, joinCode } = body;
       if (!adminPhone || !phoneNo || !username || !password) {
@@ -1439,17 +1939,19 @@ const server = http.createServer(async (req, res) => {
       const { rows } = await pool.query(
         `INSERT INTO users (
           phone_no, username, business_name, business_type, address, role,
-          password_hash, device_id, devices, status, join_code, admin_phone,
+          password_hash, device_id, devices, device_details, status, join_code, admin_phone,
           created_at, expires_at, trial_days
-        ) VALUES ($1,$2,$3,$4,$5,'CASHIER',$6,'','[]'::jsonb,$7,$8,$9,$10,$11,$12)
-        RETURNING *`,
+        ) VALUES ($1,$2,$3,$4,$5,'CASHIER',$6,'','[]'::jsonb,'[]'::jsonb,$7,$8,$9,$10,$11,$12)
+        RETURNING phone_no, username, business_name, business_type, address, role,
+                  device_id, devices, device_details, last_login_at, last_login_device, last_login_model,
+                  status, join_code, admin_phone, created_at, expires_at, trial_days`,
         [
           phoneNo,
           username,
           adminUser.business_name || '',
           adminUser.business_type || '',
           adminUser.address || '',
-          password,
+          hashPassword(password),
           status || 'on',
           finalJoinCode,
           adminPhone,
@@ -1468,6 +1970,9 @@ const server = http.createServer(async (req, res) => {
 
     // Admin: Delete User (POST /api/admin/user/delete) - Cascade deletes Admin + Cashiers + all Cloud Data
     if (pathname === '/api/admin/user/delete' && method === 'POST') {
+      const adminAuth = await requireAdminAuth(req, res);
+      if (!adminAuth) return;
+
       const body = await parseJsonBody(req);
       const { phoneNo } = body;
       if (!phoneNo) {
@@ -1480,14 +1985,17 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 404, { success: false, message: 'အကောင့် ရှာမတွေ့ပါ' });
       }
       const msg = result.role === 'CASHIER'
-        ? 'Cashier အကောင့်ကို ဖျက်ပြီးပါပြီ'
-        : `Main Admin အကောင့်၊ Cashier (${result.deletedCashiers} ခု) နှင့် Cloud Data အားလုံးကို ဖျက်ပြီးပါပြီ`;
+        ? 'Cashier အကောင့်ကို Database ထဲမှ ဖျက်ပြီးပါပြီ'
+        : `Main Admin အကောင့်၊ Cashier (${result.deletedCashiers} ခု) နှင့် PostgreSQL Cloud Data အားလုံးကို ဖျက်ပြီးပါပြီ`;
       console.log(`[ADMIN DELETE] Deleted ${result.role} ${phoneNo} (cascade cashiers=${result.deletedCashiers})`);
       return sendJson(res, 200, { success: true, message: msg, ...result });
     }
 
     // Admin: Get full Admin Account Details, Linked Cashiers, and Cloud Business Data (GET /api/admin/user/details?phoneNo=...)
     if (pathname === '/api/admin/user/details' && method === 'GET') {
+      const adminAuth = await requireAdminAuth(req, res);
+      if (!adminAuth) return;
+
       const phoneNo = (parsedUrl.query.phoneNo || '').trim();
       if (!phoneNo) {
         return sendJson(res, 400, { success: false, message: 'phoneNo လိုအပ်ပါသည်' });
@@ -1542,6 +2050,7 @@ const server = http.createServer(async (req, res) => {
 
       const mapAccount = (u) => {
         const devices = Array.isArray(u.devices) ? u.devices : (u.device_id ? [u.device_id] : []);
+        const deviceDetails = normalizeDeviceDetails(u.device_details, devices, u.device_id, Number(u.last_login_at) || Number(u.created_at) || 0);
         const expiresAt = Number(u.expires_at) || (u.created_at ? Number(u.created_at) + SEVEN_DAYS_MS : now + SEVEN_DAYS_MS);
         const daysLeft = Math.ceil((expiresAt - now) / (24 * 60 * 60 * 1000));
         const isExpired = now > expiresAt;
@@ -1555,8 +2064,12 @@ const server = http.createServer(async (req, res) => {
           role: u.role || 'ADMIN',
           join_code: u.join_code || '',
           admin_phone: u.admin_phone || '',
-          password_hash: u.password_hash || '',
+          hasPassword: Boolean(u.password_hash),
           devices,
+          deviceDetails,
+          lastLoginAt: Number(u.last_login_at) || 0,
+          lastLoginDevice: u.last_login_device || '',
+          lastLoginModel: u.last_login_model || '',
           deviceCount: devices.length,
           maxDevices: 5,
           status: currentStatus,
@@ -1642,8 +2155,603 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    // Admin: Get Full Voucher Line-Item Details (GET /api/admin/voucher/details?userPhone=...&receiptNo=...)
+    if (pathname === '/api/admin/voucher/details' && method === 'GET') {
+      const adminAuth = await requireAdminAuth(req, res);
+      if (!adminAuth) return;
+
+      const userPhone = String(parsedUrl.query.userPhone || parsedUrl.query.phoneNo || '').trim();
+      const receiptNo = String(parsedUrl.query.receiptNo || '').trim();
+      if (!userPhone || !receiptNo) {
+        return sendJson(res, 400, { success: false, message: 'userPhone နှင့် receiptNo လိုအပ်ပါသည်' });
+      }
+
+      let targetPhone = userPhone;
+      let { rows: vRows } = await pool.query(
+        `SELECT * FROM cloud_vouchers WHERE user_phone = $1 AND receipt_no = $2 LIMIT 1`,
+        [targetPhone, receiptNo]
+      );
+      if (vRows.length === 0) {
+        const resolved = await resolveTenantPhone(pool, userPhone);
+        if (resolved && resolved !== targetPhone) {
+          targetPhone = resolved;
+          const retry = await pool.query(
+            `SELECT * FROM cloud_vouchers WHERE user_phone = $1 AND receipt_no = $2 LIMIT 1`,
+            [targetPhone, receiptNo]
+          );
+          vRows = retry.rows;
+        }
+      }
+
+      if (vRows.length === 0) {
+        return sendJson(res, 404, { success: false, message: 'ဘောင်ချာ ရှာမတွေ့ပါ (Voucher not found)' });
+      }
+
+      const [itemsRes, ownerRes] = await Promise.all([
+        pool.query(
+          `SELECT * FROM cloud_voucher_items WHERE user_phone = $1 AND voucher_id = $2 ORDER BY id ASC`,
+          [targetPhone, receiptNo]
+        ),
+        pool.query(
+          `SELECT phone_no, username, business_name, business_type, address FROM users WHERE phone_no = $1 LIMIT 1`,
+          [targetPhone]
+        )
+      ]);
+
+      const ownerRow = ownerRes.rows[0] || {};
+      const items = itemsRes.rows.map(it => {
+        const qty = Number(it.quantity) || 1;
+        const unitPrice = Number(it.selling_price) || 0;
+        const costPrice = Number(it.purchase_price) || 0;
+        return {
+          productId: Number(it.product_id) || 0,
+          productName: it.product_name || '',
+          quantity: qty,
+          purchasePrice: costPrice,
+          sellingPrice: unitPrice,
+          lineTotal: (vRows[0].is_purchase ? costPrice : unitPrice) * qty
+        };
+      });
+
+      return sendJson(res, 200, {
+        success: true,
+        voucher: {
+          ...mapVoucherRow(vRows[0]),
+          ownerPhone: targetPhone
+        },
+        items,
+        owner: {
+          phoneNo: ownerRow.phone_no || targetPhone,
+          username: ownerRow.username || '',
+          businessName: ownerRow.business_name || '',
+          businessType: ownerRow.business_type || '',
+          address: ownerRow.address || ''
+        }
+      });
+    }
+
+    // Admin: Export FULL Database Backup JSON (GET /api/admin/backup/all)
+    if (pathname === '/api/admin/backup/all' && method === 'GET') {
+      const adminAuth = await requireAdminAuth(req, res);
+      if (!adminAuth) return;
+
+      const [
+        usersRes,
+        productsRes,
+        vouchersRes,
+        voucherItemsRes,
+        customersRes,
+        suppliersRes,
+        groupsRes,
+        unitsRes,
+        paymentsRes,
+        expCatsRes,
+        expensesRes,
+        stockAdjRes,
+        deletedRes,
+        settingsRes
+      ] = await Promise.all([
+        pool.query(`SELECT * FROM users ORDER BY created_at ASC`),
+        pool.query(`SELECT * FROM cloud_products ORDER BY user_phone ASC, name ASC`),
+        pool.query(`SELECT * FROM cloud_vouchers ORDER BY user_phone ASC, timestamp DESC`),
+        pool.query(`SELECT * FROM cloud_voucher_items ORDER BY user_phone ASC, id ASC`),
+        pool.query(`SELECT * FROM cloud_customers ORDER BY user_phone ASC, name ASC`),
+        pool.query(`SELECT * FROM cloud_suppliers ORDER BY user_phone ASC, name ASC`),
+        pool.query(`SELECT * FROM cloud_product_groups ORDER BY user_phone ASC, name ASC`),
+        pool.query(`SELECT * FROM cloud_product_units ORDER BY user_phone ASC, name ASC`),
+        pool.query(`SELECT * FROM cloud_payments ORDER BY user_phone ASC, method ASC`),
+        pool.query(`SELECT * FROM cloud_expense_categories ORDER BY user_phone ASC, name ASC`),
+        pool.query(`SELECT * FROM cloud_expenses ORDER BY user_phone ASC, timestamp DESC`),
+        pool.query(`SELECT * FROM cloud_stock_adjustments ORDER BY user_phone ASC, timestamp DESC`),
+        pool.query(`SELECT * FROM cloud_deleted_entities ORDER BY user_phone ASC`),
+        pool.query(`SELECT key, value, updated_at FROM app_settings WHERE key <> 'admin_password'`)
+      ]);
+
+      const payload = {
+        backupVersion: 'UN_POS_FULL_BACKUP_V1',
+        exportedAt: Date.now(),
+        appSettings: settingsRes.rows,
+        users: usersRes.rows,
+        cloudData: {
+          cloud_products: productsRes.rows,
+          cloud_vouchers: vouchersRes.rows,
+          cloud_voucher_items: voucherItemsRes.rows,
+          cloud_customers: customersRes.rows,
+          cloud_suppliers: suppliersRes.rows,
+          cloud_product_groups: groupsRes.rows,
+          cloud_product_units: unitsRes.rows,
+          cloud_payments: paymentsRes.rows,
+          cloud_expense_categories: expCatsRes.rows,
+          cloud_expenses: expensesRes.rows,
+          cloud_stock_adjustments: stockAdjRes.rows,
+          cloud_deleted_entities: deletedRes.rows
+        }
+      };
+
+      const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
+      res.writeHead(200, {
+        ...CORS_HEADERS,
+        'Content-Disposition': `attachment; filename="unpos-full-backup-${stamp}.json"`
+      });
+      res.end(JSON.stringify(payload, null, 2));
+      console.log(`[BACKUP FULL] Exported full PostgreSQL database (${usersRes.rows.length} users, ${vouchersRes.rows.length} vouchers, ${productsRes.rows.length} products)`);
+      return;
+    }
+
+    // Helper: Insert cloud rows for a target phone (reused by Full Restore & Per-Account Restore)
+    async function insertCloudDataRows(client, cloudData, overridePhone = null) {
+      const pickPhone = (row) => overridePhone || row.user_phone;
+
+      for (const p of (cloudData.cloud_products || [])) {
+        const up = pickPhone(p);
+        if (!up || !p.product_key) continue;
+        await client.query(
+          `INSERT INTO cloud_products (
+            user_phone, product_key, product_id, name, group_name, purchase_price,
+            selling_price, unit, note, track_stock, barcode, quantity,
+            initial_quantity, alert_quantity, image_uri, updated_at
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+          ON CONFLICT (user_phone, product_key) DO UPDATE SET
+            product_id = EXCLUDED.product_id, name = EXCLUDED.name, group_name = EXCLUDED.group_name,
+            purchase_price = EXCLUDED.purchase_price, selling_price = EXCLUDED.selling_price,
+            unit = EXCLUDED.unit, note = EXCLUDED.note, track_stock = EXCLUDED.track_stock,
+            barcode = EXCLUDED.barcode, quantity = EXCLUDED.quantity,
+            initial_quantity = EXCLUDED.initial_quantity, alert_quantity = EXCLUDED.alert_quantity,
+            image_uri = EXCLUDED.image_uri, updated_at = EXCLUDED.updated_at`,
+          [
+            up, p.product_key, p.product_id !== null && p.product_id !== undefined ? Number(p.product_id) : null,
+            p.name || '', p.group_name || '', Number(p.purchase_price) || 0, Number(p.selling_price) || 0,
+            p.unit || '', p.note || '', p.track_stock !== false, p.barcode || '',
+            Number(p.quantity) || 0,
+            Number(p.initial_quantity !== undefined && p.initial_quantity !== null ? p.initial_quantity : p.quantity) || 0,
+            Number(p.alert_quantity) || 0, p.image_uri || '', Number(p.updated_at) || Date.now()
+          ]
+        );
+      }
+
+      for (const v of (cloudData.cloud_vouchers || [])) {
+        const up = pickPhone(v);
+        if (!up || !v.receipt_no) continue;
+        await client.query(
+          `INSERT INTO cloud_vouchers (
+            user_phone, receipt_no, timestamp, cashier_name, total_amount, total_items,
+            customer_name, payment_method, is_completed, is_purchase, paid_amount,
+            change_amount, balance_amount, discount, fee, note
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+          ON CONFLICT (user_phone, receipt_no) DO UPDATE SET
+            timestamp = EXCLUDED.timestamp, cashier_name = EXCLUDED.cashier_name,
+            total_amount = EXCLUDED.total_amount, total_items = EXCLUDED.total_items,
+            customer_name = EXCLUDED.customer_name, payment_method = EXCLUDED.payment_method,
+            is_completed = EXCLUDED.is_completed, is_purchase = EXCLUDED.is_purchase,
+            paid_amount = EXCLUDED.paid_amount, change_amount = EXCLUDED.change_amount,
+            balance_amount = EXCLUDED.balance_amount, discount = EXCLUDED.discount,
+            fee = EXCLUDED.fee, note = EXCLUDED.note`,
+          [
+            up, v.receipt_no, Number(v.timestamp) || Date.now(), v.cashier_name || '',
+            Number(v.total_amount) || 0, Number(v.total_items) || 0,
+            v.customer_name || 'Not Register', v.payment_method || 'CASH',
+            v.is_completed !== false, Boolean(v.is_purchase),
+            Number(v.paid_amount) || 0, Number(v.change_amount) || 0,
+            Number(v.balance_amount) || 0, Number(v.discount) || 0, Number(v.fee) || 0,
+            v.note || ''
+          ]
+        );
+      }
+
+      for (const vi of (cloudData.cloud_voucher_items || [])) {
+        const up = pickPhone(vi);
+        if (!up || !vi.voucher_id) continue;
+        await client.query(
+          `INSERT INTO cloud_voucher_items (
+            user_phone, voucher_id, product_id, product_name, quantity, purchase_price, selling_price
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+          [
+            up, vi.voucher_id, Number(vi.product_id) || 0, vi.product_name || '',
+            Number(vi.quantity) || 1, Number(vi.purchase_price) || 0, Number(vi.selling_price) || 0
+          ]
+        );
+      }
+
+      for (const c of (cloudData.cloud_customers || [])) {
+        const up = pickPhone(c);
+        if (!up || !c.name) continue;
+        await client.query(
+          `INSERT INTO cloud_customers (user_phone, name, customer_id, phone, address, note)
+           VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`,
+          [up, c.name, Number(c.customer_id) || 0, c.phone || '', c.address || '', c.note || '']
+        );
+      }
+
+      for (const s of (cloudData.cloud_suppliers || [])) {
+        const up = pickPhone(s);
+        if (!up || !s.name) continue;
+        await client.query(
+          `INSERT INTO cloud_suppliers (user_phone, name, supplier_id, phone, address, note)
+           VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`,
+          [up, s.name, Number(s.supplier_id) || 0, s.phone || '', s.address || '', s.note || '']
+        );
+      }
+
+      for (const g of (cloudData.cloud_product_groups || [])) {
+        const up = pickPhone(g);
+        if (!up || !g.name) continue;
+        await client.query(
+          `INSERT INTO cloud_product_groups (user_phone, name) VALUES ($1,$2) ON CONFLICT DO NOTHING`,
+          [up, g.name]
+        );
+      }
+
+      for (const u of (cloudData.cloud_product_units || [])) {
+        const up = pickPhone(u);
+        if (!up || !u.name) continue;
+        await client.query(
+          `INSERT INTO cloud_product_units (user_phone, name) VALUES ($1,$2) ON CONFLICT DO NOTHING`,
+          [up, u.name]
+        );
+      }
+
+      for (const pm of (cloudData.cloud_payments || [])) {
+        const up = pickPhone(pm);
+        if (!up || !pm.method) continue;
+        await client.query(
+          `INSERT INTO cloud_payments (user_phone, method, amount, date)
+           VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING`,
+          [up, pm.method, Number(pm.amount) || 0, Number(pm.date) || 0]
+        );
+      }
+
+      for (const ec of (cloudData.cloud_expense_categories || [])) {
+        const up = pickPhone(ec);
+        if (!up || !ec.name) continue;
+        await client.query(
+          `INSERT INTO cloud_expense_categories (user_phone, name, icon_name)
+           VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`,
+          [up, ec.name, ec.icon_name || 'ShoppingCart']
+        );
+      }
+
+      for (const ex of (cloudData.cloud_expenses || [])) {
+        const up = pickPhone(ex);
+        if (!up) continue;
+        await client.query(
+          `INSERT INTO cloud_expenses (
+            user_phone, category_name, description, amount, payment_method, note, timestamp, date_string, time_string
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+          [
+            up, ex.category_name || '', ex.description || '', Number(ex.amount) || 0,
+            ex.payment_method || 'CASH', ex.note || '', Number(ex.timestamp) || Date.now(),
+            ex.date_string || '', ex.time_string || ''
+          ]
+        );
+      }
+
+      for (const sa of (cloudData.cloud_stock_adjustments || [])) {
+        const up = pickPhone(sa);
+        if (!up) continue;
+        await client.query(
+          `INSERT INTO cloud_stock_adjustments (
+            user_phone, product_id, product_name, adjustment_type, reason_title,
+            description, quantity, before_quantity, after_quantity, timestamp, adjusted_by
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+          [
+            up, Number(sa.product_id) || 0, sa.product_name || '', sa.adjustment_type || 'STOCK_OUT',
+            sa.reason_title || '', sa.description || '', Number(sa.quantity) || 0,
+            Number(sa.before_quantity) || 0, Number(sa.after_quantity) || 0,
+            Number(sa.timestamp) || Date.now(), sa.adjusted_by || ''
+          ]
+        );
+      }
+
+      for (const de of (cloudData.cloud_deleted_entities || [])) {
+        const up = pickPhone(de);
+        if (!up || !de.entity_type || !de.entity_key) continue;
+        await client.query(
+          `INSERT INTO cloud_deleted_entities (user_phone, entity_type, entity_key, deleted_at)
+           VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING`,
+          [up, de.entity_type, de.entity_key, Number(de.deleted_at) || 0]
+        );
+      }
+    }
+
+    // Admin: Restore FULL Database Backup JSON (POST /api/admin/restore/all)
+    if (pathname === '/api/admin/restore/all' && method === 'POST') {
+      const adminAuth = await requireAdminAuth(req, res);
+      if (!adminAuth) return;
+
+      const body = await parseJsonBody(req);
+      const backup = body?.backup || body;
+      if (!backup || backup.backupVersion !== 'UN_POS_FULL_BACKUP_V1' || !Array.isArray(backup.users) || !backup.cloudData) {
+        return sendJson(res, 400, { success: false, message: 'Backup ဖိုင် Format မှားယွင်းနေပါသည် (Invalid UN_POS_FULL_BACKUP_V1 file)' });
+      }
+
+      const now = Date.now();
+      await withTransaction(async (client) => {
+        await client.query(`DELETE FROM user_sessions`);
+        for (const tableName of CLOUD_TABLES) {
+          await client.query(`DELETE FROM ${tableName}`);
+        }
+        await client.query(`DELETE FROM users`);
+
+        for (const u of backup.users) {
+          if (!u.phone_no) continue;
+          const devicesJson = JSON.stringify(Array.isArray(u.devices) ? u.devices : []);
+          const detailsJson = JSON.stringify(Array.isArray(u.device_details) ? u.device_details : []);
+          const passVal = u.password_hash ? String(u.password_hash) : hashPassword('123456');
+          await client.query(
+            `INSERT INTO users (
+              phone_no, username, business_name, business_type, address, role,
+              password_hash, device_id, devices, device_details,
+              last_login_at, last_login_device, last_login_model,
+              status, join_code, admin_phone, created_at, expires_at, trial_days
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
+            [
+              u.phone_no, u.username || 'User', u.business_name || '', u.business_type || '',
+              u.address || '', u.role || 'ADMIN', passVal, u.device_id || '',
+              devicesJson, detailsJson, Number(u.last_login_at) || 0,
+              u.last_login_device || '', u.last_login_model || '',
+              u.status || 'on', u.join_code || '', u.admin_phone || '',
+              Number(u.created_at) || now, Number(u.expires_at) || (now + SEVEN_DAYS_MS),
+              Number(u.trial_days) || 7
+            ]
+          );
+        }
+
+        if (Array.isArray(backup.appSettings)) {
+          for (const st of backup.appSettings) {
+            if (!st.key || st.key === 'admin_password') continue;
+            await client.query(
+              `INSERT INTO app_settings (key, value, updated_at) VALUES ($1,$2,$3)
+               ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at`,
+              [st.key, String(st.value || ''), Number(st.updated_at) || now]
+            );
+          }
+        }
+
+        await insertCloudDataRows(client, backup.cloudData, null);
+
+        const adminPhones = backup.users
+          .filter(u => u.phone_no && (u.role || 'ADMIN').toUpperCase() !== 'CASHIER')
+          .map(u => u.phone_no);
+        for (const ap of adminPhones) {
+          await recalculateUserProductStock(client, ap);
+        }
+      });
+
+      const stats = {
+        usersCount: backup.users.length,
+        productsCount: (backup.cloudData.cloud_products || []).length,
+        vouchersCount: (backup.cloudData.cloud_vouchers || []).length
+      };
+      console.log(`[RESTORE FULL] Restored PostgreSQL DB: ${stats.usersCount} users, ${stats.productsCount} products, ${stats.vouchersCount} vouchers`);
+      return sendJson(res, 200, {
+        success: true,
+        message: `Database တစ်ခုလုံးကို Restore ပြုလုပ်ပြီးပါပြီ (Users: ${stats.usersCount}, Products: ${stats.productsCount}, Vouchers: ${stats.vouchersCount})`,
+        ...stats
+      });
+    }
+
+    // Admin: Export Single Main Admin Account Backup JSON (GET /api/admin/backup/user?phoneNo=...)
+    if (pathname === '/api/admin/backup/user' && method === 'GET') {
+      const adminAuth = await requireAdminAuth(req, res);
+      if (!adminAuth) return;
+
+      const phoneNo = String(parsedUrl.query.phoneNo || '').trim();
+      if (!phoneNo) {
+        return sendJson(res, 400, { success: false, message: 'phoneNo လိုအပ်ပါသည်' });
+      }
+
+      const { rows: userRows } = await pool.query(`SELECT * FROM users WHERE phone_no = $1 LIMIT 1`, [phoneNo]);
+      if (userRows.length === 0) {
+        return sendJson(res, 404, { success: false, message: 'အကောင့် ရှာမတွေ့ပါ' });
+      }
+
+      const ownerUser = userRows[0];
+      const ownerPhone = (ownerUser.role || 'ADMIN').toUpperCase() === 'CASHIER' && ownerUser.admin_phone
+        ? ownerUser.admin_phone
+        : ownerUser.phone_no;
+
+      const { rows: mainAdminRows } = ownerPhone === ownerUser.phone_no
+        ? { rows: [ownerUser] }
+        : await pool.query(`SELECT * FROM users WHERE phone_no = $1 LIMIT 1`, [ownerPhone]);
+
+      const [
+        cashiersRes,
+        productsRes,
+        vouchersRes,
+        voucherItemsRes,
+        customersRes,
+        suppliersRes,
+        groupsRes,
+        unitsRes,
+        paymentsRes,
+        expCatsRes,
+        expensesRes,
+        stockAdjRes,
+        deletedRes
+      ] = await Promise.all([
+        pool.query(`SELECT * FROM users WHERE role = 'CASHIER' AND admin_phone = $1 ORDER BY created_at ASC`, [ownerPhone]),
+        pool.query(`SELECT * FROM cloud_products WHERE user_phone = $1 ORDER BY name ASC`, [ownerPhone]),
+        pool.query(`SELECT * FROM cloud_vouchers WHERE user_phone = $1 ORDER BY timestamp DESC`, [ownerPhone]),
+        pool.query(`SELECT * FROM cloud_voucher_items WHERE user_phone = $1 ORDER BY id ASC`, [ownerPhone]),
+        pool.query(`SELECT * FROM cloud_customers WHERE user_phone = $1 ORDER BY name ASC`, [ownerPhone]),
+        pool.query(`SELECT * FROM cloud_suppliers WHERE user_phone = $1 ORDER BY name ASC`, [ownerPhone]),
+        pool.query(`SELECT * FROM cloud_product_groups WHERE user_phone = $1 ORDER BY name ASC`, [ownerPhone]),
+        pool.query(`SELECT * FROM cloud_product_units WHERE user_phone = $1 ORDER BY name ASC`, [ownerPhone]),
+        pool.query(`SELECT * FROM cloud_payments WHERE user_phone = $1 ORDER BY method ASC`, [ownerPhone]),
+        pool.query(`SELECT * FROM cloud_expense_categories WHERE user_phone = $1 ORDER BY name ASC`, [ownerPhone]),
+        pool.query(`SELECT * FROM cloud_expenses WHERE user_phone = $1 ORDER BY timestamp DESC`, [ownerPhone]),
+        pool.query(`SELECT * FROM cloud_stock_adjustments WHERE user_phone = $1 ORDER BY timestamp DESC`, [ownerPhone]),
+        pool.query(`SELECT * FROM cloud_deleted_entities WHERE user_phone = $1`, [ownerPhone])
+      ]);
+
+      const payload = {
+        backupVersion: 'UN_POS_ACCOUNT_BACKUP_V1',
+        exportedAt: Date.now(),
+        ownerPhone,
+        user: mainAdminRows[0] || ownerUser,
+        cashiers: cashiersRes.rows,
+        cloudData: {
+          cloud_products: productsRes.rows,
+          cloud_vouchers: vouchersRes.rows,
+          cloud_voucher_items: voucherItemsRes.rows,
+          cloud_customers: customersRes.rows,
+          cloud_suppliers: suppliersRes.rows,
+          cloud_product_groups: groupsRes.rows,
+          cloud_product_units: unitsRes.rows,
+          cloud_payments: paymentsRes.rows,
+          cloud_expense_categories: expCatsRes.rows,
+          cloud_expenses: expensesRes.rows,
+          cloud_stock_adjustments: stockAdjRes.rows,
+          cloud_deleted_entities: deletedRes.rows
+        }
+      };
+
+      const safePhone = ownerPhone.replace(/[^a-zA-Z0-9_-]/g, '');
+      const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
+      res.writeHead(200, {
+        ...CORS_HEADERS,
+        'Content-Disposition': `attachment; filename="unpos-account-${safePhone}-${stamp}.json"`
+      });
+      res.end(JSON.stringify(payload, null, 2));
+      console.log(`[BACKUP USER] Exported account ${ownerPhone} (${productsRes.rows.length} products, ${vouchersRes.rows.length} vouchers)`);
+      return;
+    }
+
+    // Admin: Restore Single Account Backup JSON into targetPhoneNo (POST /api/admin/restore/user)
+    if (pathname === '/api/admin/restore/user' && method === 'POST') {
+      const adminAuth = await requireAdminAuth(req, res);
+      if (!adminAuth) return;
+
+      const body = await parseJsonBody(req);
+      const backup = body?.backup || body;
+      if (!backup || backup.backupVersion !== 'UN_POS_ACCOUNT_BACKUP_V1' || !backup.cloudData) {
+        return sendJson(res, 400, { success: false, message: 'Account Backup ဖိုင် Format မှားယွင်းနေပါသည် (Invalid UN_POS_ACCOUNT_BACKUP_V1 file)' });
+      }
+
+      const targetPhone = String(body?.targetPhoneNo || backup.ownerPhone || backup.user?.phone_no || '').trim();
+      if (!targetPhone) {
+        return sendJson(res, 400, { success: false, message: 'Restore ပြုလုပ်မည့် အကောင့် ဖုန်းနံပါတ် မရှိပါ' });
+      }
+
+      const includeCashiers = body?.includeCashiers !== false;
+      const now = Date.now();
+      let restoredCashiers = 0;
+
+      await withTransaction(async (client) => {
+        const { rows: existingAdminRows } = await client.query(`SELECT * FROM users WHERE phone_no = $1 LIMIT 1`, [targetPhone]);
+        if (existingAdminRows.length === 0) {
+          const u = backup.user || {};
+          await client.query(
+            `INSERT INTO users (
+              phone_no, username, business_name, business_type, address, role,
+              password_hash, device_id, devices, device_details,
+              last_login_at, last_login_device, last_login_model,
+              status, join_code, admin_phone, created_at, expires_at, trial_days
+            ) VALUES ($1,$2,$3,$4,$5,'ADMIN',$6,$7,$8::jsonb,$9::jsonb,$10,$11,$12,$13,'','',$14,$15,$16)`,
+            [
+              targetPhone,
+              u.username || 'User',
+              u.business_name || '',
+              u.business_type || '',
+              u.address || '',
+              u.password_hash ? String(u.password_hash) : hashPassword('123456'),
+              u.device_id || '',
+              JSON.stringify(Array.isArray(u.devices) ? u.devices : []),
+              JSON.stringify(Array.isArray(u.device_details) ? u.device_details : []),
+              Number(u.last_login_at) || 0,
+              u.last_login_device || '',
+              u.last_login_model || '',
+              u.status || 'on',
+              Number(u.created_at) || now,
+              Number(u.expires_at) || (now + SEVEN_DAYS_MS),
+              Number(u.trial_days) || 7
+            ]
+          );
+        }
+
+        if (includeCashiers && Array.isArray(backup.cashiers) && backup.cashiers.length > 0) {
+          for (const c of backup.cashiers) {
+            if (!c.phone_no || c.phone_no === targetPhone) continue;
+            const { rows: cExist } = await client.query(`SELECT phone_no, admin_phone FROM users WHERE phone_no = $1 LIMIT 1`, [c.phone_no]);
+            if (cExist.length === 0) {
+              await client.query(
+                `INSERT INTO users (
+                  phone_no, username, business_name, business_type, address, role,
+                  password_hash, device_id, devices, device_details,
+                  status, join_code, admin_phone, created_at, expires_at, trial_days
+                ) VALUES ($1,$2,$3,$4,$5,'CASHIER',$6,$7,$8::jsonb,$9::jsonb,$10,$11,$12,$13,$14,$15)`,
+                [
+                  c.phone_no,
+                  c.username || 'Cashier',
+                  c.business_name || '',
+                  c.business_type || '',
+                  c.address || '',
+                  c.password_hash ? String(c.password_hash) : hashPassword('123456'),
+                  c.device_id || '',
+                  JSON.stringify(Array.isArray(c.devices) ? c.devices : []),
+                  JSON.stringify(Array.isArray(c.device_details) ? c.device_details : []),
+                  c.status || 'on',
+                  c.join_code || Math.floor(100000 + Math.random() * 900000).toString(),
+                  targetPhone,
+                  Number(c.created_at) || now,
+                  Number(c.expires_at) || (now + SEVEN_DAYS_MS),
+                  Number(c.trial_days) || 7
+                ]
+              );
+              restoredCashiers++;
+            } else if (cExist[0].admin_phone === targetPhone) {
+              restoredCashiers++;
+            }
+          }
+        }
+
+        for (const tableName of CLOUD_TABLES) {
+          await client.query(`DELETE FROM ${tableName} WHERE user_phone = $1`, [targetPhone]);
+        }
+
+        await insertCloudDataRows(client, backup.cloudData, targetPhone);
+        await recalculateUserProductStock(client, targetPhone);
+      });
+
+      const stats = {
+        productsCount: (backup.cloudData.cloud_products || []).length,
+        vouchersCount: (backup.cloudData.cloud_vouchers || []).length,
+        customersCount: (backup.cloudData.cloud_customers || []).length,
+        restoredCashiers
+      };
+      console.log(`[RESTORE USER] Restored account ${targetPhone}: ${stats.productsCount} prods, ${stats.vouchersCount} vouchers`);
+      return sendJson(res, 200, {
+        success: true,
+        message: `${targetPhone} အကောင့်အတွက် Data များကို Restore ပြုလုပ်ပြီးပါပြီ (Products: ${stats.productsCount}, Vouchers: ${stats.vouchersCount})`,
+        ...stats
+      });
+    }
+
     // Admin: Scan Orphaned Cloud Data whose owner account no longer exists (GET /api/admin/orphans)
     if (pathname === '/api/admin/orphans' && method === 'GET') {
+      const adminAuth = await requireAdminAuth(req, res);
+      if (!adminAuth) return;
+
       const tableCounts = {};
       const byPhoneMap = {};
       let totalOrphanRows = 0;
@@ -1723,6 +2831,9 @@ const server = http.createServer(async (req, res) => {
     // Admin: Cleanup ONLY Orphaned Cloud Data (POST /api/admin/orphans/cleanup)
     // Strictly preserves all data belonging to any existing user in `users`
     if (pathname === '/api/admin/orphans/cleanup' && method === 'POST') {
+      const adminAuth = await requireAdminAuth(req, res);
+      if (!adminAuth) return;
+
       const deletedCounts = {};
       let totalDeleted = 0;
 
@@ -1753,6 +2864,9 @@ const server = http.createServer(async (req, res) => {
 
     // Admin: Get recent vouchers across users or for specific user (GET /api/admin/vouchers)
     if (pathname === '/api/admin/vouchers' && method === 'GET') {
+      const adminAuth = await requireAdminAuth(req, res);
+      if (!adminAuth) return;
+
       const rawPhone = parsedUrl.query.phoneNo;
       const userPhone = rawPhone ? await resolveTenantPhone(pool, rawPhone) : null;
 
@@ -1790,6 +2904,9 @@ const server = http.createServer(async (req, res) => {
 
     // Admin: Get products and stock inventory across users (GET /api/admin/products)
     if (pathname === '/api/admin/products' && method === 'GET') {
+      const adminAuth = await requireAdminAuth(req, res);
+      if (!adminAuth) return;
+
       const rawPhone = parsedUrl.query.phoneNo;
       const userPhone = rawPhone ? await resolveTenantPhone(pool, rawPhone) : null;
 
@@ -1826,13 +2943,27 @@ const server = http.createServer(async (req, res) => {
     // 4. Change Password (POST /api/change-password)
     if (pathname === '/api/change-password' && method === 'POST') {
       const body = await parseJsonBody(req);
-      const { phone, oldPass, newPass } = body;
-      const { rows } = await pool.query(`SELECT password_hash FROM users WHERE phone_no = $1 LIMIT 1`, [phone]);
-      if (rows[0] && rows[0].password_hash === oldPass) {
-        await pool.query(`UPDATE users SET password_hash = $1 WHERE phone_no = $2`, [newPass, phone]);
+      const targetPhone = body.phoneNo || body.phone || '';
+      const oldPassword = body.oldPassword !== undefined ? body.oldPassword : body.oldPass;
+      const newPassword = body.newPassword !== undefined ? body.newPassword : body.newPass;
+
+      const auth = await authenticateSyncOrUserRequest(req, res, targetPhone);
+      if (!auth) return;
+
+      const effectivePhone = targetPhone || auth.actorPhone;
+      if (auth.actorPhone !== effectivePhone) {
+        return sendJson(res, 403, { success: false, message: 'မိမိအကောင့် Password ကိုသာ ပြောင်းလဲနိုင်ပါသည်' });
+      }
+      if (!newPassword || String(newPassword).length < 4) {
+        return sendJson(res, 400, { success: false, message: 'စကားဝှက်အသစ်သည် အနည်းဆုံး ၄ လုံး ရှိရပါမည်' });
+      }
+
+      const { rows } = await pool.query(`SELECT password_hash FROM users WHERE phone_no = $1 LIMIT 1`, [effectivePhone]);
+      if (rows[0] && verifyPassword(oldPassword, rows[0].password_hash)) {
+        await pool.query(`UPDATE users SET password_hash = $1 WHERE phone_no = $2`, [hashPassword(newPassword), effectivePhone]);
         return sendJson(res, 200, { success: true, message: 'Password changed successfully' });
       }
-      return sendJson(res, 400, { success: false, message: 'Password change failed' });
+      return sendJson(res, 400, { success: false, message: 'လက်ရှိ Password မှားယွင်းနေပါသည်' });
     }
 
     // ==========================================
@@ -1842,15 +2973,24 @@ const server = http.createServer(async (req, res) => {
     // 5. Sync Single Voucher (POST /api/sync/voucher)
     if (pathname === '/api/sync/voucher' && method === 'POST') {
       const body = await parseJsonBody(req);
-      const userPhone = await resolveTenantPhone(pool, body?.userPhone);
+      const auth = await authenticateSyncOrUserRequest(req, res, body?.userPhone);
+      if (!auth) return;
+      const userPhone = auth.tenantPhone;
       const { voucher, items } = body;
 
-      if (!userPhone || !voucher) {
-        return sendJson(res, 400, { success: false, message: 'Missing userPhone or voucher' });
+      if (!voucher) {
+        return sendJson(res, 400, { success: false, message: 'Missing voucher' });
       }
 
       await withTransaction(async (client) => {
         await upsertVoucherAndItems(client, userPhone, voucher, items || []);
+        const rNo = voucher.receiptNo || voucher.receipt_no;
+        if (rNo) {
+          await client.query(
+            `DELETE FROM cloud_deleted_entities WHERE user_phone = $1 AND entity_type = 'voucher' AND entity_key = $2`,
+            [userPhone, String(rNo)]
+          );
+        }
         await recalculateUserProductStock(client, userPhone);
       });
 
@@ -1865,21 +3005,32 @@ const server = http.createServer(async (req, res) => {
     // 6. Batch Sync Vouchers (POST /api/sync/vouchers)
     if (pathname === '/api/sync/vouchers' && method === 'POST') {
       const body = await parseJsonBody(req);
-      const userPhone = await resolveTenantPhone(pool, body?.userPhone);
+      const auth = await authenticateSyncOrUserRequest(req, res, body?.userPhone);
+      if (!auth) return;
+      const userPhone = auth.tenantPhone;
       const { vouchers } = body;
 
-      if (!userPhone || !Array.isArray(vouchers)) {
-        return sendJson(res, 400, { success: false, message: 'Missing userPhone or vouchers' });
+      if (!Array.isArray(vouchers)) {
+        return sendJson(res, 400, { success: false, message: 'Missing vouchers' });
       }
 
       let count = 0;
       await withTransaction(async (client) => {
+        const syncedReceiptNos = [];
         for (const entry of vouchers) {
           const v = entry.voucher || entry;
           const items = entry.items || [];
           if (await upsertVoucherAndItems(client, userPhone, v, items)) {
             count++;
+            const rNo = v.receiptNo || v.receipt_no;
+            if (rNo) syncedReceiptNos.push(String(rNo));
           }
+        }
+        if (syncedReceiptNos.length > 0) {
+          await client.query(
+            `DELETE FROM cloud_deleted_entities WHERE user_phone = $1 AND entity_type = 'voucher' AND entity_key = ANY($2::text[])`,
+            [userPhone, syncedReceiptNos]
+          );
         }
         await recalculateUserProductStock(client, userPhone);
       });
@@ -1895,11 +3046,13 @@ const server = http.createServer(async (req, res) => {
     // 7. Sync Products (POST /api/sync/products)
     if (pathname === '/api/sync/products' && method === 'POST') {
       const body = await parseJsonBody(req);
-      const userPhone = await resolveTenantPhone(pool, body?.userPhone);
+      const auth = await authenticateSyncOrUserRequest(req, res, body?.userPhone);
+      if (!auth) return;
+      const userPhone = auth.tenantPhone;
       const { products } = body;
 
-      if (!userPhone || !Array.isArray(products)) {
-        return sendJson(res, 400, { success: false, message: 'Missing userPhone or products' });
+      if (!Array.isArray(products)) {
+        return sendJson(res, 400, { success: false, message: 'Missing products' });
       }
 
       await withTransaction(async (client) => {
@@ -1908,6 +3061,14 @@ const server = http.createServer(async (req, res) => {
           const pId = p.id !== undefined && p.id !== null && Number(p.id) > 0 ? Number(p.id) : null;
           const pName = (p.name || '').trim();
           if (!pName) continue;
+
+          // Clear deletion tombstone if this product is explicitly synced/restored
+          await client.query(
+            `DELETE FROM cloud_deleted_entities
+             WHERE user_phone = $1 AND entity_type = 'product'
+               AND (LOWER(TRIM(entity_key)) = LOWER($2) OR ($3 <> '' AND entity_key = $3))`,
+            [userPhone, pName, pId ? String(pId) : '']
+          );
 
           const { rows: existingRows } = await client.query(
             `SELECT * FROM cloud_products
@@ -2025,10 +3186,12 @@ const server = http.createServer(async (req, res) => {
     // 7ab. Explicit Manual Stock Adjustment (POST /api/sync/adjust-stock)
     if (pathname === '/api/sync/adjust-stock' && method === 'POST') {
       const body = await parseJsonBody(req);
-      const userPhone = await resolveTenantPhone(pool, body?.userPhone);
+      const auth = await authenticateSyncOrUserRequest(req, res, body?.userPhone);
+      if (!auth) return;
+      const userPhone = auth.tenantPhone;
       const { productId, productName, newQuantity, newAlertQuantity } = body;
 
-      if (userPhone && (productId || productName) && newQuantity !== undefined) {
+      if ((productId || productName) && newQuantity !== undefined) {
         const incomingQty = Number(newQuantity);
         if (!isNaN(incomingQty)) {
           await withTransaction(async (client) => {
@@ -2067,33 +3230,46 @@ const server = http.createServer(async (req, res) => {
     // 7b. Delete Single Product (POST /api/sync/delete-product)
     if (pathname === '/api/sync/delete-product' && method === 'POST') {
       const body = await parseJsonBody(req);
-      const userPhone = await resolveTenantPhone(pool, body?.userPhone);
+      const auth = await authenticateSyncOrUserRequest(req, res, body?.userPhone);
+      if (!auth) return;
+      const userPhone = auth.tenantPhone;
       const { productId, productName } = body;
 
-      if (userPhone) {
-        await pool.query(
+      await withTransaction(async (client) => {
+        await client.query(
           `DELETE FROM cloud_products
            WHERE user_phone = $1
-             AND (($2::bigint IS NOT NULL AND product_id = $2) OR ($3 <> '' AND name = $3))`,
+             AND (($2::bigint IS NOT NULL AND product_id = $2) OR ($3 <> '' AND LOWER(TRIM(name)) = LOWER(TRIM($3))))`,
           [userPhone, productId ? Number(productId) : null, productName || '']
         );
-        console.log(`[SYNC PG] Deleted product on cloud: id=${productId}, name=${productName} for ${userPhone}`);
-      }
+        const now = Date.now();
+        for (const t of [productName ? String(productName).trim() : null, productId ? String(productId) : null].filter(Boolean)) {
+          await client.query(
+            `INSERT INTO cloud_deleted_entities (user_phone, entity_type, entity_key, deleted_at)
+             VALUES ($1, 'product', $2, $3)
+             ON CONFLICT (user_phone, entity_type, entity_key) DO UPDATE SET deleted_at = EXCLUDED.deleted_at`,
+            [userPhone, t, now]
+          );
+        }
+      });
+      console.log(`[SYNC PG] Deleted product on cloud: id=${productId}, name=${productName} for ${userPhone}`);
       return sendJson(res, 200, { success: true, message: 'Product deleted from cloud' });
     }
 
     // 7c. Batch Delete Products (POST /api/sync/delete-products)
     if (pathname === '/api/sync/delete-products' && method === 'POST') {
       const body = await parseJsonBody(req);
-      const userPhone = await resolveTenantPhone(pool, body?.userPhone);
+      const auth = await authenticateSyncOrUserRequest(req, res, body?.userPhone);
+      if (!auth) return;
+      const userPhone = auth.tenantPhone;
       const { productIds, productNames } = body;
 
-      if (userPhone) {
-        const ids = Array.isArray(productIds) ? productIds.map(Number).filter(n => !isNaN(n)) : [];
-        const idStrs = Array.isArray(productIds) ? productIds.map(String) : [];
-        const names = Array.isArray(productNames) ? productNames.map(String) : [];
+      const ids = Array.isArray(productIds) ? productIds.map(Number).filter(n => !isNaN(n)) : [];
+      const idStrs = Array.isArray(productIds) ? productIds.map(String) : [];
+      const names = Array.isArray(productNames) ? productNames.map(s => String(s).trim()).filter(Boolean) : [];
 
-        await pool.query(
+      await withTransaction(async (client) => {
+        await client.query(
           `DELETE FROM cloud_products
            WHERE user_phone = $1
              AND (
@@ -2103,21 +3279,38 @@ const server = http.createServer(async (req, res) => {
              )`,
           [userPhone, idStrs, ids, names]
         );
-        console.log(`[SYNC PG] Batch products deleted on cloud for ${userPhone}`);
-      }
+        const now = Date.now();
+        for (const t of [...names, ...idStrs].filter(Boolean)) {
+          await client.query(
+            `INSERT INTO cloud_deleted_entities (user_phone, entity_type, entity_key, deleted_at)
+             VALUES ($1, 'product', $2, $3)
+             ON CONFLICT (user_phone, entity_type, entity_key) DO UPDATE SET deleted_at = EXCLUDED.deleted_at`,
+            [userPhone, t, now]
+          );
+        }
+      });
+      console.log(`[SYNC PG] Batch products deleted on cloud for ${userPhone}`);
       return sendJson(res, 200, { success: true, message: 'Products deleted from cloud' });
     }
 
     // 7d. Delete Single Voucher (POST /api/sync/delete-voucher)
     if (pathname === '/api/sync/delete-voucher' && method === 'POST') {
       const body = await parseJsonBody(req);
-      const userPhone = await resolveTenantPhone(pool, body?.userPhone);
+      const auth = await authenticateSyncOrUserRequest(req, res, body?.userPhone);
+      if (!auth) return;
+      const userPhone = auth.tenantPhone;
       const { receiptNo } = body;
 
-      if (userPhone && receiptNo) {
+      if (receiptNo) {
         await withTransaction(async (client) => {
           await client.query(`DELETE FROM cloud_voucher_items WHERE user_phone = $1 AND voucher_id = $2`, [userPhone, receiptNo]);
           await client.query(`DELETE FROM cloud_vouchers WHERE user_phone = $1 AND receipt_no = $2`, [userPhone, receiptNo]);
+          await client.query(
+            `INSERT INTO cloud_deleted_entities (user_phone, entity_type, entity_key, deleted_at)
+             VALUES ($1, 'voucher', $2, $3)
+             ON CONFLICT (user_phone, entity_type, entity_key) DO UPDATE SET deleted_at = EXCLUDED.deleted_at`,
+            [userPhone, String(receiptNo), Date.now()]
+          );
           await recalculateUserProductStock(client, userPhone);
         });
         console.log(`[SYNC PG] Voucher deleted on cloud for ${userPhone}: ${receiptNo}`);
@@ -2128,15 +3321,13 @@ const server = http.createServer(async (req, res) => {
     // 7e. Full Exact Mirror Sync (POST /api/sync/mirror)
     if (pathname === '/api/sync/mirror' && method === 'POST') {
       const body = await parseJsonBody(req);
-      const userPhone = await resolveTenantPhone(pool, body?.userPhone);
+      const auth = await authenticateSyncOrUserRequest(req, res, body?.userPhone);
+      if (!auth) return;
+      const userPhone = auth.tenantPhone;
       const {
         products, vouchers, voucherItems, customers, groups, units,
         payments, suppliers, expenseCategories, expenses, stockAdjustments
       } = body;
-
-      if (!userPhone) {
-        return sendJson(res, 400, { success: false, message: 'Missing userPhone' });
-      }
 
       await withTransaction(async (client) => {
         const now = Date.now();
@@ -2458,6 +3649,10 @@ const server = http.createServer(async (req, res) => {
           }
         }
 
+        await client.query(
+          `DELETE FROM cloud_deleted_entities WHERE user_phone = $1 AND entity_type IN ('product', 'voucher')`,
+          [userPhone]
+        );
         await recalculateUserProductStock(client, userPhone);
       });
 
@@ -2476,12 +3671,10 @@ const server = http.createServer(async (req, res) => {
     // 8. Sync Customers (POST /api/sync/customers)
     if (pathname === '/api/sync/customers' && method === 'POST') {
       const body = await parseJsonBody(req);
-      const userPhone = await resolveTenantPhone(pool, body?.userPhone);
+      const auth = await authenticateSyncOrUserRequest(req, res, body?.userPhone);
+      if (!auth) return;
+      const userPhone = auth.tenantPhone;
       const { customers, deletedCustomers } = body;
-
-      if (!userPhone) {
-        return sendJson(res, 400, { success: false, message: 'Missing userPhone' });
-      }
 
       await withTransaction(async (client) => {
         const now = Date.now();
@@ -2534,76 +3727,78 @@ const server = http.createServer(async (req, res) => {
     // 8-del. Delete Customer (POST /api/sync/delete-customer)
     if (pathname === '/api/sync/delete-customer' && method === 'POST') {
       const body = await parseJsonBody(req);
-      const userPhone = await resolveTenantPhone(pool, body?.userPhone);
+      const auth = await authenticateSyncOrUserRequest(req, res, body?.userPhone);
+      if (!auth) return;
+      const userPhone = auth.tenantPhone;
       const { customerName, customerId } = body;
 
-      if (userPhone) {
-        await withTransaction(async (client) => {
-          const idNum = customerId ? Number(customerId) : null;
+      await withTransaction(async (client) => {
+        const idNum = customerId ? Number(customerId) : null;
+        await client.query(
+          `DELETE FROM cloud_customers
+           WHERE user_phone = $1 AND (($2 <> '' AND name = $2) OR ($3::bigint IS NOT NULL AND customer_id = $3))`,
+          [userPhone, customerName || '', idNum && !isNaN(idNum) ? idNum : null]
+        );
+        const now = Date.now();
+        for (const t of [customerName, customerId ? String(customerId) : null].filter(Boolean)) {
           await client.query(
-            `DELETE FROM cloud_customers
-             WHERE user_phone = $1 AND (($2 <> '' AND name = $2) OR ($3::bigint IS NOT NULL AND customer_id = $3))`,
-            [userPhone, customerName || '', idNum && !isNaN(idNum) ? idNum : null]
+            `INSERT INTO cloud_deleted_entities (user_phone, entity_type, entity_key, deleted_at)
+             VALUES ($1, 'customer', $2, $3) ON CONFLICT DO NOTHING`,
+            [userPhone, t, now]
           );
-          const now = Date.now();
-          for (const t of [customerName, customerId ? String(customerId) : null].filter(Boolean)) {
-            await client.query(
-              `INSERT INTO cloud_deleted_entities (user_phone, entity_type, entity_key, deleted_at)
-               VALUES ($1, 'customer', $2, $3) ON CONFLICT DO NOTHING`,
-              [userPhone, t, now]
-            );
-          }
-        });
-        console.log(`[SYNC PG] Deleted customer on cloud: ${customerName} (${customerId}) for ${userPhone}`);
-      }
+        }
+      });
+      console.log(`[SYNC PG] Deleted customer on cloud: ${customerName} (${customerId}) for ${userPhone}`);
       return sendJson(res, 200, { success: true, message: 'Customer deleted from cloud' });
     }
 
     // 8a. Sync Groups (POST /api/sync/groups)
     if (pathname === '/api/sync/groups' && method === 'POST') {
       const body = await parseJsonBody(req);
-      const userPhone = await resolveTenantPhone(pool, body?.userPhone);
+      const auth = await authenticateSyncOrUserRequest(req, res, body?.userPhone);
+      if (!auth) return;
+      const userPhone = auth.tenantPhone;
       const { groups, deletedGroups } = body;
 
-      if (userPhone) {
-        await withTransaction(async (client) => {
-          const now = Date.now();
-          if (Array.isArray(deletedGroups)) {
-            for (const dg of deletedGroups) {
-              const g = String(dg || '').trim();
-              if (!g) continue;
-              await client.query(`DELETE FROM cloud_product_groups WHERE user_phone = $1 AND name = $2`, [userPhone, g]);
+      await withTransaction(async (client) => {
+        const now = Date.now();
+        if (Array.isArray(deletedGroups)) {
+          for (const dg of deletedGroups) {
+            const g = String(dg || '').trim();
+            if (!g) continue;
+            await client.query(`DELETE FROM cloud_product_groups WHERE user_phone = $1 AND name = $2`, [userPhone, g]);
+            await client.query(
+              `INSERT INTO cloud_deleted_entities (user_phone, entity_type, entity_key, deleted_at)
+               VALUES ($1, 'group', $2, $3) ON CONFLICT DO NOTHING`,
+              [userPhone, g, now]
+            );
+          }
+        }
+        if (Array.isArray(groups)) {
+          await client.query(`DELETE FROM cloud_product_groups WHERE user_phone = $1`, [userPhone]);
+          for (const g of groups) {
+            const gName = String(g || '').trim();
+            if (gName) {
               await client.query(
-                `INSERT INTO cloud_deleted_entities (user_phone, entity_type, entity_key, deleted_at)
-                 VALUES ($1, 'group', $2, $3) ON CONFLICT DO NOTHING`,
-                [userPhone, g, now]
+                `INSERT INTO cloud_product_groups (user_phone, name) VALUES ($1,$2) ON CONFLICT DO NOTHING`,
+                [userPhone, gName]
               );
             }
           }
-          if (Array.isArray(groups)) {
-            await client.query(`DELETE FROM cloud_product_groups WHERE user_phone = $1`, [userPhone]);
-            for (const g of groups) {
-              const gName = String(g || '').trim();
-              if (gName) {
-                await client.query(
-                  `INSERT INTO cloud_product_groups (user_phone, name) VALUES ($1,$2) ON CONFLICT DO NOTHING`,
-                  [userPhone, gName]
-                );
-              }
-            }
-          }
-        });
-      }
+        }
+      });
       return sendJson(res, 200, { success: true, message: 'Groups synced successfully' });
     }
 
     // 8a-del. Delete Group (POST /api/sync/delete-group)
     if (pathname === '/api/sync/delete-group' && method === 'POST') {
       const body = await parseJsonBody(req);
-      const userPhone = await resolveTenantPhone(pool, body?.userPhone);
+      const auth = await authenticateSyncOrUserRequest(req, res, body?.userPhone);
+      if (!auth) return;
+      const userPhone = auth.tenantPhone;
       const { groupName } = body;
 
-      if (userPhone && groupName) {
+      if (groupName) {
         await withTransaction(async (client) => {
           await client.query(`DELETE FROM cloud_product_groups WHERE user_phone = $1 AND name = $2`, [userPhone, groupName]);
           await client.query(
@@ -2620,48 +3815,50 @@ const server = http.createServer(async (req, res) => {
     // 8b. Sync Units (POST /api/sync/units)
     if (pathname === '/api/sync/units' && method === 'POST') {
       const body = await parseJsonBody(req);
-      const userPhone = await resolveTenantPhone(pool, body?.userPhone);
+      const auth = await authenticateSyncOrUserRequest(req, res, body?.userPhone);
+      if (!auth) return;
+      const userPhone = auth.tenantPhone;
       const { units, deletedUnits } = body;
 
-      if (userPhone) {
-        await withTransaction(async (client) => {
-          const now = Date.now();
-          if (Array.isArray(deletedUnits)) {
-            for (const du of deletedUnits) {
-              const u = String(du || '').trim();
-              if (!u) continue;
-              await client.query(`DELETE FROM cloud_product_units WHERE user_phone = $1 AND name = $2`, [userPhone, u]);
+      await withTransaction(async (client) => {
+        const now = Date.now();
+        if (Array.isArray(deletedUnits)) {
+          for (const du of deletedUnits) {
+            const u = String(du || '').trim();
+            if (!u) continue;
+            await client.query(`DELETE FROM cloud_product_units WHERE user_phone = $1 AND name = $2`, [userPhone, u]);
+            await client.query(
+              `INSERT INTO cloud_deleted_entities (user_phone, entity_type, entity_key, deleted_at)
+               VALUES ($1, 'unit', $2, $3) ON CONFLICT DO NOTHING`,
+              [userPhone, u, now]
+            );
+          }
+        }
+        if (Array.isArray(units)) {
+          await client.query(`DELETE FROM cloud_product_units WHERE user_phone = $1`, [userPhone]);
+          for (const u of units) {
+            const uName = String(u || '').trim();
+            if (uName) {
               await client.query(
-                `INSERT INTO cloud_deleted_entities (user_phone, entity_type, entity_key, deleted_at)
-                 VALUES ($1, 'unit', $2, $3) ON CONFLICT DO NOTHING`,
-                [userPhone, u, now]
+                `INSERT INTO cloud_product_units (user_phone, name) VALUES ($1,$2) ON CONFLICT DO NOTHING`,
+                [userPhone, uName]
               );
             }
           }
-          if (Array.isArray(units)) {
-            await client.query(`DELETE FROM cloud_product_units WHERE user_phone = $1`, [userPhone]);
-            for (const u of units) {
-              const uName = String(u || '').trim();
-              if (uName) {
-                await client.query(
-                  `INSERT INTO cloud_product_units (user_phone, name) VALUES ($1,$2) ON CONFLICT DO NOTHING`,
-                  [userPhone, uName]
-                );
-              }
-            }
-          }
-        });
-      }
+        }
+      });
       return sendJson(res, 200, { success: true, message: 'Units synced successfully' });
     }
 
     // 8b-del. Delete Unit (POST /api/sync/delete-unit)
     if (pathname === '/api/sync/delete-unit' && method === 'POST') {
       const body = await parseJsonBody(req);
-      const userPhone = await resolveTenantPhone(pool, body?.userPhone);
+      const auth = await authenticateSyncOrUserRequest(req, res, body?.userPhone);
+      if (!auth) return;
+      const userPhone = auth.tenantPhone;
       const { unitName } = body;
 
-      if (userPhone && unitName) {
+      if (unitName) {
         await withTransaction(async (client) => {
           await client.query(`DELETE FROM cloud_product_units WHERE user_phone = $1 AND name = $2`, [userPhone, unitName]);
           await client.query(
@@ -2678,53 +3875,55 @@ const server = http.createServer(async (req, res) => {
     // 8c. Sync Payments (POST /api/sync/payments)
     if (pathname === '/api/sync/payments' && method === 'POST') {
       const body = await parseJsonBody(req);
-      const userPhone = await resolveTenantPhone(pool, body?.userPhone);
+      const auth = await authenticateSyncOrUserRequest(req, res, body?.userPhone);
+      if (!auth) return;
+      const userPhone = auth.tenantPhone;
       const { payments, deletedPayments } = body;
 
-      if (userPhone) {
-        await withTransaction(async (client) => {
-          const now = Date.now();
-          if (Array.isArray(deletedPayments)) {
-            for (const dp of deletedPayments) {
-              const m = String(dp || '').trim();
-              if (!m) continue;
-              await client.query(`DELETE FROM cloud_payments WHERE user_phone = $1 AND LOWER(method) = LOWER($2)`, [userPhone, m]);
+      await withTransaction(async (client) => {
+        const now = Date.now();
+        if (Array.isArray(deletedPayments)) {
+          for (const dp of deletedPayments) {
+            const m = String(dp || '').trim();
+            if (!m) continue;
+            await client.query(`DELETE FROM cloud_payments WHERE user_phone = $1 AND LOWER(method) = LOWER($2)`, [userPhone, m]);
+            await client.query(
+              `INSERT INTO cloud_deleted_entities (user_phone, entity_type, entity_key, deleted_at)
+               VALUES ($1, 'payment', $2, $3) ON CONFLICT DO NOTHING`,
+              [userPhone, m, now]
+            );
+          }
+        }
+        if (Array.isArray(payments)) {
+          await client.query(`DELETE FROM cloud_payments WHERE user_phone = $1`, [userPhone]);
+          const seenPay = new Set();
+          for (const p of payments) {
+            const m = (p.method || p.payment_method || '').trim();
+            const norm = m.toLowerCase();
+            if (m && !seenPay.has(norm)) {
+              seenPay.add(norm);
               await client.query(
-                `INSERT INTO cloud_deleted_entities (user_phone, entity_type, entity_key, deleted_at)
-                 VALUES ($1, 'payment', $2, $3) ON CONFLICT DO NOTHING`,
-                [userPhone, m, now]
+                `INSERT INTO cloud_payments (user_phone, method, amount, date)
+                 VALUES ($1,$2,$3,$4)
+                 ON CONFLICT (user_phone, method) DO UPDATE SET amount = EXCLUDED.amount, date = EXCLUDED.date`,
+                [userPhone, m, Number(p.amount) || 0, Number(p.date) || now]
               );
             }
           }
-          if (Array.isArray(payments)) {
-            await client.query(`DELETE FROM cloud_payments WHERE user_phone = $1`, [userPhone]);
-            const seenPay = new Set();
-            for (const p of payments) {
-              const m = (p.method || p.payment_method || '').trim();
-              const norm = m.toLowerCase();
-              if (m && !seenPay.has(norm)) {
-                seenPay.add(norm);
-                await client.query(
-                  `INSERT INTO cloud_payments (user_phone, method, amount, date)
-                   VALUES ($1,$2,$3,$4)
-                   ON CONFLICT (user_phone, method) DO UPDATE SET amount = EXCLUDED.amount, date = EXCLUDED.date`,
-                  [userPhone, m, Number(p.amount) || 0, Number(p.date) || now]
-                );
-              }
-            }
-          }
-        });
-      }
+        }
+      });
       return sendJson(res, 200, { success: true, message: 'Payments synced successfully' });
     }
 
     // 8c-del. Delete Payment Method (POST /api/sync/delete-payment)
     if (pathname === '/api/sync/delete-payment' && method === 'POST') {
       const body = await parseJsonBody(req);
-      const userPhone = await resolveTenantPhone(pool, body?.userPhone);
+      const auth = await authenticateSyncOrUserRequest(req, res, body?.userPhone);
+      if (!auth) return;
+      const userPhone = auth.tenantPhone;
       const { method: payMethod } = body;
 
-      if (userPhone && payMethod) {
+      if (payMethod) {
         await withTransaction(async (client) => {
           await client.query(`DELETE FROM cloud_payments WHERE user_phone = $1 AND LOWER(method) = LOWER($2)`, [userPhone, payMethod]);
           await client.query(
@@ -2741,81 +3940,81 @@ const server = http.createServer(async (req, res) => {
     // 8d. Sync Suppliers (POST /api/sync/suppliers)
     if (pathname === '/api/sync/suppliers' && method === 'POST') {
       const body = await parseJsonBody(req);
-      const userPhone = await resolveTenantPhone(pool, body?.userPhone);
+      const auth = await authenticateSyncOrUserRequest(req, res, body?.userPhone);
+      if (!auth) return;
+      const userPhone = auth.tenantPhone;
       const { suppliers, deletedSuppliers } = body;
 
-      if (userPhone) {
-        await withTransaction(async (client) => {
-          const now = Date.now();
-          if (Array.isArray(deletedSuppliers)) {
-            for (const ds of deletedSuppliers) {
-              const norm = String(ds).trim();
-              if (!norm) continue;
-              const idNum = Number(norm);
-              await client.query(
-                `DELETE FROM cloud_suppliers
-                 WHERE user_phone = $1 AND (name = $2 OR ($3::bigint IS NOT NULL AND supplier_id = $3))`,
-                [userPhone, norm, !isNaN(idNum) && idNum > 0 ? idNum : null]
-              );
-              await client.query(
-                `INSERT INTO cloud_deleted_entities (user_phone, entity_type, entity_key, deleted_at)
-                 VALUES ($1, 'supplier', $2, $3)
-                 ON CONFLICT (user_phone, entity_type, entity_key) DO UPDATE SET deleted_at = EXCLUDED.deleted_at`,
-                [userPhone, norm, now]
-              );
-            }
+      await withTransaction(async (client) => {
+        const now = Date.now();
+        if (Array.isArray(deletedSuppliers)) {
+          for (const ds of deletedSuppliers) {
+            const norm = String(ds).trim();
+            if (!norm) continue;
+            const idNum = Number(norm);
+            await client.query(
+              `DELETE FROM cloud_suppliers
+               WHERE user_phone = $1 AND (name = $2 OR ($3::bigint IS NOT NULL AND supplier_id = $3))`,
+              [userPhone, norm, !isNaN(idNum) && idNum > 0 ? idNum : null]
+            );
+            await client.query(
+              `INSERT INTO cloud_deleted_entities (user_phone, entity_type, entity_key, deleted_at)
+               VALUES ($1, 'supplier', $2, $3)
+               ON CONFLICT (user_phone, entity_type, entity_key) DO UPDATE SET deleted_at = EXCLUDED.deleted_at`,
+              [userPhone, norm, now]
+            );
           }
-          if (Array.isArray(suppliers)) {
-            for (const s of suppliers) {
-              const sName = (s.name || '').trim();
-              if (!sName) continue;
-              await client.query(
-                `INSERT INTO cloud_suppliers (user_phone, name, supplier_id, phone, address, note)
-                 VALUES ($1,$2,$3,$4,$5,$6)
-                 ON CONFLICT (user_phone, name) DO UPDATE SET
-                   supplier_id = EXCLUDED.supplier_id,
-                   phone = EXCLUDED.phone,
-                   address = EXCLUDED.address,
-                   note = EXCLUDED.note`,
-                [userPhone, sName, Number(s.id) || 0, s.phone || '', s.address || '', s.note || '']
-              );
-              await client.query(
-                `DELETE FROM cloud_deleted_entities
-                 WHERE user_phone = $1 AND entity_type = 'supplier' AND (entity_key = $2 OR entity_key = $3)`,
-                [userPhone, sName, String(s.id || '')]
-              );
-            }
+        }
+        if (Array.isArray(suppliers)) {
+          for (const s of suppliers) {
+            const sName = (s.name || '').trim();
+            if (!sName) continue;
+            await client.query(
+              `INSERT INTO cloud_suppliers (user_phone, name, supplier_id, phone, address, note)
+               VALUES ($1,$2,$3,$4,$5,$6)
+               ON CONFLICT (user_phone, name) DO UPDATE SET
+                 supplier_id = EXCLUDED.supplier_id,
+                 phone = EXCLUDED.phone,
+                 address = EXCLUDED.address,
+                 note = EXCLUDED.note`,
+              [userPhone, sName, Number(s.id) || 0, s.phone || '', s.address || '', s.note || '']
+            );
+            await client.query(
+              `DELETE FROM cloud_deleted_entities
+               WHERE user_phone = $1 AND entity_type = 'supplier' AND (entity_key = $2 OR entity_key = $3)`,
+              [userPhone, sName, String(s.id || '')]
+            );
           }
-        });
-      }
+        }
+      });
       return sendJson(res, 200, { success: true, message: 'Suppliers synced successfully' });
     }
 
     // 8d-del. Delete Supplier (POST /api/sync/delete-supplier)
     if (pathname === '/api/sync/delete-supplier' && method === 'POST') {
       const body = await parseJsonBody(req);
-      const userPhone = await resolveTenantPhone(pool, body?.userPhone);
+      const auth = await authenticateSyncOrUserRequest(req, res, body?.userPhone);
+      if (!auth) return;
+      const userPhone = auth.tenantPhone;
       const { supplierName, supplierId } = body;
 
-      if (userPhone) {
-        await withTransaction(async (client) => {
-          const idNum = supplierId ? Number(supplierId) : null;
+      await withTransaction(async (client) => {
+        const idNum = supplierId ? Number(supplierId) : null;
+        await client.query(
+          `DELETE FROM cloud_suppliers
+           WHERE user_phone = $1 AND (($2 <> '' AND name = $2) OR ($3::bigint IS NOT NULL AND supplier_id = $3))`,
+          [userPhone, supplierName || '', idNum && !isNaN(idNum) ? idNum : null]
+        );
+        const now = Date.now();
+        for (const t of [supplierName, supplierId ? String(supplierId) : null].filter(Boolean)) {
           await client.query(
-            `DELETE FROM cloud_suppliers
-             WHERE user_phone = $1 AND (($2 <> '' AND name = $2) OR ($3::bigint IS NOT NULL AND supplier_id = $3))`,
-            [userPhone, supplierName || '', idNum && !isNaN(idNum) ? idNum : null]
+            `INSERT INTO cloud_deleted_entities (user_phone, entity_type, entity_key, deleted_at)
+             VALUES ($1, 'supplier', $2, $3) ON CONFLICT DO NOTHING`,
+            [userPhone, t, now]
           );
-          const now = Date.now();
-          for (const t of [supplierName, supplierId ? String(supplierId) : null].filter(Boolean)) {
-            await client.query(
-              `INSERT INTO cloud_deleted_entities (user_phone, entity_type, entity_key, deleted_at)
-               VALUES ($1, 'supplier', $2, $3) ON CONFLICT DO NOTHING`,
-              [userPhone, t, now]
-            );
-          }
-        });
-        console.log(`[SYNC PG] Deleted supplier on cloud: ${supplierName} (${supplierId}) for ${userPhone}`);
-      }
+        }
+      });
+      console.log(`[SYNC PG] Deleted supplier on cloud: ${supplierName} (${supplierId}) for ${userPhone}`);
       return sendJson(res, 200, { success: true, message: 'Supplier deleted from cloud' });
     }
 
@@ -2826,11 +4025,9 @@ const server = http.createServer(async (req, res) => {
         const body = await parseJsonBody(req);
         if (body.userPhone) rawUserPhone = body.userPhone;
       }
-      const userPhone = await resolveTenantPhone(pool, rawUserPhone);
-
-      if (!userPhone) {
-        return sendJson(res, 400, { success: false, message: 'Missing userPhone' });
-      }
+      const auth = await authenticateSyncOrUserRequest(req, res, rawUserPhone);
+      if (!auth) return;
+      const userPhone = auth.tenantPhone;
 
       await recalculateUserProductStock(pool, userPhone);
 
@@ -2862,7 +4059,7 @@ const server = http.createServer(async (req, res) => {
         pool.query(`SELECT entity_type, entity_key FROM cloud_deleted_entities WHERE user_phone = $1`, [userPhone])
       ]);
 
-      const deletedMap = { customer: [], supplier: [], group: [], unit: [], payment: [] };
+      const deletedMap = { product: [], voucher: [], customer: [], supplier: [], group: [], unit: [], payment: [] };
       for (const row of deletedRes.rows) {
         if (deletedMap[row.entity_type]) {
           deletedMap[row.entity_type].push(row.entity_key);
@@ -2956,6 +4153,8 @@ const server = http.createServer(async (req, res) => {
         expenseCategories: userExpenseCategories,
         expenses: userExpenses,
         stockAdjustments: userStockAdjustments,
+        deletedProducts: deletedMap.product,
+        deletedVouchers: deletedMap.voucher,
         deletedCustomers: deletedMap.customer,
         deletedSuppliers: deletedMap.supplier,
         deletedGroups: deletedMap.group,
@@ -2966,7 +4165,9 @@ const server = http.createServer(async (req, res) => {
 
     // 10. Sync Status (GET /api/sync/status)
     if (pathname === '/api/sync/status' && method === 'GET') {
-      const userPhone = await resolveTenantPhone(pool, parsedUrl.query.phoneNo || '');
+      const auth = await authenticateSyncOrUserRequest(req, res, parsedUrl.query.phoneNo || '');
+      if (!auth) return;
+      const userPhone = auth.tenantPhone;
       const [vStats, pStats, cStats, sStats, eStats] = await Promise.all([
         pool.query(
           `SELECT
