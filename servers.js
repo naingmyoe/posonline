@@ -1,4 +1,4 @@
-/**
+/**a
  * UN POS Backend Server for VPS (Linux / Ubuntu / Debian / Windows)
  * Direct PostgreSQL Database Storage (NO .json files, NO in-memory database cache!)
  *
@@ -296,10 +296,12 @@ async function initDatabase() {
         initial_quantity INTEGER NOT NULL DEFAULT 0,
         alert_quantity INTEGER NOT NULL DEFAULT 0,
         image_uri TEXT NOT NULL DEFAULT '',
+        unit_prices JSONB NOT NULL DEFAULT '[]'::jsonb,
         updated_at BIGINT NOT NULL DEFAULT 0,
         PRIMARY KEY (user_phone, product_key)
       );
     `);
+    await client.query(`ALTER TABLE cloud_products ADD COLUMN IF NOT EXISTS unit_prices JSONB NOT NULL DEFAULT '[]'::jsonb;`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_cloud_products_user_pid ON cloud_products (user_phone, product_id);`);
 
     await client.query(`
@@ -334,9 +336,13 @@ async function initDatabase() {
         product_name TEXT NOT NULL DEFAULT '',
         quantity INTEGER NOT NULL DEFAULT 1,
         purchase_price DOUBLE PRECISION NOT NULL DEFAULT 0,
-        selling_price DOUBLE PRECISION NOT NULL DEFAULT 0
+        selling_price DOUBLE PRECISION NOT NULL DEFAULT 0,
+        unit_name TEXT NOT NULL DEFAULT '',
+        conversion_factor INTEGER NOT NULL DEFAULT 1
       );
     `);
+    await client.query(`ALTER TABLE cloud_voucher_items ADD COLUMN IF NOT EXISTS unit_name TEXT NOT NULL DEFAULT '';`);
+    await client.query(`ALTER TABLE cloud_voucher_items ADD COLUMN IF NOT EXISTS conversion_factor INTEGER NOT NULL DEFAULT 1;`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_cloud_voucher_items_lookup ON cloud_voucher_items (user_phone, voucher_id);`);
 
     await client.query(`
@@ -462,6 +468,7 @@ async function recalculateUserProductStock(dbClient, userPhone) {
 
   const { rows: items } = await dbClient.query(
     `SELECT vi.product_id, vi.product_name, vi.quantity,
+            COALESCE(vi.conversion_factor, 1) AS conversion_factor,
             COALESCE(v.is_completed, TRUE) AS is_completed,
             COALESCE(v.is_purchase, FALSE) AS is_purchase
      FROM cloud_voucher_items vi
@@ -487,7 +494,8 @@ async function recalculateUserProductStock(dbClient, userPhone) {
 
   for (const it of items) {
     if (!it.is_completed) continue;
-    const qty = Number(it.quantity) || 1;
+    const factor = Math.max(1, Number(it.conversion_factor) || 1);
+    const qty = (Number(it.quantity) || 1) * factor;
     const itPid = it.product_id !== null && it.product_id !== undefined && Number(it.product_id) > 0
       ? String(it.product_id)
       : null;
@@ -527,6 +535,7 @@ async function getProductTransactionDeltas(dbClient, userPhone, productId, produ
 
   const { rows: items } = await dbClient.query(
     `SELECT vi.product_id, vi.product_name, vi.quantity,
+            COALESCE(vi.conversion_factor, 1) AS conversion_factor,
             COALESCE(v.is_completed, TRUE) AS is_completed,
             COALESCE(v.is_purchase, FALSE) AS is_purchase
      FROM cloud_voucher_items vi
@@ -545,7 +554,8 @@ async function getProductTransactionDeltas(dbClient, userPhone, productId, produ
       : null;
     const itPname = it.product_name ? String(it.product_name).trim().toLowerCase() : null;
     if ((pId && itPid === pId) || (pName && itPname === pName)) {
-      const q = Number(it.quantity) || 1;
+      const factor = Math.max(1, Number(it.conversion_factor) || 1);
+      const q = (Number(it.quantity) || 1) * factor;
       if (it.is_purchase) purchasedSoFar += q;
       else soldSoFar += q;
     }
@@ -756,7 +766,41 @@ async function evaluateUserAccess(dbClient, u, clientDeviceId, phoneModel = '', 
   };
 }
 
+function normalizeUnitPrices(raw) {
+  let arr = raw;
+  if (typeof raw === 'string') {
+    try {
+      arr = JSON.parse(raw);
+    } catch (_) {
+      arr = [];
+    }
+  }
+  if (!Array.isArray(arr)) return [];
+  const out = [];
+  const seen = new Set();
+  for (const t of arr) {
+    if (!t || typeof t !== 'object') continue;
+    const unitName = String(t.unitName !== undefined ? t.unitName : (t.unit_name || '')).trim();
+    const rawFactor = t.conversionFactor !== undefined ? t.conversionFactor : t.conversion_factor;
+    const conversionFactor = Math.max(1, parseInt(rawFactor, 10) || 1);
+    if (!unitName || conversionFactor <= 1) continue;
+    const dedupeKey = `${unitName.toLowerCase()}::${conversionFactor}`;
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+    out.push({
+      unitName,
+      conversionFactor,
+      purchasePrice: Number(t.purchasePrice !== undefined ? t.purchasePrice : t.purchase_price) || 0,
+      sellingPrice: Number(t.sellingPrice !== undefined ? t.sellingPrice : t.selling_price) || 0,
+      barcode: String(t.barcode || '').trim()
+    });
+  }
+  out.sort((a, b) => a.conversionFactor - b.conversionFactor);
+  return out;
+}
+
 function mapProductRow(r) {
+  const unitPrices = normalizeUnitPrices(r.unit_prices);
   return {
     id: r.product_id !== null && r.product_id !== undefined ? Number(r.product_id) : 0,
     product_id: r.product_id !== null && r.product_id !== undefined ? Number(r.product_id) : 0,
@@ -777,7 +821,9 @@ function mapProductRow(r) {
     initial_quantity: Number(r.initial_quantity) || 0,
     alertQuantity: Number(r.alert_quantity) || 0,
     alert_quantity: Number(r.alert_quantity) || 0,
-    imageUri: r.image_uri || ''
+    imageUri: r.image_uri || '',
+    unitPrices,
+    unit_prices: unitPrices
   };
 }
 
@@ -867,10 +913,13 @@ async function upsertVoucherAndItems(client, userPhone, v, items) {
       [userPhone, rNo]
     );
     for (const it of items) {
+      const uName = String(it.unitName !== undefined ? it.unitName : (it.unit_name || '')).trim();
+      const rawFactor = it.conversionFactor !== undefined ? it.conversionFactor : it.conversion_factor;
+      const factor = Math.max(1, parseInt(rawFactor, 10) || 1);
       await client.query(
         `INSERT INTO cloud_voucher_items (
-          user_phone, voucher_id, product_id, product_name, quantity, purchase_price, selling_price
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+          user_phone, voucher_id, product_id, product_name, quantity, purchase_price, selling_price, unit_name, conversion_factor
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
         [
           userPhone,
           rNo,
@@ -878,7 +927,9 @@ async function upsertVoucherAndItems(client, userPhone, v, items) {
           it.productName || it.product_name || '',
           Number(it.quantity) || 1,
           Number(it.purchasePrice !== undefined ? it.purchasePrice : it.purchase_price) || 0,
-          Number(it.sellingPrice !== undefined ? it.sellingPrice : it.selling_price) || 0
+          Number(it.sellingPrice !== undefined ? it.sellingPrice : it.selling_price) || 0,
+          uName,
+          factor
         ]
       );
     }
@@ -2210,12 +2261,16 @@ const server = http.createServer(async (req, res) => {
         const qty = Number(it.quantity) || 1;
         const unitPrice = Number(it.selling_price) || 0;
         const costPrice = Number(it.purchase_price) || 0;
+        const unitName = it.unit_name || '';
+        const conversionFactor = Math.max(1, Number(it.conversion_factor) || 1);
         return {
           productId: Number(it.product_id) || 0,
           productName: it.product_name || '',
           quantity: qty,
           purchasePrice: costPrice,
           sellingPrice: unitPrice,
+          unitName,
+          conversionFactor,
           lineTotal: (vRows[0].is_purchase ? costPrice : unitPrice) * qty
         };
       });
@@ -2312,26 +2367,27 @@ const server = http.createServer(async (req, res) => {
       for (const p of (cloudData.cloud_products || [])) {
         const up = pickPhone(p);
         if (!up || !p.product_key) continue;
+        const restoredUnitPrices = normalizeUnitPrices(p.unit_prices !== undefined ? p.unit_prices : p.unitPrices);
         await client.query(
           `INSERT INTO cloud_products (
             user_phone, product_key, product_id, name, group_name, purchase_price,
             selling_price, unit, note, track_stock, barcode, quantity,
-            initial_quantity, alert_quantity, image_uri, updated_at
-          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+            initial_quantity, alert_quantity, image_uri, unit_prices, updated_at
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17)
           ON CONFLICT (user_phone, product_key) DO UPDATE SET
             product_id = EXCLUDED.product_id, name = EXCLUDED.name, group_name = EXCLUDED.group_name,
             purchase_price = EXCLUDED.purchase_price, selling_price = EXCLUDED.selling_price,
             unit = EXCLUDED.unit, note = EXCLUDED.note, track_stock = EXCLUDED.track_stock,
             barcode = EXCLUDED.barcode, quantity = EXCLUDED.quantity,
             initial_quantity = EXCLUDED.initial_quantity, alert_quantity = EXCLUDED.alert_quantity,
-            image_uri = EXCLUDED.image_uri, updated_at = EXCLUDED.updated_at`,
+            image_uri = EXCLUDED.image_uri, unit_prices = EXCLUDED.unit_prices, updated_at = EXCLUDED.updated_at`,
           [
             up, p.product_key, p.product_id !== null && p.product_id !== undefined ? Number(p.product_id) : null,
             p.name || '', p.group_name || '', Number(p.purchase_price) || 0, Number(p.selling_price) || 0,
             p.unit || '', p.note || '', p.track_stock !== false, p.barcode || '',
             Number(p.quantity) || 0,
             Number(p.initial_quantity !== undefined && p.initial_quantity !== null ? p.initial_quantity : p.quantity) || 0,
-            Number(p.alert_quantity) || 0, p.image_uri || '', Number(p.updated_at) || Date.now()
+            Number(p.alert_quantity) || 0, p.image_uri || '', JSON.stringify(restoredUnitPrices), Number(p.updated_at) || Date.now()
           ]
         );
       }
@@ -2368,13 +2424,17 @@ const server = http.createServer(async (req, res) => {
       for (const vi of (cloudData.cloud_voucher_items || [])) {
         const up = pickPhone(vi);
         if (!up || !vi.voucher_id) continue;
+        const uName = String(vi.unit_name !== undefined ? vi.unit_name : (vi.unitName || '')).trim();
+        const rawFactor = vi.conversion_factor !== undefined ? vi.conversion_factor : vi.conversionFactor;
+        const factor = Math.max(1, parseInt(rawFactor, 10) || 1);
         await client.query(
           `INSERT INTO cloud_voucher_items (
-            user_phone, voucher_id, product_id, product_name, quantity, purchase_price, selling_price
-          ) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+            user_phone, voucher_id, product_id, product_name, quantity, purchase_price, selling_price, unit_name, conversion_factor
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
           [
             up, vi.voucher_id, Number(vi.product_id) || 0, vi.product_name || '',
-            Number(vi.quantity) || 1, Number(vi.purchase_price) || 0, Number(vi.selling_price) || 0
+            Number(vi.quantity) || 1, Number(vi.purchase_price) || 0, Number(vi.selling_price) || 0,
+            uName, factor
           ]
         );
       }
@@ -2947,6 +3007,71 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    // Admin: Update product multi-unit prices (POST /api/admin/product/units)
+    if (pathname === '/api/admin/product/units' && method === 'POST') {
+      const adminAuth = await requireAdminAuth(req, res);
+      if (!adminAuth) return;
+
+      const body = await parseJsonBody(req);
+      const rawPhone = String(body.userPhone || body.phoneNo || '').trim();
+      const productId = body.productId !== undefined && body.productId !== null && Number(body.productId) > 0 ? Number(body.productId) : null;
+      const productName = String(body.productName || body.name || '').trim();
+
+      if (!rawPhone || (!productId && !productName)) {
+        return sendJson(res, 400, { success: false, message: 'userPhone နှင့် productId သို့မဟုတ် productName လိုအပ်ပါသည်' });
+      }
+
+      const targetPhone = await resolveTenantPhone(pool, rawPhone);
+      const cleanUnitPrices = normalizeUnitPrices(body.unitPrices !== undefined ? body.unitPrices : body.unit_prices);
+      const now = Date.now();
+
+      const updatedRow = await withTransaction(async (client) => {
+        const { rows } = await client.query(
+          `SELECT * FROM cloud_products
+           WHERE user_phone = $1
+             AND (($2::bigint IS NOT NULL AND product_id = $2) OR ($3 <> '' AND LOWER(TRIM(name)) = LOWER(TRIM($3))))
+           ORDER BY CASE WHEN ($2::bigint IS NOT NULL AND product_id = $2) THEN 0 ELSE 1 END
+           LIMIT 1`,
+          [targetPhone, productId, productName]
+        );
+        const target = rows[0];
+        if (!target) return null;
+
+        const nextBaseUnit = body.baseUnit !== undefined && String(body.baseUnit).trim()
+          ? String(body.baseUnit).trim()
+          : target.unit;
+
+        const { rows: savedRows } = await client.query(
+          `UPDATE cloud_products
+           SET unit = $1, unit_prices = $2::jsonb, updated_at = $3
+           WHERE user_phone = $4 AND product_key = $5
+           RETURNING *`,
+          [nextBaseUnit, JSON.stringify(cleanUnitPrices), now, targetPhone, target.product_key]
+        );
+
+        for (const tier of cleanUnitPrices) {
+          await client.query(
+            `INSERT INTO cloud_product_units (user_phone, name)
+             VALUES ($1, $2)
+             ON CONFLICT (user_phone, name) DO NOTHING`,
+            [targetPhone, tier.unitName]
+          );
+        }
+
+        return savedRows[0];
+      });
+
+      if (!updatedRow) {
+        return sendJson(res, 404, { success: false, message: 'ကုန်ပစ္စည်း ရှာမတွေ့ပါ (Product not found)' });
+      }
+
+      return sendJson(res, 200, {
+        success: true,
+        message: 'ယူနစ်ခွဲ စျေးနှုန်းများကို Cloud ပေါ်တွင် သိမ်းဆည်းပြီးပါပြီ',
+        product: mapProductRow(updatedRow)
+      });
+    }
+
     // 4. Change Password (POST /api/change-password)
     if (pathname === '/api/change-password' && method === 'POST') {
       const body = await parseJsonBody(req);
@@ -3087,6 +3212,9 @@ const server = http.createServer(async (req, res) => {
           );
 
           const existing = existingRows[0];
+          const incomingUnitPrices = (p.unitPrices !== undefined || p.unit_prices !== undefined)
+            ? normalizeUnitPrices(p.unitPrices !== undefined ? p.unitPrices : p.unit_prices)
+            : null;
           if (existing) {
             const oldQty = Number(existing.quantity) || 0;
             let newInitialQty = Number(existing.initial_quantity !== null && existing.initial_quantity !== undefined ? existing.initial_quantity : oldQty) || 0;
@@ -3098,6 +3226,10 @@ const server = http.createServer(async (req, res) => {
               newInitialQty = incomingQty + soldSoFar - purchasedSoFar;
               newQty = Math.max(0, incomingQty);
             }
+
+            const finalUnitPrices = incomingUnitPrices !== null
+              ? incomingUnitPrices
+              : normalizeUnitPrices(existing.unit_prices);
 
             await client.query(
               `UPDATE cloud_products SET
@@ -3114,8 +3246,9 @@ const server = http.createServer(async (req, res) => {
                 initial_quantity = $11,
                 alert_quantity = $12,
                 image_uri = $13,
-                updated_at = $14
-               WHERE user_phone = $15 AND product_key = $16`,
+                unit_prices = $14::jsonb,
+                updated_at = $15
+               WHERE user_phone = $16 AND product_key = $17`,
               [
                 pId,
                 pName,
@@ -3130,6 +3263,7 @@ const server = http.createServer(async (req, res) => {
                 newInitialQty,
                 p.alertQuantity !== undefined ? Number(p.alertQuantity) : (p.alert_quantity !== undefined ? Number(p.alert_quantity) : existing.alert_quantity),
                 p.imageUri !== undefined ? p.imageUri : existing.image_uri,
+                JSON.stringify(finalUnitPrices),
                 now,
                 userPhone,
                 existing.product_key
@@ -3138,12 +3272,13 @@ const server = http.createServer(async (req, res) => {
           } else {
             const newKey = pId ? String(pId) : pName;
             const initialQty = Number(p.quantity) || 0;
+            const finalUnitPrices = incomingUnitPrices !== null ? incomingUnitPrices : [];
             await client.query(
               `INSERT INTO cloud_products (
                 user_phone, product_key, product_id, name, group_name, purchase_price,
                 selling_price, unit, note, track_stock, barcode, quantity,
-                initial_quantity, alert_quantity, image_uri, updated_at
-              ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+                initial_quantity, alert_quantity, image_uri, unit_prices, updated_at
+              ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17)
               ON CONFLICT (user_phone, product_key) DO UPDATE SET
                 product_id = EXCLUDED.product_id,
                 name = EXCLUDED.name,
@@ -3156,6 +3291,7 @@ const server = http.createServer(async (req, res) => {
                 barcode = EXCLUDED.barcode,
                 alert_quantity = EXCLUDED.alert_quantity,
                 image_uri = EXCLUDED.image_uri,
+                unit_prices = EXCLUDED.unit_prices,
                 updated_at = EXCLUDED.updated_at`,
               [
                 userPhone,
@@ -3173,6 +3309,7 @@ const server = http.createServer(async (req, res) => {
                 initialQty,
                 Number(p.alertQuantity !== undefined ? p.alertQuantity : p.alert_quantity) || 0,
                 p.imageUri || '',
+                JSON.stringify(finalUnitPrices),
                 now
               ]
             );
@@ -3358,10 +3495,13 @@ const server = http.createServer(async (req, res) => {
           for (const it of voucherItems) {
             const vId = it.voucherId || it.voucher_id;
             if (!vId) continue;
+            const uName = String(it.unitName !== undefined ? it.unitName : (it.unit_name || '')).trim();
+            const rawFactor = it.conversionFactor !== undefined ? it.conversionFactor : it.conversion_factor;
+            const factor = Math.max(1, parseInt(rawFactor, 10) || 1);
             await client.query(
               `INSERT INTO cloud_voucher_items (
-                user_phone, voucher_id, product_id, product_name, quantity, purchase_price, selling_price
-              ) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+                user_phone, voucher_id, product_id, product_name, quantity, purchase_price, selling_price, unit_name, conversion_factor
+              ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
               [
                 userPhone,
                 vId,
@@ -3369,7 +3509,9 @@ const server = http.createServer(async (req, res) => {
                 it.productName || it.product_name || '',
                 Number(it.quantity) || 1,
                 Number(it.purchasePrice !== undefined ? it.purchasePrice : it.purchase_price) || 0,
-                Number(it.sellingPrice !== undefined ? it.sellingPrice : it.selling_price) || 0
+                Number(it.sellingPrice !== undefined ? it.sellingPrice : it.selling_price) || 0,
+                uName,
+                factor
               ]
             );
           }
@@ -3411,7 +3553,8 @@ const server = http.createServer(async (req, res) => {
               barcode: p.barcode || '',
               targetQty,
               alertQuantity: Number(p.alertQuantity !== undefined ? p.alertQuantity : p.alert_quantity) || 0,
-              imageUri: p.imageUri || ''
+              imageUri: p.imageUri || '',
+              unitPrices: normalizeUnitPrices(p.unitPrices !== undefined ? p.unitPrices : p.unit_prices)
             };
             mirroredProducts.push(entry);
             if (pId) prodByIdMap[String(pId)] = entry;
@@ -3421,6 +3564,7 @@ const server = http.createServer(async (req, res) => {
           // Compute completed voucher deltas once in O(N) using the exact same matching order as recalculateUserProductStock
           const { rows: allVItems } = await client.query(
             `SELECT vi.product_id, vi.product_name, vi.quantity,
+                    COALESCE(vi.conversion_factor, 1) AS conversion_factor,
                     COALESCE(v.is_completed, TRUE) AS is_completed,
                     COALESCE(v.is_purchase, FALSE) AS is_purchase
              FROM cloud_voucher_items vi
@@ -3434,7 +3578,8 @@ const server = http.createServer(async (req, res) => {
           const purchasedByKey = {};
           for (const it of allVItems) {
             if (!it.is_completed) continue;
-            const q = Number(it.quantity) || 1;
+            const factor = Math.max(1, Number(it.conversion_factor) || 1);
+            const q = (Number(it.quantity) || 1) * factor;
             const itPid = it.product_id !== null && it.product_id !== undefined && Number(it.product_id) > 0
               ? String(it.product_id)
               : null;
@@ -3457,8 +3602,8 @@ const server = http.createServer(async (req, res) => {
               `INSERT INTO cloud_products (
                 user_phone, product_key, product_id, name, group_name, purchase_price,
                 selling_price, unit, note, track_stock, barcode, quantity,
-                initial_quantity, alert_quantity, image_uri, updated_at
-              ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+                initial_quantity, alert_quantity, image_uri, unit_prices, updated_at
+              ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17)
               ON CONFLICT (user_phone, product_key) DO UPDATE SET
                 product_id = EXCLUDED.product_id,
                 name = EXCLUDED.name,
@@ -3473,6 +3618,7 @@ const server = http.createServer(async (req, res) => {
                 initial_quantity = EXCLUDED.initial_quantity,
                 alert_quantity = EXCLUDED.alert_quantity,
                 image_uri = EXCLUDED.image_uri,
+                unit_prices = EXCLUDED.unit_prices,
                 updated_at = EXCLUDED.updated_at`,
               [
                 userPhone,
@@ -3490,6 +3636,7 @@ const server = http.createServer(async (req, res) => {
                 exactInitialQty,
                 mp.alertQuantity,
                 mp.imageUri,
+                JSON.stringify(mp.unitPrices),
                 now
               ]
             );
@@ -4085,7 +4232,11 @@ const server = http.createServer(async (req, res) => {
         purchasePrice: Number(it.purchase_price) || 0,
         purchase_price: Number(it.purchase_price) || 0,
         sellingPrice: Number(it.selling_price) || 0,
-        selling_price: Number(it.selling_price) || 0
+        selling_price: Number(it.selling_price) || 0,
+        unitName: it.unit_name || '',
+        unit_name: it.unit_name || '',
+        conversionFactor: Math.max(1, Number(it.conversion_factor) || 1),
+        conversion_factor: Math.max(1, Number(it.conversion_factor) || 1)
       }));
       const userProducts = productsRes.rows.map(mapProductRow);
 
