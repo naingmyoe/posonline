@@ -953,14 +953,14 @@
         <div class="bg-slate-50 border border-slate-200 rounded-xl p-3.5 grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
             <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">အခြေခံ ယူနစ်</label>
-            <input type="text" id="prodUnitBaseUnit" class="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="ခု" />
+            <input type="text" id="prodUnitBaseUnit" class="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="အခြေခံ ယူနစ်" />
           </div>
           <div>
-            <div class="text-[10px] font-bold text-slate-500 uppercase mb-1">၁ ခု ဝယ်ဈေး</div>
+            <div class="text-[10px] font-bold text-slate-500 uppercase mb-1">အခြေခံ ဝယ်ဈေး</div>
             <div id="prodUnitBasePurchaseDisplay" class="px-3 py-1.5 bg-white border border-slate-200 rounded-lg font-mono font-bold text-slate-700">0 Ks</div>
           </div>
           <div>
-            <div class="text-[10px] font-bold text-slate-500 uppercase mb-1">၁ ခု ရောင်းဈေး</div>
+            <div class="text-[10px] font-bold text-slate-500 uppercase mb-1">အခြေခံ ရောင်းဈေး</div>
             <div id="prodUnitBaseSellingDisplay" class="px-3 py-1.5 bg-white border border-slate-200 rounded-lg font-mono font-bold text-indigo-700">0 Ks</div>
           </div>
         </div>
@@ -975,6 +975,42 @@
       <div class="px-6 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-end space-x-2 shrink-0">
         <button type="button" onclick="closeProductUnitModal()" class="px-4 py-2 border border-slate-300 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100">မလုပ်တော့ပါ</button>
         <button type="button" id="saveProdUnitsBtn" onclick="saveAdminProductUnits()" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-md">သိမ်းဆည်းမည်</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Product Image Preview & Compressed Upload Modal -->
+  <div id="productImageModal" class="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-sm hidden items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden">
+      <div class="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
+        <div>
+          <h3 id="prodImgModalTitle" class="text-base font-bold">ကုန်စည် ဓာတ်ပုံ</h3>
+          <p id="prodImgModalSubtitle" class="text-xs text-slate-300 mt-0.5"></p>
+        </div>
+        <button type="button" onclick="closeProductImageModal()" class="text-slate-300 hover:text-white">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+        </button>
+      </div>
+      <div class="p-6 space-y-4">
+        <div class="w-full h-64 rounded-2xl bg-slate-100 border border-slate-200 flex items-center justify-center overflow-hidden relative">
+          <img id="prodImgPreview" src="" alt="Product Photo" class="hidden w-full h-full object-contain bg-white" />
+          <div id="prodImgEmptyState" class="flex flex-col items-center text-slate-400 text-xs space-y-2">
+            <svg class="w-10 h-10 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+            <span>ဓာတ်ပုံ မရှိသေးပါ</span>
+          </div>
+        </div>
+        <div id="prodImgMetaBadge" class="hidden text-center text-[11px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg py-1.5 px-3"></div>
+        <div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100">
+          <label class="cursor-pointer px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold inline-flex items-center space-x-1.5 transition">
+            <svg class="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+            <span>ပုံအသစ်ရွေးရန် (100-200KB ချုံ့မည်)</span>
+            <input type="file" id="prodImgFileInput" accept="image/*" class="hidden" onchange="handleAdminProductImageSelect(event)" />
+          </label>
+          <div class="flex items-center space-x-2">
+            <button type="button" id="removeProdImgBtn" onclick="removeAdminProductImage()" class="hidden px-3 py-2 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold">ပုံဖျက်မည်</button>
+            <button type="button" id="saveProdImgBtn" onclick="saveAdminProductImage()" disabled class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-xs font-bold shadow-md">Cloud တင်မည်</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -1001,8 +1037,30 @@
     let cloudProductsCache = [];
     let editingUnitProductCtx = null;
     let editingUnitTiersState = [];
+    let editingImageProductCtx = null;
+    let pendingCompressedImagePayload = null;
 
     document.getElementById('serverHostDisplay').textContent = window.location.host;
+
+    function resolveCloudImageUrl(rawUri) {
+      const s = String(rawUri || '').trim();
+      if (!s) return '';
+      if (s.startsWith('/api/')) return `${API_BASE}${s}`;
+      if (s.startsWith('http://') || s.startsWith('https://') || s.startsWith('data:image/')) return s;
+      return '';
+    }
+
+    function renderProductThumbHtml(p, onClickExpr) {
+      const imgUrl = resolveCloudImageUrl(p.imageUri || p.image_uri);
+      if (imgUrl) {
+        return `<button type="button" onclick="${onClickExpr}" title="ပုံကြည့်ရန် / ပြင်ရန်" class="w-10 h-10 rounded-xl overflow-hidden border border-slate-200 bg-white shrink-0 hover:ring-2 hover:ring-indigo-400 transition">
+          <img src="${escapeHtml(imgUrl)}" alt="${escapeHtml(p.name || 'Product')}" loading="lazy" class="w-full h-full object-cover" />
+        </button>`;
+      }
+      return `<button type="button" onclick="${onClickExpr}" title="ဓာတ်ပုံထည့်ရန်" class="w-10 h-10 rounded-xl border border-dashed border-slate-300 bg-slate-50 hover:bg-indigo-50 hover:border-indigo-300 flex items-center justify-center text-slate-400 hover:text-indigo-600 shrink-0 transition">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+      </button>`;
+    }
 
     function escapeHtml(str) {
       return String(str ?? '')
@@ -1037,10 +1095,11 @@
 
     function formatMultiUnitStockHtml(baseQty, baseUnit, unitPrices) {
       const safeQty = Number(baseQty) || 0;
-      const effBase = String(baseUnit || '').trim() || 'ခု';
+      const effBase = String(baseUnit || '').trim();
+      const baseSuffix = effBase ? ` ${escapeHtml(effBase)}` : '';
       const tiers = [...(unitPrices || [])].filter(t => t.conversionFactor > 1).sort((a, b) => b.conversionFactor - a.conversionFactor);
       if (tiers.length === 0 || safeQty <= 0) {
-        return `${safeQty.toLocaleString()} ${escapeHtml(effBase)}`;
+        return `${safeQty.toLocaleString()}${baseSuffix}`;
       }
       let rem = safeQty;
       const parts = [];
@@ -1052,23 +1111,24 @@
         }
       }
       if (rem > 0 || parts.length === 0) {
-        parts.push(`${rem.toLocaleString()} ${escapeHtml(effBase)}`);
+        parts.push(`${rem.toLocaleString()}${baseSuffix}`);
       }
       const breakdown = parts.join(' ');
       if (tiers.some(t => safeQty >= t.conversionFactor)) {
-        return `<div>${breakdown}</div><div class="text-[10px] text-slate-400 font-normal">(${safeQty.toLocaleString()} ${escapeHtml(effBase)})</div>`;
+        return `<div>${breakdown}</div><div class="text-[10px] text-slate-400 font-normal">(${safeQty.toLocaleString()}${baseSuffix})</div>`;
       }
       return breakdown;
     }
 
     function renderMultiUnitBadgesHtml(unitPrices, baseUnit) {
-      const effBase = String(baseUnit || '').trim() || 'ခု';
+      const effBase = String(baseUnit || '').trim();
+      const basePart = effBase ? ` ${escapeHtml(effBase)}` : '';
       if (!unitPrices || unitPrices.length === 0) {
         return `<span class="text-[11px] text-slate-400">-</span>`;
       }
       return `<div class="flex flex-col gap-1">${unitPrices.map(t => `
         <div class="inline-flex flex-wrap items-center gap-1.5 px-2 py-1 rounded-lg bg-indigo-50/80 border border-indigo-200/70 text-[11px]">
-          <span class="font-bold text-indigo-800">1 ${escapeHtml(t.unitName)} = ${t.conversionFactor} ${escapeHtml(effBase)}</span>
+          <span class="font-bold text-indigo-800">1 ${escapeHtml(t.unitName)} = ${t.conversionFactor}${basePart}</span>
           <span class="text-slate-500">· ဝယ် ${t.purchasePrice.toLocaleString()} / ရောင်း <b class="text-slate-800">${t.sellingPrice.toLocaleString()} Ks</b></span>
           ${t.barcode ? `<span class="font-mono text-[10px] text-slate-500">[${escapeHtml(t.barcode)}]</span>` : ''}
         </div>
@@ -2244,7 +2304,7 @@
             <table class="w-full text-left border-collapse text-xs">
               <thead>
                 <tr class="bg-slate-50 text-slate-500 uppercase tracking-wider border-b border-slate-200">
-                  <th class="py-3 px-3">ပစ္စည်းအမည်</th>
+                  <th class="py-3 px-3">ပုံ / ပစ္စည်းအမည်</th>
                   <th class="py-3 px-3">အမျိုးအစား (Group)</th>
                   <th class="py-3 px-3">Barcode</th>
                   <th class="py-3 px-3">လက်ကျန် (Stock)</th>
@@ -2258,10 +2318,16 @@
                   const qty = Number(p.quantity) || 0;
                   const low = qty <= (Number(p.alertQuantity) || 0);
                   const tiers = normalizeProductUnitPrices(p);
-                  const baseUnit = p.unit || p.unitName || 'ခု';
+                  const baseUnit = p.unit || p.unitName || '';
+                  const imgClick = `openProductImageModalFromDetail('${escapeJs(currentDetailAdminPhone || '')}', '${escapeJs(p.name)}', ${Number(p.id) || 0})`;
                   return `
                     <tr class="hover:bg-slate-50">
-                      <td class="py-2.5 px-3 font-bold text-slate-900">${escapeHtml(p.name)}</td>
+                      <td class="py-2.5 px-3">
+                        <div class="flex items-center space-x-2.5">
+                          ${renderProductThumbHtml(p, imgClick)}
+                          <span class="font-bold text-slate-900">${escapeHtml(p.name)}</span>
+                        </div>
+                      </td>
                       <td class="py-2.5 px-3 text-slate-600">${escapeHtml(p.groupName || '-')}</td>
                       <td class="py-2.5 px-3 font-mono text-slate-500">${escapeHtml(p.barcode || '-')}</td>
                       <td class="py-2.5 px-3 font-bold ${low ? 'text-rose-600' : 'text-emerald-700'}">${formatMultiUnitStockHtml(qty, baseUnit, tiers)}</td>
@@ -2271,9 +2337,12 @@
                         <div class="font-bold text-slate-900">${(Number(p.sellingPrice) || 0).toLocaleString()} Ks</div>
                       </td>
                       <td class="py-2.5 px-3 text-right">
-                        <button type="button" onclick="openProductUnitModalFromDetail('${escapeJs(currentDetailAdminPhone || '')}', '${escapeJs(p.name)}', ${Number(p.id) || 0})" class="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-[11px] whitespace-nowrap">
-                          ယူနစ်ပြင်/ထည့်
-                        </button>
+                        <div class="inline-flex items-center gap-1.5">
+                          <button type="button" onclick="${imgClick}" class="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 font-bold text-[11px] whitespace-nowrap">ပုံ</button>
+                          <button type="button" onclick="openProductUnitModalFromDetail('${escapeJs(currentDetailAdminPhone || '')}', '${escapeJs(p.name)}', ${Number(p.id) || 0})" class="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-[11px] whitespace-nowrap">
+                            ယူနစ်ပြင်/ထည့်
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   `;
@@ -2765,10 +2834,16 @@
         tbody.innerHTML = list.map((p, idx) => {
           const qty = Number(p.quantity) || 0;
           const tiers = normalizeProductUnitPrices(p);
-          const baseUnit = p.unit || p.unitName || p.unit_name || 'ခု';
+          const baseUnit = p.unit || p.unitName || p.unit_name || '';
+          const imgClick = `openProductImageModalFromStock(${idx})`;
           return `
             <tr class="hover:bg-slate-50/80 transition ${p.hasAccount === false ? 'bg-rose-50/40' : ''}">
-              <td class="py-3 px-4 pl-6 font-bold text-xs text-slate-900">${escapeHtml(p.name || '-')}</td>
+              <td class="py-3 px-4 pl-6">
+                <div class="flex items-center space-x-2.5">
+                  ${renderProductThumbHtml(p, imgClick)}
+                  <span class="font-bold text-xs text-slate-900">${escapeHtml(p.name || '-')}</span>
+                </div>
+              </td>
               <td class="py-3 px-4 text-xs">
                 ${p.hasAccount === false
                   ? `<div class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-200 mb-0.5">အကောင့်မရှိတော့ပါ</div>`
@@ -2785,9 +2860,12 @@
                 <div class="font-bold text-slate-900">${(Number(p.sellingPrice || p.selling_price) || 0).toLocaleString()} Ks</div>
               </td>
               <td class="py-3 px-4 pr-6 text-right">
-                <button type="button" onclick="openProductUnitModalFromStock(${idx})" class="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold whitespace-nowrap">
-                  ယူနစ်ပြင်/ထည့်
-                </button>
+                <div class="inline-flex items-center gap-1.5">
+                  <button type="button" onclick="${imgClick}" class="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-bold whitespace-nowrap">ပုံ</button>
+                  <button type="button" onclick="openProductUnitModalFromStock(${idx})" class="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold whitespace-nowrap">
+                    ယူနစ်ပြင်/ထည့်
+                  </button>
+                </div>
               </td>
             </tr>
           `;
@@ -2816,7 +2894,7 @@
     function openProductUnitModal(product, userPhone) {
       const baseP = Number(product.purchasePrice !== undefined ? product.purchasePrice : product.purchase_price) || 0;
       const baseS = Number(product.sellingPrice !== undefined ? product.sellingPrice : product.selling_price) || 0;
-      const baseUnit = String(product.unit || product.unitName || product.unit_name || 'ခု').trim() || 'ခု';
+      const baseUnit = String(product.unit || product.unitName || product.unit_name || '').trim();
 
       editingUnitProductCtx = {
         userPhone: userPhone || product.ownerPhone || '',
@@ -2897,7 +2975,8 @@
 
     function renderAdminUnitTiers() {
       const container = document.getElementById('prodUnitTiersContainer');
-      const baseUnit = document.getElementById('prodUnitBaseUnit')?.value?.trim() || editingUnitProductCtx?.baseUnit || 'ခု';
+      const baseUnit = document.getElementById('prodUnitBaseUnit')?.value?.trim() || editingUnitProductCtx?.baseUnit || '';
+      const baseLabel = baseUnit ? ` (${escapeHtml(baseUnit)})` : '';
       if (editingUnitTiersState.length === 0) {
         container.innerHTML = `<div class="py-6 text-center text-slate-400 border border-dashed border-slate-200 rounded-xl">ယူနစ်ခွဲ မရှိသေးပါ — အထက်ပါ "ယူနစ်အသစ်ထည့်မည်" ကို နှိပ်ပါ</div>`;
         return;
@@ -2914,7 +2993,7 @@
               <input type="text" value="${escapeHtml(t.unitName)}" oninput="editingUnitTiersState[${idx}].unitName = this.value" class="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="ယူနစ်အမည်" />
             </div>
             <div>
-              <label class="block text-[10px] font-semibold text-slate-500 mb-1">ပါဝင်အရေအတွက် (${escapeHtml(baseUnit)}) *</label>
+              <label class="block text-[10px] font-semibold text-slate-500 mb-1">ပါဝင်အရေအတွက်${baseLabel} *</label>
               <input type="number" min="2" value="${escapeHtml(t.conversionFactor)}" oninput="onAdminTierFactorChange(${idx}, this.value)" class="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="ဥပမာ 10" />
             </div>
             <div>
@@ -2937,7 +3016,8 @@
     async function saveAdminProductUnits() {
       if (!editingUnitProductCtx) return;
       const btn = document.getElementById('saveProdUnitsBtn');
-      const baseUnit = document.getElementById('prodUnitBaseUnit')?.value?.trim() || editingUnitProductCtx.baseUnit;
+      const baseUnitInput = document.getElementById('prodUnitBaseUnit');
+      const baseUnit = baseUnitInput ? baseUnitInput.value.trim() : editingUnitProductCtx.baseUnit;
       const cleanTiers = editingUnitTiersState
         .map(t => ({
           unitName: String(t.unitName || '').trim(),
@@ -2981,6 +3061,212 @@
       } finally {
         btn.disabled = false;
         btn.textContent = 'သိမ်းဆည်းမည်';
+      }
+    }
+
+    // ====================================================
+    // ADMIN PRODUCT IMAGE PREVIEW & COMPRESSED UPLOAD MODAL
+    // ====================================================
+    function openProductImageModalFromDetail(userPhone, prodName, prodId) {
+      const products = currentAdminDetail?.data?.products || [];
+      const found = products.find(p => (prodId > 0 && Number(p.id) === prodId) || p.name === prodName);
+      if (!found) return;
+      openProductImageModal(found, userPhone);
+    }
+
+    function openProductImageModalFromStock(idx) {
+      const p = cloudProductsCache[idx];
+      if (!p) return;
+      openProductImageModal(p, p.ownerPhone || '');
+    }
+
+    function openProductImageModal(product, userPhone) {
+      editingImageProductCtx = {
+        userPhone: userPhone || product.ownerPhone || '',
+        productId: Number(product.id || product.product_id) || 0,
+        productName: product.name || '',
+        existingUrl: resolveCloudImageUrl(product.imageUri || product.image_uri)
+      };
+      pendingCompressedImagePayload = null;
+      document.getElementById('prodImgFileInput').value = '';
+      document.getElementById('prodImgModalTitle').textContent = `${product.name || 'ကုန်စည်'} — ဓာတ်ပုံ`;
+      document.getElementById('prodImgModalSubtitle').textContent = `Account: ${editingImageProductCtx.userPhone}`;
+
+      const preview = document.getElementById('prodImgPreview');
+      const empty = document.getElementById('prodImgEmptyState');
+      const badge = document.getElementById('prodImgMetaBadge');
+      const removeBtn = document.getElementById('removeProdImgBtn');
+      const saveBtn = document.getElementById('saveProdImgBtn');
+
+      if (editingImageProductCtx.existingUrl) {
+        preview.src = editingImageProductCtx.existingUrl;
+        preview.classList.remove('hidden');
+        empty.classList.add('hidden');
+        badge.textContent = 'Cloud တွင် သိမ်းဆည်းထားသော ပုံ';
+        badge.classList.remove('hidden');
+        removeBtn.classList.remove('hidden');
+      } else {
+        preview.src = '';
+        preview.classList.add('hidden');
+        empty.classList.remove('hidden');
+        badge.classList.add('hidden');
+        removeBtn.classList.add('hidden');
+      }
+      saveBtn.disabled = true;
+
+      const modal = document.getElementById('productImageModal');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function closeProductImageModal() {
+      const modal = document.getElementById('productImageModal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+      editingImageProductCtx = null;
+      pendingCompressedImagePayload = null;
+    }
+
+    function compressBrowserImageUnder200Kb(file, targetBytes = 150 * 1024, hardMaxBytes = 195 * 1024) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error('ပုံဖတ်မရပါ'));
+        reader.onload = () => {
+          const img = new Image();
+          img.onerror = () => reject(new Error('ပုံ Format မမှန်ကန်ပါ'));
+          img.onload = () => {
+            const dimSteps = [800, 640, 512, 400, 320];
+            const qualities = [0.82, 0.72, 0.62, 0.52, 0.42, 0.32];
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            let bestDataUrl = null;
+            let bestBytes = Infinity;
+
+            for (const maxDim of dimSteps) {
+              const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+              const w = Math.max(1, Math.round(img.width * scale));
+              const h = Math.max(1, Math.round(img.height * scale));
+              canvas.width = w;
+              canvas.height = h;
+              ctx.fillStyle = '#FFFFFF';
+              ctx.fillRect(0, 0, w, h);
+              ctx.drawImage(img, 0, 0, w, h);
+
+              for (const q of qualities) {
+                const dataUrl = canvas.toDataURL('image/jpeg', q);
+                const b64 = dataUrl.split(',')[1] || '';
+                const byteLen = Math.floor((b64.length * 3) / 4);
+                if (byteLen < bestBytes) {
+                  bestBytes = byteLen;
+                  bestDataUrl = dataUrl;
+                }
+                if (byteLen <= targetBytes) {
+                  resolve({ dataUrl, base64: b64, sizeBytes: byteLen, width: w, height: h });
+                  return;
+                }
+              }
+            }
+            if (bestDataUrl && bestBytes <= hardMaxBytes) {
+              resolve({ dataUrl: bestDataUrl, base64: bestDataUrl.split(',')[1], sizeBytes: bestBytes });
+            } else {
+              resolve({ dataUrl: bestDataUrl, base64: (bestDataUrl || '').split(',')[1] || '', sizeBytes: bestBytes });
+            }
+          };
+          img.src = reader.result;
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function handleAdminProductImageSelect(event) {
+      const file = event.target?.files?.[0];
+      if (!file) return;
+      try {
+        const compressed = await compressBrowserImageUnder200Kb(file);
+        pendingCompressedImagePayload = compressed;
+        const preview = document.getElementById('prodImgPreview');
+        const empty = document.getElementById('prodImgEmptyState');
+        const badge = document.getElementById('prodImgMetaBadge');
+        preview.src = compressed.dataUrl;
+        preview.classList.remove('hidden');
+        empty.classList.add('hidden');
+        const kb = Math.max(1, Math.round(compressed.sizeBytes / 1024));
+        badge.textContent = `Compressed: ${kb} KB (Cloud တင်ရန် အသင့်)`;
+        badge.classList.remove('hidden');
+        document.getElementById('saveProdImgBtn').disabled = false;
+      } catch (err) {
+        showToast(err.message || 'ပုံချုံ့၍မရပါ', true);
+      }
+    }
+
+    async function saveAdminProductImage() {
+      if (!editingImageProductCtx || !pendingCompressedImagePayload?.base64) return;
+      const btn = document.getElementById('saveProdImgBtn');
+      btn.disabled = true;
+      btn.textContent = 'တင်နေသည်...';
+      try {
+        const res = await adminFetch(`${API_BASE}/api/admin/product/image`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userPhone: editingImageProductCtx.userPhone,
+            productId: editingImageProductCtx.productId,
+            productName: editingImageProductCtx.productName,
+            mimeType: 'image/jpeg',
+            imageBase64: pendingCompressedImagePayload.base64
+          })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          showToast(data.message || 'ဓာတ်ပုံတင်မှု မအောင်မြင်ပါ', true);
+          return;
+        }
+        const savedPhone = editingImageProductCtx.userPhone;
+        closeProductImageModal();
+        showToast(data.message || 'ကုန်စည်ဓာတ်ပုံ တင်ပြီးပါပြီ');
+        if (currentView === 'stock') await fetchCloudProducts();
+        if (currentDetailAdminPhone && (currentDetailAdminPhone === savedPhone || currentView === 'adminDetail')) {
+          await openAdminDetail(currentDetailAdminPhone);
+        }
+      } catch (err) {
+        showToast('Error: ' + err.message, true);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Cloud တင်မည်';
+      }
+    }
+
+    async function removeAdminProductImage() {
+      if (!editingImageProductCtx) return;
+      const btn = document.getElementById('removeProdImgBtn');
+      btn.disabled = true;
+      try {
+        const res = await adminFetch(`${API_BASE}/api/admin/product/image`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userPhone: editingImageProductCtx.userPhone,
+            productId: editingImageProductCtx.productId,
+            productName: editingImageProductCtx.productName,
+            remove: true
+          })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          showToast(data.message || 'ပုံဖျက်မှု မအောင်မြင်ပါ', true);
+          return;
+        }
+        const savedPhone = editingImageProductCtx.userPhone;
+        closeProductImageModal();
+        showToast(data.message || 'ဓာတ်ပုံကို ဖျက်ပြီးပါပြီ');
+        if (currentView === 'stock') await fetchCloudProducts();
+        if (currentDetailAdminPhone && (currentDetailAdminPhone === savedPhone || currentView === 'adminDetail')) {
+          await openAdminDetail(currentDetailAdminPhone);
+        }
+      } catch (err) {
+        showToast('Error: ' + err.message, true);
+      } finally {
+        btn.disabled = false;
       }
     }
 
