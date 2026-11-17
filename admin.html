@@ -1045,7 +1045,11 @@
     function resolveCloudImageUrl(rawUri) {
       const s = String(rawUri || '').trim();
       if (!s) return '';
-      if (s.startsWith('/api/')) return `${API_BASE}${s}`;
+      const diskMatch = s.match(/\/(?:api\/product-image|uploads\/product_images)\/([a-zA-Z0-9._-]+)(?:[?#].*)?$/i);
+      if (diskMatch && diskMatch[1]) {
+        return `${API_BASE}/api/product-image/${diskMatch[1]}`;
+      }
+      if (s.startsWith('/api/') || s.startsWith('/uploads/')) return `${API_BASE}${s}`;
       if (s.startsWith('http://') || s.startsWith('https://') || s.startsWith('data:image/')) return s;
       return '';
     }
@@ -1126,13 +1130,28 @@
       if (!unitPrices || unitPrices.length === 0) {
         return `<span class="text-[11px] text-slate-400">-</span>`;
       }
-      return `<div class="flex flex-col gap-1">${unitPrices.map(t => `
-        <div class="inline-flex flex-wrap items-center gap-1.5 px-2 py-1 rounded-lg bg-indigo-50/80 border border-indigo-200/70 text-[11px]">
-          <span class="font-bold text-indigo-800">1 ${escapeHtml(t.unitName)} = ${t.conversionFactor}${basePart}</span>
-          <span class="text-slate-500">· ဝယ် ${t.purchasePrice.toLocaleString()} / ရောင်း <b class="text-slate-800">${t.sellingPrice.toLocaleString()} Ks</b></span>
-          ${t.barcode ? `<span class="font-mono text-[10px] text-slate-500">[${escapeHtml(t.barcode)}]</span>` : ''}
-        </div>
-      `).join('')}</div>`;
+      const previewNames = unitPrices.map(t => escapeHtml(t.unitName)).join(' · ');
+      return `
+        <details class="group inline-block text-left">
+          <summary class="list-none cursor-pointer inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 border border-indigo-200/80 text-[11px] font-bold text-indigo-700 select-none transition">
+            <span>ယူနစ် ${unitPrices.length} ခု (${previewNames})</span>
+            <svg class="w-3.5 h-3.5 transition-transform duration-150 group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+          </summary>
+          <ul class="mt-1.5 rounded-xl border border-slate-200 bg-white divide-y divide-slate-100 shadow-sm min-w-[230px]">
+            ${unitPrices.map(t => `
+              <li class="px-2.5 py-1.5 text-[11px] flex flex-col gap-0.5">
+                <div class="flex items-center justify-between gap-2">
+                  <span class="font-bold text-indigo-800">1 ${escapeHtml(t.unitName)} = ${t.conversionFactor}${basePart}</span>
+                  ${t.barcode ? `<span class="font-mono text-[10px] text-slate-400">[${escapeHtml(t.barcode)}]</span>` : ''}
+                </div>
+                <div class="text-slate-500">
+                  ဝယ် ${t.purchasePrice.toLocaleString()} · ရောင်း <b class="text-slate-900">${t.sellingPrice.toLocaleString()} Ks</b>
+                </div>
+              </li>
+            `).join('')}
+          </ul>
+        </details>
+      `;
     }
 
     function getMainAdminUsers() {
@@ -3099,10 +3118,11 @@
       const saveBtn = document.getElementById('saveProdImgBtn');
 
       if (editingImageProductCtx.existingUrl) {
+        const storedPath = String(product.imageUri || product.image_uri || '').trim();
         preview.src = editingImageProductCtx.existingUrl;
         preview.classList.remove('hidden');
         empty.classList.add('hidden');
-        badge.textContent = 'Cloud တွင် သိမ်းဆည်းထားသော ပုံ';
+        badge.textContent = storedPath ? `VPS Disk URL: ${storedPath}` : 'VPS Disk Folder တွင် သိမ်းဆည်းထားသော ပုံ';
         badge.classList.remove('hidden');
         removeBtn.classList.remove('hidden');
       } else {
