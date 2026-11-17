@@ -1,4 +1,4 @@
-/**a
+/**
  * UN POS Backend Server for VPS (Linux / Ubuntu / Debian / Windows)
  * Direct PostgreSQL Database Storage (NO .json files, NO in-memory database cache!)
  *
@@ -474,32 +474,57 @@ async function initDatabase() {
     await client.query(`ALTER TABLE cloud_product_images ALTER COLUMN image_data DROP NOT NULL;`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_cloud_product_images_user ON cloud_product_images (user_phone);`);
 
-    // Auto-migrate any legacy BYTEA image rows out of PostgreSQL into VPS disk folder (uploads/product_images)
+    // Auto-migrate any legacy BYTEA image rows out of PostgreSQL into per-user VPS disk folder (uploads/product_images/<userPhone>/)
     const { rows: legacyImgRows } = await client.query(
-      `SELECT image_id, mime_type, image_data FROM cloud_product_images WHERE image_data IS NOT NULL AND octet_length(image_data) > 0`
+      `SELECT image_id, user_phone, mime_type, image_data FROM cloud_product_images WHERE image_data IS NOT NULL AND octet_length(image_data) > 0`
     );
     for (const row of legacyImgRows) {
       const cleanId = sanitizeImageFileName(row.image_id);
       if (!cleanId) continue;
       try {
-        saveProductImageToDisk(cleanId, row.image_data);
+        const folder = sanitizeAccountFolder(row.user_phone);
+        saveProductImageToDisk(cleanId, row.image_data, row.user_phone);
         await client.query(
           `UPDATE cloud_product_images
            SET file_name = $1, image_url = $2, image_data = NULL
            WHERE image_id = $3`,
-          [cleanId, `/api/product-image/${cleanId}`, row.image_id]
+          [`${folder}/${cleanId}`, buildProductImageUrl(row.user_phone, cleanId), row.image_id]
         );
       } catch (migErr) {
         console.warn(`[IMG MIGRATE] Failed to move ${cleanId} to disk:`, migErr.message);
       }
     }
 
-    // Normalize any old absolute image URLs in cloud_products to portable relative paths (/api/product-image/...)
+    // Move any previously flat disk images into per-Main-Admin phone folders (uploads/product_images/<userPhone>/)
+    const { rows: flatImgRows } = await client.query(
+      `SELECT image_id, user_phone, file_name FROM cloud_product_images WHERE file_name = '' OR file_name NOT LIKE '%/%'`
+    );
+    for (const row of flatImgRows) {
+      const cleanId = sanitizeImageFileName(row.image_id);
+      if (!cleanId || !row.user_phone) continue;
+      const folder = sanitizeAccountFolder(row.user_phone);
+      const flatPath = path.join(PRODUCT_IMAGE_DIR, cleanId);
+      const userPath = path.join(PRODUCT_IMAGE_DIR, folder, cleanId);
+      try {
+        if (fs.existsSync(flatPath) && !fs.existsSync(userPath)) {
+          fs.mkdirSync(path.join(PRODUCT_IMAGE_DIR, folder), { recursive: true });
+          fs.copyFileSync(flatPath, userPath);
+        }
+        await client.query(
+          `UPDATE cloud_product_images SET file_name = $1, image_url = $2 WHERE image_id = $3`,
+          [`${folder}/${cleanId}`, buildProductImageUrl(row.user_phone, cleanId), row.image_id]
+        );
+      } catch (flatErr) {
+        console.warn(`[IMG FOLDER MIGRATE] Skip ${cleanId}:`, flatErr.message);
+      }
+    }
+
+    // Normalize any old/flat image URLs in cloud_products to portable per-account paths (/api/product-image/<userPhone>/<file>)
     const { rows: urlRows } = await client.query(
       `SELECT user_phone, product_key, image_uri FROM cloud_products WHERE image_uri IS NOT NULL AND image_uri <> ''`
     );
     for (const r of urlRows) {
-      const normalized = normalizeStoredImageUrl(r.image_uri);
+      const normalized = normalizeStoredImageUrl(r.image_uri, r.user_phone);
       if (normalized && normalized !== r.image_uri) {
         await client.query(
           `UPDATE cloud_products SET image_uri = $1 WHERE user_phone = $2 AND product_key = $3`,
@@ -859,6 +884,12 @@ function normalizeUnitPrices(raw) {
   return out;
 }
 
+function sanitizeAccountFolder(userPhone) {
+  const clean = String(userPhone || '').trim().replace(/[^a-zA-Z0-9._-]/g, '_').replace(/^\.+/, '');
+  if (!clean || clean === '.' || clean === '..') return '_shared';
+  return clean;
+}
+
 function sanitizeImageFileName(rawId) {
   const base = path.basename(String(rawId || '').trim());
   const clean = base.replace(/[^a-zA-Z0-9._-]/g, '');
@@ -866,10 +897,22 @@ function sanitizeImageFileName(rawId) {
   return clean;
 }
 
-function getDiskImagePath(imageId) {
+function getDiskImagePath(imageId, userPhone = '') {
   const clean = sanitizeImageFileName(imageId);
   if (!clean) return '';
+  if (userPhone) {
+    return path.join(PRODUCT_IMAGE_DIR, sanitizeAccountFolder(userPhone), clean);
+  }
   return path.join(PRODUCT_IMAGE_DIR, clean);
+}
+
+function buildProductImageUrl(userPhone, imageId) {
+  const clean = sanitizeImageFileName(imageId);
+  if (!clean) return '';
+  if (userPhone) {
+    return `/api/product-image/${sanitizeAccountFolder(userPhone)}/${clean}`;
+  }
+  return `/api/product-image/${clean}`;
 }
 
 function guessImageMime(fileName) {
@@ -879,54 +922,88 @@ function guessImageMime(fileName) {
   return 'image/jpeg';
 }
 
-function saveProductImageToDisk(imageId, buffer) {
+function saveProductImageToDisk(imageId, buffer, userPhone = '') {
   const clean = sanitizeImageFileName(imageId);
   if (!clean || !buffer || buffer.length === 0) {
     throw new Error('Invalid image file or empty buffer');
   }
-  if (!fs.existsSync(PRODUCT_IMAGE_DIR)) {
-    fs.mkdirSync(PRODUCT_IMAGE_DIR, { recursive: true });
+  const targetDir = userPhone
+    ? path.join(PRODUCT_IMAGE_DIR, sanitizeAccountFolder(userPhone))
+    : PRODUCT_IMAGE_DIR;
+  if (!fs.existsSync(targetDir)) {
+    fs.mkdirSync(targetDir, { recursive: true });
   }
-  const dest = path.join(PRODUCT_IMAGE_DIR, clean);
+  const dest = path.join(targetDir, clean);
   fs.writeFileSync(dest, buffer);
   return dest;
 }
 
-function readProductImageFromDisk(imageId) {
-  const diskPath = getDiskImagePath(imageId);
-  if (!diskPath || !fs.existsSync(diskPath)) return null;
-  try {
-    return fs.readFileSync(diskPath);
-  } catch (err) {
-    return null;
+function readProductImageFromDisk(imageId, userPhone = '') {
+  if (userPhone) {
+    const userPath = getDiskImagePath(imageId, userPhone);
+    if (userPath && fs.existsSync(userPath)) {
+      try {
+        return fs.readFileSync(userPath);
+      } catch (_) {}
+    }
   }
+  const flatPath = getDiskImagePath(imageId, '');
+  if (flatPath && fs.existsSync(flatPath)) {
+    try {
+      return fs.readFileSync(flatPath);
+    } catch (_) {}
+  }
+  return null;
 }
 
-function normalizeStoredImageUrl(rawUri) {
+function normalizeStoredImageUrl(rawUri, userPhone = '') {
   const trimmed = String(rawUri || '').trim();
   if (!trimmed) return '';
-  const match = trimmed.match(/\/(?:api\/product-image|uploads\/product_images)\/([a-zA-Z0-9._-]+)(?:[?#].*)?$/i);
-  if (match && match[1]) {
-    const cleanFile = sanitizeImageFileName(match[1]);
-    if (cleanFile) return `/api/product-image/${cleanFile}`;
+  const match = trimmed.match(/\/(?:api\/product-image|uploads\/product_images)\/(?:([a-zA-Z0-9._-]+)\/)?([a-zA-Z0-9._-]+)(?:[?#].*)?$/i);
+  if (match && match[2]) {
+    const folderPart = match[1] ? sanitizeAccountFolder(match[1]) : (userPhone ? sanitizeAccountFolder(userPhone) : '');
+    const cleanFile = sanitizeImageFileName(match[2]);
+    if (cleanFile) {
+      return folderPart ? `/api/product-image/${folderPart}/${cleanFile}` : `/api/product-image/${cleanFile}`;
+    }
   }
   return trimmed;
 }
 
-async function deleteUnusedProductImageFile(dbClient, rawUriOrId) {
-  const normalized = normalizeStoredImageUrl(rawUriOrId);
-  const fileId = sanitizeImageFileName(normalized.replace(/^\/api\/product-image\//, ''));
+async function deleteUnusedProductImageFile(dbClient, rawUriOrId, userPhone = '') {
+  const normalized = normalizeStoredImageUrl(rawUriOrId, userPhone);
+  const match = normalized.match(/^\/api\/product-image\/(?:([a-zA-Z0-9._-]+)\/)?([a-zA-Z0-9._-]+)$/);
+  const folder = match && match[1] ? match[1] : (userPhone ? sanitizeAccountFolder(userPhone) : '');
+  const fileId = sanitizeImageFileName(match && match[2] ? match[2] : normalized);
   if (!fileId) return;
   try {
-    const { rows } = await dbClient.query(
-      `SELECT COUNT(*)::int AS cnt FROM cloud_products WHERE image_uri = $1 OR image_uri LIKE $2`,
-      [`/api/product-image/${fileId}`, `%/${fileId}`]
-    );
+    const { rows } = userPhone
+      ? await dbClient.query(
+          `SELECT COUNT(*)::int AS cnt FROM cloud_products WHERE user_phone = $1 AND (image_uri = $2 OR image_uri LIKE $3)`,
+          [userPhone, normalized, `%/${fileId}`]
+        )
+      : await dbClient.query(
+          `SELECT COUNT(*)::int AS cnt FROM cloud_products WHERE image_uri = $1 OR image_uri LIKE $2`,
+          [normalized, `%/${fileId}`]
+        );
     if ((rows[0]?.cnt || 0) > 0) return;
-    await dbClient.query(`DELETE FROM cloud_product_images WHERE image_id = $1`, [fileId]);
-    const diskPath = getDiskImagePath(fileId);
-    if (diskPath && fs.existsSync(diskPath)) {
-      fs.unlinkSync(diskPath);
+
+    await dbClient.query(
+      userPhone
+        ? `DELETE FROM cloud_product_images WHERE image_id = $1 AND user_phone = $2`
+        : `DELETE FROM cloud_product_images WHERE image_id = $1`,
+      userPhone ? [fileId, userPhone] : [fileId]
+    );
+    if (folder) {
+      const userDiskPath = getDiskImagePath(fileId, folder);
+      if (userDiskPath && fs.existsSync(userDiskPath)) {
+        fs.unlinkSync(userDiskPath);
+      }
+    } else {
+      const flatPath = getDiskImagePath(fileId, '');
+      if (flatPath && fs.existsSync(flatPath)) {
+        fs.unlinkSync(flatPath);
+      }
     }
   } catch (err) {
     console.warn(`[IMG CLEANUP] Skip cleanup for ${fileId}:`, err.message);
@@ -979,7 +1056,7 @@ function mapProductRow(r) {
     initial_quantity: Number(r.initial_quantity) || 0,
     alertQuantity: Number(r.alert_quantity) || 0,
     alert_quantity: Number(r.alert_quantity) || 0,
-    imageUri: normalizeStoredImageUrl(r.image_uri || ''),
+    imageUri: normalizeStoredImageUrl(r.image_uri || '', r.user_phone || ''),
     unitPrices,
     unit_prices: unitPrices
   };
@@ -1271,34 +1348,41 @@ const server = http.createServer(async (req, res) => {
   }
 
   try {
-    // Serve compressed cloud product images directly from VPS disk folder (GET /api/product-image/:imageId or /uploads/product_images/:imageId)
+    // Serve compressed cloud product images from per-Main-Admin VPS disk folder (GET /api/product-image/:userPhone?/:imageId or /uploads/product_images/...)
     if (method === 'GET' && (pathname.startsWith('/api/product-image/') || pathname.startsWith('/uploads/product_images/'))) {
       const prefix = pathname.startsWith('/api/product-image/') ? '/api/product-image/' : '/uploads/product_images/';
-      const rawId = decodeURIComponent(pathname.slice(prefix.length)).trim();
-      const cleanId = sanitizeImageFileName(rawId);
+      const rawTail = decodeURIComponent(pathname.slice(prefix.length)).trim();
+      const parts = rawTail.split('/').filter(Boolean);
+      const reqFolder = parts.length >= 2 ? sanitizeAccountFolder(parts[parts.length - 2]) : '';
+      const cleanId = sanitizeImageFileName(parts[parts.length - 1] || '');
       if (!cleanId) {
         return sendJson(res, 400, { success: false, message: 'Invalid image ID' });
       }
 
-      let imageBuffer = readProductImageFromDisk(cleanId);
+      let imageBuffer = readProductImageFromDisk(cleanId, reqFolder);
       let mimeType = guessImageMime(cleanId);
 
-      // Legacy fallback: if image was previously inside BYTEA column, export to VPS disk and clear DB blob
+      // Lookup by image_id in DB if not matched via explicit folder (covers legacy flat URLs or legacy BYTEA rows)
       if (!imageBuffer) {
         const { rows } = await pool.query(
-          `SELECT mime_type, image_data FROM cloud_product_images WHERE image_id = $1 LIMIT 1`,
+          `SELECT user_phone, mime_type, image_data FROM cloud_product_images WHERE image_id = $1 LIMIT 1`,
           [cleanId]
         );
-        if (rows.length > 0 && rows[0].image_data && rows[0].image_data.length > 0) {
-          imageBuffer = rows[0].image_data;
+        if (rows.length > 0) {
+          const dbPhone = rows[0].user_phone || reqFolder;
           mimeType = rows[0].mime_type || mimeType;
-          try {
-            saveProductImageToDisk(cleanId, imageBuffer);
-            await pool.query(
-              `UPDATE cloud_product_images SET file_name = $1, image_url = $2, image_data = NULL WHERE image_id = $3`,
-              [cleanId, `/api/product-image/${cleanId}`, cleanId]
-            );
-          } catch (_) {}
+          imageBuffer = readProductImageFromDisk(cleanId, dbPhone);
+          if (!imageBuffer && rows[0].image_data && rows[0].image_data.length > 0) {
+            imageBuffer = rows[0].image_data;
+            try {
+              const folder = sanitizeAccountFolder(dbPhone);
+              saveProductImageToDisk(cleanId, imageBuffer, dbPhone);
+              await pool.query(
+                `UPDATE cloud_product_images SET file_name = $1, image_url = $2, image_data = NULL WHERE image_id = $3`,
+                [`${folder}/${cleanId}`, buildProductImageUrl(dbPhone, cleanId), cleanId]
+              );
+            } catch (_) {}
+          }
         }
       }
 
@@ -1745,7 +1829,7 @@ const server = http.createServer(async (req, res) => {
       await client.query(`DELETE FROM users WHERE role = 'CASHIER' AND admin_phone = $1`, [phoneNo]);
 
       const { rows: imgRowsToClean } = await client.query(
-        `SELECT image_id FROM cloud_product_images WHERE user_phone = ANY($1::text[])`,
+        `SELECT image_id, user_phone FROM cloud_product_images WHERE user_phone = ANY($1::text[])`,
         [phonesToClean]
       );
 
@@ -1754,7 +1838,15 @@ const server = http.createServer(async (req, res) => {
       }
 
       for (const ir of imgRowsToClean) {
-        await deleteUnusedProductImageFile(client, ir.image_id);
+        await deleteUnusedProductImageFile(client, ir.image_id, ir.user_phone);
+      }
+      for (const pClean of phonesToClean) {
+        const accountDir = path.join(PRODUCT_IMAGE_DIR, sanitizeAccountFolder(pClean));
+        if (fs.existsSync(accountDir)) {
+          try {
+            fs.rmSync(accountDir, { recursive: true, force: true });
+          } catch (_) {}
+        }
       }
 
       await client.query(`DELETE FROM users WHERE phone_no = $1`, [phoneNo]);
@@ -2563,14 +2655,15 @@ const server = http.createServer(async (req, res) => {
           cloud_stock_adjustments: stockAdjRes.rows,
           cloud_deleted_entities: deletedRes.rows,
           cloud_product_images: imagesRes.rows.map(img => {
-            const diskBuf = readProductImageFromDisk(img.image_id);
+            const diskBuf = readProductImageFromDisk(img.image_id, img.user_phone);
             const effectiveBuf = diskBuf || (Buffer.isBuffer(img.image_data) ? img.image_data : null);
+            const folder = sanitizeAccountFolder(img.user_phone);
             return {
               image_id: img.image_id,
               user_phone: img.user_phone,
               mime_type: img.mime_type || 'image/jpeg',
-              file_name: img.file_name || img.image_id,
-              image_url: img.image_url || `/api/product-image/${img.image_id}`,
+              file_name: img.file_name || `${folder}/${img.image_id}`,
+              image_url: img.image_url || buildProductImageUrl(img.user_phone, img.image_id),
               size_bytes: effectiveBuf ? effectiveBuf.length : (Number(img.size_bytes) || 0),
               updated_at: Number(img.updated_at) || 0,
               image_data_base64: effectiveBuf ? effectiveBuf.toString('base64') : ''
@@ -2616,7 +2709,7 @@ const server = http.createServer(async (req, res) => {
             p.unit || '', p.note || '', p.track_stock !== false, p.barcode || '',
             Number(p.quantity) || 0,
             Number(p.initial_quantity !== undefined && p.initial_quantity !== null ? p.initial_quantity : p.quantity) || 0,
-            Number(p.alert_quantity) || 0, normalizeStoredImageUrl(p.image_uri || ''), JSON.stringify(restoredUnitPrices), Number(p.updated_at) || Date.now()
+            Number(p.alert_quantity) || 0, normalizeStoredImageUrl(p.image_uri || '', up), JSON.stringify(restoredUnitPrices), Number(p.updated_at) || Date.now()
           ]
         );
       }
@@ -2772,13 +2865,14 @@ const server = http.createServer(async (req, res) => {
         const up = pickPhone(img);
         const cleanId = sanitizeImageFileName(img.image_id);
         if (!up || !cleanId) continue;
+        const folder = sanitizeAccountFolder(up);
         if (img.image_data_base64) {
           const buf = Buffer.from(String(img.image_data_base64), 'base64');
           if (buf.length > 0) {
-            saveProductImageToDisk(cleanId, buf);
+            saveProductImageToDisk(cleanId, buf, up);
           }
         }
-        const imgUrl = `/api/product-image/${cleanId}`;
+        const imgUrl = buildProductImageUrl(up, cleanId);
         await client.query(
           `INSERT INTO cloud_product_images (image_id, user_phone, mime_type, file_name, image_url, image_data, size_bytes, updated_at)
            VALUES ($1,$2,$3,$4,$5,NULL,$6,$7)
@@ -2790,7 +2884,7 @@ const server = http.createServer(async (req, res) => {
              image_data = NULL,
              size_bytes = EXCLUDED.size_bytes,
              updated_at = EXCLUDED.updated_at`,
-          [cleanId, up, img.mime_type || guessImageMime(cleanId), cleanId, imgUrl, Number(img.size_bytes) || 0, Number(img.updated_at) || Date.now()]
+          [cleanId, up, img.mime_type || guessImageMime(cleanId), `${folder}/${cleanId}`, imgUrl, Number(img.size_bytes) || 0, Number(img.updated_at) || Date.now()]
         );
       }
     }
@@ -2948,14 +3042,15 @@ const server = http.createServer(async (req, res) => {
           cloud_stock_adjustments: stockAdjRes.rows,
           cloud_deleted_entities: deletedRes.rows,
           cloud_product_images: imagesRes.rows.map(img => {
-            const diskBuf = readProductImageFromDisk(img.image_id);
+            const diskBuf = readProductImageFromDisk(img.image_id, img.user_phone);
             const effectiveBuf = diskBuf || (Buffer.isBuffer(img.image_data) ? img.image_data : null);
+            const folder = sanitizeAccountFolder(img.user_phone);
             return {
               image_id: img.image_id,
               user_phone: img.user_phone,
               mime_type: img.mime_type || 'image/jpeg',
-              file_name: img.file_name || img.image_id,
-              image_url: img.image_url || `/api/product-image/${img.image_id}`,
+              file_name: img.file_name || `${folder}/${img.image_id}`,
+              image_url: img.image_url || buildProductImageUrl(img.user_phone, img.image_id),
               size_bytes: effectiveBuf ? effectiveBuf.length : (Number(img.size_bytes) || 0),
               updated_at: Number(img.updated_at) || 0,
               image_data_base64: effectiveBuf ? effectiveBuf.toString('base64') : ''
@@ -3383,10 +3478,11 @@ const server = http.createServer(async (req, res) => {
         if (!target) return null;
 
         const previousImageUri = target.image_uri || '';
+        const accountFolder = sanitizeAccountFolder(targetPhone);
         let nextImageUri = '';
         if (!removeFlag && parsedImg) {
-          saveProductImageToDisk(parsedImg.imageId, parsedImg.buffer);
-          nextImageUri = `/api/product-image/${parsedImg.imageId}`;
+          saveProductImageToDisk(parsedImg.imageId, parsedImg.buffer, targetPhone);
+          nextImageUri = buildProductImageUrl(targetPhone, parsedImg.imageId);
           await client.query(
             `INSERT INTO cloud_product_images (image_id, user_phone, mime_type, file_name, image_url, image_data, size_bytes, updated_at)
              VALUES ($1,$2,$3,$4,$5,NULL,$6,$7)
@@ -3397,7 +3493,7 @@ const server = http.createServer(async (req, res) => {
                image_data = NULL,
                size_bytes = EXCLUDED.size_bytes,
                updated_at = EXCLUDED.updated_at`,
-            [parsedImg.imageId, targetPhone, parsedImg.cleanMime, parsedImg.imageId, nextImageUri, parsedImg.sizeBytes, now]
+            [parsedImg.imageId, targetPhone, parsedImg.cleanMime, `${accountFolder}/${parsedImg.imageId}`, nextImageUri, parsedImg.sizeBytes, now]
           );
         }
 
@@ -3409,7 +3505,7 @@ const server = http.createServer(async (req, res) => {
           [nextImageUri, now, targetPhone, target.product_key]
         );
         if (previousImageUri && previousImageUri !== nextImageUri) {
-          await deleteUnusedProductImageFile(client, previousImageUri);
+          await deleteUnusedProductImageFile(client, previousImageUri, targetPhone);
         }
         return savedRows[0];
       });
@@ -3421,9 +3517,9 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, {
         success: true,
         imageUri: updatedRow.image_uri || '',
-        diskFolder: 'uploads/product_images',
+        diskFolder: `uploads/product_images/${sanitizeAccountFolder(targetPhone)}`,
         sizeBytes: parsedImg ? parsedImg.sizeBytes : 0,
-        message: removeFlag ? 'ကုန်စည်ဓာတ်ပုံကို ဖျက်လိုက်ပါပြီ' : 'ကုန်စည်ဓာတ်ပုံကို VPS Folder ထဲသို့ သိမ်းပြီး URL ကို Database တွင် မှတ်တမ်းတင်ပြီးပါပြီ',
+        message: removeFlag ? 'ကုန်စည်ဓာတ်ပုံကို ဖျက်လိုက်ပါပြီ' : 'ကုန်စည်ဓာတ်ပုံကို Main Admin Folder ထဲသို့ သိမ်းပြီး URL ကို Database တွင် မှတ်တမ်းတင်ပြီးပါပြီ',
         product: mapProductRow(updatedRow)
       });
     }
@@ -3546,8 +3642,9 @@ const server = http.createServer(async (req, res) => {
       }
 
       const now = Date.now();
-      saveProductImageToDisk(parsedImg.imageId, parsedImg.buffer);
-      const imageUrl = `/api/product-image/${parsedImg.imageId}`;
+      const accountFolder = sanitizeAccountFolder(userPhone);
+      saveProductImageToDisk(parsedImg.imageId, parsedImg.buffer, userPhone);
+      const imageUrl = buildProductImageUrl(userPhone, parsedImg.imageId);
       await pool.query(
         `INSERT INTO cloud_product_images (image_id, user_phone, mime_type, file_name, image_url, image_data, size_bytes, updated_at)
          VALUES ($1,$2,$3,$4,$5,NULL,$6,$7)
@@ -3558,14 +3655,14 @@ const server = http.createServer(async (req, res) => {
            image_data = NULL,
            size_bytes = EXCLUDED.size_bytes,
            updated_at = EXCLUDED.updated_at`,
-        [parsedImg.imageId, userPhone, parsedImg.cleanMime, parsedImg.imageId, imageUrl, parsedImg.sizeBytes, now]
+        [parsedImg.imageId, userPhone, parsedImg.cleanMime, `${accountFolder}/${parsedImg.imageId}`, imageUrl, parsedImg.sizeBytes, now]
       );
 
       return sendJson(res, 200, {
         success: true,
         imageId: parsedImg.imageId,
         imageUri: imageUrl,
-        diskFolder: 'uploads/product_images',
+        diskFolder: `uploads/product_images/${accountFolder}`,
         sizeBytes: parsedImg.sizeBytes
       });
     }
@@ -3657,7 +3754,7 @@ const server = http.createServer(async (req, res) => {
                 newQty,
                 newInitialQty,
                 p.alertQuantity !== undefined ? Number(p.alertQuantity) : (p.alert_quantity !== undefined ? Number(p.alert_quantity) : existing.alert_quantity),
-                normalizeStoredImageUrl(p.imageUri !== undefined ? p.imageUri : existing.image_uri),
+                normalizeStoredImageUrl(p.imageUri !== undefined ? p.imageUri : existing.image_uri, userPhone),
                 JSON.stringify(finalUnitPrices),
                 now,
                 userPhone,
@@ -3703,7 +3800,7 @@ const server = http.createServer(async (req, res) => {
                 initialQty,
                 initialQty,
                 Number(p.alertQuantity !== undefined ? p.alertQuantity : p.alert_quantity) || 0,
-                normalizeStoredImageUrl(p.imageUri || ''),
+                normalizeStoredImageUrl(p.imageUri || '', userPhone),
                 JSON.stringify(finalUnitPrices),
                 now
               ]
@@ -3948,7 +4045,7 @@ const server = http.createServer(async (req, res) => {
               barcode: p.barcode || '',
               targetQty,
               alertQuantity: Number(p.alertQuantity !== undefined ? p.alertQuantity : p.alert_quantity) || 0,
-              imageUri: normalizeStoredImageUrl(p.imageUri || ''),
+              imageUri: normalizeStoredImageUrl(p.imageUri || '', userPhone),
               unitPrices: normalizeUnitPrices(p.unitPrices !== undefined ? p.unitPrices : p.unit_prices)
             };
             mirroredProducts.push(entry);
