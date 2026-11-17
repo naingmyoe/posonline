@@ -1003,7 +1003,7 @@
         <div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100">
           <label class="cursor-pointer px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold inline-flex items-center space-x-1.5 transition">
             <svg class="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
-            <span>ပုံအသစ်ရွေးရန် (100-200KB ချုံ့မည်)</span>
+            <span>ပုံအသစ်ရွေးရန်</span>
             <input type="file" id="prodImgFileInput" accept="image/*" class="hidden" onchange="handleAdminProductImageSelect(event)" />
           </label>
           <div class="flex items-center space-x-2">
@@ -1045,9 +1045,10 @@
     function resolveCloudImageUrl(rawUri) {
       const s = String(rawUri || '').trim();
       if (!s) return '';
-      const diskMatch = s.match(/\/(?:api\/product-image|uploads\/product_images)\/([a-zA-Z0-9._-]+)(?:[?#].*)?$/i);
-      if (diskMatch && diskMatch[1]) {
-        return `${API_BASE}/api/product-image/${diskMatch[1]}`;
+      const diskMatch = s.match(/\/(?:api\/product-image|uploads\/product_images)\/(?:([a-zA-Z0-9._-]+)\/)?([a-zA-Z0-9._-]+)(?:[?#].*)?$/i);
+      if (diskMatch && diskMatch[2]) {
+        const folderPart = diskMatch[1] ? `${diskMatch[1]}/` : '';
+        return `${API_BASE}/api/product-image/${folderPart}${diskMatch[2]}`;
       }
       if (s.startsWith('/api/') || s.startsWith('/uploads/')) return `${API_BASE}${s}`;
       if (s.startsWith('http://') || s.startsWith('https://') || s.startsWith('data:image/')) return s;
@@ -1124,33 +1125,63 @@
       return breakdown;
     }
 
-    function renderMultiUnitBadgesHtml(unitPrices, baseUnit) {
-      const effBase = String(baseUnit || '').trim();
-      const basePart = effBase ? ` ${escapeHtml(effBase)}` : '';
+    function toggleMultiUnitExpand(rowId, btnEl) {
+      const row = document.getElementById(rowId);
+      if (!row) return;
+      const isHidden = row.classList.toggle('hidden');
+      if (btnEl) {
+        btnEl.setAttribute('aria-expanded', String(!isHidden));
+        const chev = btnEl.querySelector('[data-chevron]');
+        if (chev) {
+          chev.style.transform = isHidden ? 'rotate(0deg)' : 'rotate(180deg)';
+        }
+      }
+    }
+
+    function renderMultiUnitToggleButtonHtml(unitPrices, rowId) {
       if (!unitPrices || unitPrices.length === 0) {
         return `<span class="text-[11px] text-slate-400">-</span>`;
       }
       const previewNames = unitPrices.map(t => escapeHtml(t.unitName)).join(' · ');
       return `
-        <details class="group inline-block text-left">
-          <summary class="list-none cursor-pointer inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 border border-indigo-200/80 text-[11px] font-bold text-indigo-700 select-none transition">
-            <span>ယူနစ် ${unitPrices.length} ခု (${previewNames})</span>
-            <svg class="w-3.5 h-3.5 transition-transform duration-150 group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
-          </summary>
-          <ul class="mt-1.5 rounded-xl border border-slate-200 bg-white divide-y divide-slate-100 shadow-sm min-w-[230px]">
-            ${unitPrices.map(t => `
-              <li class="px-2.5 py-1.5 text-[11px] flex flex-col gap-0.5">
-                <div class="flex items-center justify-between gap-2">
-                  <span class="font-bold text-indigo-800">1 ${escapeHtml(t.unitName)} = ${t.conversionFactor}${basePart}</span>
-                  ${t.barcode ? `<span class="font-mono text-[10px] text-slate-400">[${escapeHtml(t.barcode)}]</span>` : ''}
-                </div>
-                <div class="text-slate-500">
-                  ဝယ် ${t.purchasePrice.toLocaleString()} · ရောင်း <b class="text-slate-900">${t.sellingPrice.toLocaleString()} Ks</b>
-                </div>
-              </li>
-            `).join('')}
-          </ul>
-        </details>
+        <button type="button" aria-expanded="false" onclick="toggleMultiUnitExpand('${rowId}', this)"
+          class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-[11px] font-bold text-indigo-700 transition whitespace-nowrap">
+          <span>ယူနစ် ${unitPrices.length} ခု (${previewNames})</span>
+          <svg data-chevron class="w-3.5 h-3.5 transition-transform duration-150" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+        </button>
+      `;
+    }
+
+    function renderMultiUnitExpandRowHtml(rowId, productName, unitPrices, baseUnit, editOnClick, colSpan = 7) {
+      if (!unitPrices || unitPrices.length === 0) return '';
+      const effBase = String(baseUnit || '').trim();
+      const basePart = effBase ? ` ${escapeHtml(effBase)}` : '';
+      return `
+        <tr id="${rowId}" class="hidden bg-indigo-50/40">
+          <td colspan="${colSpan}" class="px-4 py-3 border-t border-indigo-100">
+            <div class="rounded-xl border border-indigo-200/80 bg-white overflow-hidden shadow-sm">
+              <div class="px-3.5 py-2 bg-indigo-50/70 border-b border-indigo-100 flex items-center justify-between gap-2 text-[11px]">
+                <span class="font-bold text-indigo-900">Multi-Unit စျေးနှုန်းစာရင်း — ${escapeHtml(productName || '')} (${unitPrices.length} မျိုး)</span>
+                ${editOnClick ? `<button type="button" onclick="${editOnClick}" class="text-indigo-700 hover:underline font-bold">+ ပြင်/ထည့်မည်</button>` : ''}
+              </div>
+              <ul class="divide-y divide-slate-100">
+                ${unitPrices.map(t => `
+                  <li class="px-3.5 py-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <div class="flex items-center gap-2">
+                      <span class="px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-800 font-bold text-[11px]">${escapeHtml(t.unitName)}</span>
+                      <span class="text-slate-700 font-medium">1 ${escapeHtml(t.unitName)} = ${t.conversionFactor}${basePart}</span>
+                      ${t.barcode ? `<span class="font-mono text-[11px] text-slate-400">[${escapeHtml(t.barcode)}]</span>` : ''}
+                    </div>
+                    <div class="font-mono text-xs flex items-center gap-4">
+                      <span class="text-slate-500">ဝယ်: <b>${t.purchasePrice.toLocaleString()} Ks</b></span>
+                      <span class="text-emerald-700">ရောင်း: <b>${t.sellingPrice.toLocaleString()} Ks</b></span>
+                    </div>
+                  </li>
+                `).join('')}
+              </ul>
+            </div>
+          </td>
+        </tr>
       `;
     }
 
@@ -2339,6 +2370,8 @@
                   const tiers = normalizeProductUnitPrices(p);
                   const baseUnit = p.unit || p.unitName || '';
                   const imgClick = `openProductImageModalFromDetail('${escapeJs(currentDetailAdminPhone || '')}', '${escapeJs(p.name)}', ${Number(p.id) || 0})`;
+                  const unitEditClick = `openProductUnitModalFromDetail('${escapeJs(currentDetailAdminPhone || '')}', '${escapeJs(p.name)}', ${Number(p.id) || 0})`;
+                  const expandId = `detailMuRow_${idx}`;
                   return `
                     <tr class="hover:bg-slate-50">
                       <td class="py-2.5 px-3">
@@ -2350,7 +2383,7 @@
                       <td class="py-2.5 px-3 text-slate-600">${escapeHtml(p.groupName || '-')}</td>
                       <td class="py-2.5 px-3 font-mono text-slate-500">${escapeHtml(p.barcode || '-')}</td>
                       <td class="py-2.5 px-3 font-bold ${low ? 'text-rose-600' : 'text-emerald-700'}">${formatMultiUnitStockHtml(qty, baseUnit, tiers)}</td>
-                      <td class="py-2.5 px-3">${renderMultiUnitBadgesHtml(tiers, baseUnit)}</td>
+                      <td class="py-2.5 px-3">${renderMultiUnitToggleButtonHtml(tiers, expandId)}</td>
                       <td class="py-2.5 px-3 text-right font-mono">
                         <div class="text-slate-500">${(Number(p.purchasePrice) || 0).toLocaleString()} Ks</div>
                         <div class="font-bold text-slate-900">${(Number(p.sellingPrice) || 0).toLocaleString()} Ks</div>
@@ -2358,12 +2391,13 @@
                       <td class="py-2.5 px-3 text-right">
                         <div class="inline-flex items-center gap-1.5">
                           <button type="button" onclick="${imgClick}" class="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 font-bold text-[11px] whitespace-nowrap">ပုံ</button>
-                          <button type="button" onclick="openProductUnitModalFromDetail('${escapeJs(currentDetailAdminPhone || '')}', '${escapeJs(p.name)}', ${Number(p.id) || 0})" class="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-[11px] whitespace-nowrap">
+                          <button type="button" onclick="${unitEditClick}" class="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-[11px] whitespace-nowrap">
                             ယူနစ်ပြင်/ထည့်
                           </button>
                         </div>
                       </td>
                     </tr>
+                    ${renderMultiUnitExpandRowHtml(expandId, p.name, tiers, baseUnit, unitEditClick, 7)}
                   `;
                 }).join('')}
               </tbody>
@@ -2855,6 +2889,8 @@
           const tiers = normalizeProductUnitPrices(p);
           const baseUnit = p.unit || p.unitName || p.unit_name || '';
           const imgClick = `openProductImageModalFromStock(${idx})`;
+          const unitEditClick = `openProductUnitModalFromStock(${idx})`;
+          const expandId = `stockMuRow_${idx}`;
           return `
             <tr class="hover:bg-slate-50/80 transition ${p.hasAccount === false ? 'bg-rose-50/40' : ''}">
               <td class="py-3 px-4 pl-6">
@@ -2873,7 +2909,7 @@
               <td class="py-3 px-4 text-xs font-bold ${qty <= (p.alertQuantity || 0) ? 'text-rose-600' : 'text-emerald-700'}">
                 ${formatMultiUnitStockHtml(qty, baseUnit, tiers)}
               </td>
-              <td class="py-3 px-4 text-xs">${renderMultiUnitBadgesHtml(tiers, baseUnit)}</td>
+              <td class="py-3 px-4 text-xs">${renderMultiUnitToggleButtonHtml(tiers, expandId)}</td>
               <td class="py-3 px-4 text-xs font-mono">
                 <div class="text-slate-500">${(Number(p.purchasePrice || p.purchase_price) || 0).toLocaleString()} Ks</div>
                 <div class="font-bold text-slate-900">${(Number(p.sellingPrice || p.selling_price) || 0).toLocaleString()} Ks</div>
@@ -2881,12 +2917,13 @@
               <td class="py-3 px-4 pr-6 text-right">
                 <div class="inline-flex items-center gap-1.5">
                   <button type="button" onclick="${imgClick}" class="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-bold whitespace-nowrap">ပုံ</button>
-                  <button type="button" onclick="openProductUnitModalFromStock(${idx})" class="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold whitespace-nowrap">
+                  <button type="button" onclick="${unitEditClick}" class="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold whitespace-nowrap">
                     ယူနစ်ပြင်/ထည့်
                   </button>
                 </div>
               </td>
             </tr>
+            ${renderMultiUnitExpandRowHtml(expandId, p.name, tiers, baseUnit, unitEditClick, 7)}
           `;
         }).join('');
       } catch (err) {
