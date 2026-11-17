@@ -1,4 +1,4 @@
-/**a
+/**
  * UN POS Backend Server for VPS (Linux / Ubuntu / Debian / Windows)
  * Direct PostgreSQL Database Storage (NO .json files, NO in-memory database cache!)
  *
@@ -447,6 +447,18 @@ async function initDatabase() {
         PRIMARY KEY (user_phone, entity_type, entity_key)
       );
     `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS cloud_product_images (
+        image_id TEXT PRIMARY KEY,
+        user_phone TEXT NOT NULL,
+        mime_type TEXT NOT NULL DEFAULT 'image/jpeg',
+        image_data BYTEA NOT NULL,
+        size_bytes INTEGER NOT NULL DEFAULT 0,
+        updated_at BIGINT NOT NULL DEFAULT 0
+      );
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_cloud_product_images_user ON cloud_product_images (user_phone);`);
   });
 
   console.log('[PG] Connected to PostgreSQL and verified all POS tables directly.');
@@ -799,6 +811,30 @@ function normalizeUnitPrices(raw) {
   return out;
 }
 
+function parseCompressedImagePayload(userPhone, rawBase64, mimeType = 'image/jpeg') {
+  let cleanB64 = String(rawBase64 || '').trim();
+  let effectiveMime = String(mimeType || 'image/jpeg').trim().toLowerCase();
+  const dataUriMatch = cleanB64.match(/^data:([^;]+);base64,(.+)$/i);
+  if (dataUriMatch) {
+    effectiveMime = String(dataUriMatch[1] || effectiveMime).trim().toLowerCase();
+    cleanB64 = dataUriMatch[2];
+  }
+  const cleanMime = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'].includes(effectiveMime)
+    ? (effectiveMime === 'image/jpg' ? 'image/jpeg' : effectiveMime)
+    : 'image/jpeg';
+  const buffer = Buffer.from(cleanB64, 'base64');
+  if (!buffer || buffer.length === 0) {
+    throw new Error('ပုံဒေတာ မမှန်ကန်ပါ (Empty image)');
+  }
+  if (buffer.length > 350 * 1024) {
+    throw new Error('ပုံဖိုင် Size သည် 200KB ထက် ကျော်လွန်နေပါသည်');
+  }
+  const hash = crypto.createHash('sha256').update(String(userPhone || '')).update(':').update(buffer).digest('hex').slice(0, 24);
+  const ext = cleanMime === 'image/png' ? 'png' : (cleanMime === 'image/webp' ? 'webp' : 'jpg');
+  const imageId = `img_${hash}.${ext}`;
+  return { imageId, cleanMime, buffer, sizeBytes: buffer.length };
+}
+
 function mapProductRow(r) {
   const unitPrices = normalizeUnitPrices(r.unit_prices);
   return {
@@ -1113,6 +1149,30 @@ const server = http.createServer(async (req, res) => {
   }
 
   try {
+    // Serve compressed cloud product images (GET /api/product-image/:imageId)
+    if (method === 'GET' && pathname.startsWith('/api/product-image/')) {
+      const rawId = decodeURIComponent(pathname.slice('/api/product-image/'.length)).trim();
+      const cleanId = rawId.replace(/[^a-zA-Z0-9._-]/g, '');
+      if (!cleanId) {
+        return sendJson(res, 400, { success: false, message: 'Invalid image ID' });
+      }
+      const { rows } = await pool.query(
+        `SELECT mime_type, image_data FROM cloud_product_images WHERE image_id = $1 LIMIT 1`,
+        [cleanId]
+      );
+      if (rows.length === 0 || !rows[0].image_data) {
+        return sendJson(res, 404, { success: false, message: 'Image not found' });
+      }
+      res.writeHead(200, {
+        'Content-Type': rows[0].mime_type || 'image/jpeg',
+        'Content-Length': rows[0].image_data.length,
+        'Cache-Control': 'public, max-age=31536000, immutable',
+        'Access-Control-Allow-Origin': '*'
+      });
+      res.end(rows[0].image_data);
+      return;
+    }
+
     // 1. Healthcheck & Check Status (GET or POST /api/check-status)
     if (pathname === '/api/check-status') {
       let phoneNo = parsedUrl.query.phoneNo;
@@ -1502,6 +1562,7 @@ const server = http.createServer(async (req, res) => {
     const CLOUD_TABLES = [
       'cloud_voucher_items',
       'cloud_vouchers',
+      'cloud_product_images',
       'cloud_products',
       'cloud_customers',
       'cloud_suppliers',
@@ -2311,6 +2372,7 @@ const server = http.createServer(async (req, res) => {
         expensesRes,
         stockAdjRes,
         deletedRes,
+        imagesRes,
         settingsRes
       ] = await Promise.all([
         pool.query(`SELECT * FROM users ORDER BY created_at ASC`),
@@ -2326,6 +2388,7 @@ const server = http.createServer(async (req, res) => {
         pool.query(`SELECT * FROM cloud_expenses ORDER BY user_phone ASC, timestamp DESC`),
         pool.query(`SELECT * FROM cloud_stock_adjustments ORDER BY user_phone ASC, timestamp DESC`),
         pool.query(`SELECT * FROM cloud_deleted_entities ORDER BY user_phone ASC`),
+        pool.query(`SELECT image_id, user_phone, mime_type, image_data, size_bytes, updated_at FROM cloud_product_images ORDER BY user_phone ASC`),
         pool.query(`SELECT key, value, updated_at FROM app_settings WHERE key <> 'admin_password'`)
       ]);
 
@@ -2346,7 +2409,15 @@ const server = http.createServer(async (req, res) => {
           cloud_expense_categories: expCatsRes.rows,
           cloud_expenses: expensesRes.rows,
           cloud_stock_adjustments: stockAdjRes.rows,
-          cloud_deleted_entities: deletedRes.rows
+          cloud_deleted_entities: deletedRes.rows,
+          cloud_product_images: imagesRes.rows.map(img => ({
+            image_id: img.image_id,
+            user_phone: img.user_phone,
+            mime_type: img.mime_type || 'image/jpeg',
+            size_bytes: Number(img.size_bytes) || 0,
+            updated_at: Number(img.updated_at) || 0,
+            image_data_base64: Buffer.isBuffer(img.image_data) ? img.image_data.toString('base64') : ''
+          }))
         }
       };
 
@@ -2538,6 +2609,24 @@ const server = http.createServer(async (req, res) => {
           [up, de.entity_type, de.entity_key, Number(de.deleted_at) || 0]
         );
       }
+
+      for (const img of (cloudData.cloud_product_images || [])) {
+        const up = pickPhone(img);
+        if (!up || !img.image_id || !img.image_data_base64) continue;
+        const buf = Buffer.from(String(img.image_data_base64), 'base64');
+        if (buf.length === 0) continue;
+        await client.query(
+          `INSERT INTO cloud_product_images (image_id, user_phone, mime_type, image_data, size_bytes, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6)
+           ON CONFLICT (image_id) DO UPDATE SET
+             user_phone = EXCLUDED.user_phone,
+             mime_type = EXCLUDED.mime_type,
+             image_data = EXCLUDED.image_data,
+             size_bytes = EXCLUDED.size_bytes,
+             updated_at = EXCLUDED.updated_at`,
+          [img.image_id, up, img.mime_type || 'image/jpeg', buf, buf.length, Number(img.updated_at) || Date.now()]
+        );
+      }
     }
 
     // Admin: Restore FULL Database Backup JSON (POST /api/admin/restore/all)
@@ -2654,7 +2743,8 @@ const server = http.createServer(async (req, res) => {
         expCatsRes,
         expensesRes,
         stockAdjRes,
-        deletedRes
+        deletedRes,
+        imagesRes
       ] = await Promise.all([
         pool.query(`SELECT * FROM users WHERE role = 'CASHIER' AND admin_phone = $1 ORDER BY created_at ASC`, [ownerPhone]),
         pool.query(`SELECT * FROM cloud_products WHERE user_phone = $1 ORDER BY name ASC`, [ownerPhone]),
@@ -2668,7 +2758,8 @@ const server = http.createServer(async (req, res) => {
         pool.query(`SELECT * FROM cloud_expense_categories WHERE user_phone = $1 ORDER BY name ASC`, [ownerPhone]),
         pool.query(`SELECT * FROM cloud_expenses WHERE user_phone = $1 ORDER BY timestamp DESC`, [ownerPhone]),
         pool.query(`SELECT * FROM cloud_stock_adjustments WHERE user_phone = $1 ORDER BY timestamp DESC`, [ownerPhone]),
-        pool.query(`SELECT * FROM cloud_deleted_entities WHERE user_phone = $1`, [ownerPhone])
+        pool.query(`SELECT * FROM cloud_deleted_entities WHERE user_phone = $1`, [ownerPhone]),
+        pool.query(`SELECT image_id, user_phone, mime_type, image_data, size_bytes, updated_at FROM cloud_product_images WHERE user_phone = $1`, [ownerPhone])
       ]);
 
       const payload = {
@@ -2689,7 +2780,15 @@ const server = http.createServer(async (req, res) => {
           cloud_expense_categories: expCatsRes.rows,
           cloud_expenses: expensesRes.rows,
           cloud_stock_adjustments: stockAdjRes.rows,
-          cloud_deleted_entities: deletedRes.rows
+          cloud_deleted_entities: deletedRes.rows,
+          cloud_product_images: imagesRes.rows.map(img => ({
+            image_id: img.image_id,
+            user_phone: img.user_phone,
+            mime_type: img.mime_type || 'image/jpeg',
+            size_bytes: Number(img.size_bytes) || 0,
+            updated_at: Number(img.updated_at) || 0,
+            image_data_base64: Buffer.isBuffer(img.image_data) ? img.image_data.toString('base64') : ''
+          }))
         }
       };
 
@@ -3072,6 +3171,83 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    // Admin: Update or remove compressed product photo (POST /api/admin/product/image)
+    if (pathname === '/api/admin/product/image' && method === 'POST') {
+      const adminAuth = await requireAdminAuth(req, res);
+      if (!adminAuth) return;
+
+      const body = await parseJsonBody(req);
+      const rawPhone = String(body.userPhone || body.phoneNo || '').trim();
+      const productId = body.productId !== undefined && body.productId !== null && Number(body.productId) > 0 ? Number(body.productId) : null;
+      const productName = String(body.productName || body.name || '').trim();
+
+      if (!rawPhone || (!productId && !productName)) {
+        return sendJson(res, 400, { success: false, message: 'userPhone နှင့် productId သို့မဟုတ် productName လိုအပ်ပါသည်' });
+      }
+
+      const targetPhone = await resolveTenantPhone(pool, rawPhone);
+      const removeFlag = body.remove === true || !String(body.imageBase64 || '').trim();
+      const now = Date.now();
+
+      let parsedImg = null;
+      if (!removeFlag) {
+        try {
+          parsedImg = parseCompressedImagePayload(targetPhone, body.imageBase64, body.mimeType || 'image/jpeg');
+        } catch (imgErr) {
+          return sendJson(res, 400, { success: false, message: imgErr.message });
+        }
+      }
+
+      const updatedRow = await withTransaction(async (client) => {
+        const { rows } = await client.query(
+          `SELECT * FROM cloud_products
+           WHERE user_phone = $1
+             AND (($2::bigint IS NOT NULL AND product_id = $2) OR ($3 <> '' AND LOWER(TRIM(name)) = LOWER(TRIM($3))))
+           ORDER BY CASE WHEN ($2::bigint IS NOT NULL AND product_id = $2) THEN 0 ELSE 1 END
+           LIMIT 1`,
+          [targetPhone, productId, productName]
+        );
+        const target = rows[0];
+        if (!target) return null;
+
+        let nextImageUri = '';
+        if (!removeFlag && parsedImg) {
+          await client.query(
+            `INSERT INTO cloud_product_images (image_id, user_phone, mime_type, image_data, size_bytes, updated_at)
+             VALUES ($1,$2,$3,$4,$5,$6)
+             ON CONFLICT (image_id) DO UPDATE SET
+               mime_type = EXCLUDED.mime_type,
+               image_data = EXCLUDED.image_data,
+               size_bytes = EXCLUDED.size_bytes,
+               updated_at = EXCLUDED.updated_at`,
+            [parsedImg.imageId, targetPhone, parsedImg.cleanMime, parsedImg.buffer, parsedImg.sizeBytes, now]
+          );
+          nextImageUri = `/api/product-image/${parsedImg.imageId}`;
+        }
+
+        const { rows: savedRows } = await client.query(
+          `UPDATE cloud_products
+           SET image_uri = $1, updated_at = $2
+           WHERE user_phone = $3 AND product_key = $4
+           RETURNING *`,
+          [nextImageUri, now, targetPhone, target.product_key]
+        );
+        return savedRows[0];
+      });
+
+      if (!updatedRow) {
+        return sendJson(res, 404, { success: false, message: 'ကုန်ပစ္စည်း ရှာမတွေ့ပါ (Product not found)' });
+      }
+
+      return sendJson(res, 200, {
+        success: true,
+        imageUri: updatedRow.image_uri || '',
+        sizeBytes: parsedImg ? parsedImg.sizeBytes : 0,
+        message: removeFlag ? 'ကုန်စည်ဓာတ်ပုံကို ဖျက်လိုက်ပါပြီ' : 'ကုန်စည်ဓာတ်ပုံကို Cloud ပေါ်သို့ သိမ်းဆည်းပြီးပါပြီ',
+        product: mapProductRow(updatedRow)
+      });
+    }
+
     // 4. Change Password (POST /api/change-password)
     if (pathname === '/api/change-password' && method === 'POST') {
       const body = await parseJsonBody(req);
@@ -3172,6 +3348,40 @@ const server = http.createServer(async (req, res) => {
         success: true,
         message: `${count} vouchers synced successfully`,
         syncedCount: count
+      });
+    }
+
+    // 6b. Upload Compressed Product Image (POST /api/sync/upload-product-image)
+    if (pathname === '/api/sync/upload-product-image' && method === 'POST') {
+      const body = await parseJsonBody(req);
+      const auth = await authenticateSyncOrUserRequest(req, res, body?.userPhone);
+      if (!auth) return;
+      const userPhone = auth.tenantPhone;
+
+      let parsedImg;
+      try {
+        parsedImg = parseCompressedImagePayload(userPhone, body?.imageBase64, body?.mimeType || 'image/jpeg');
+      } catch (imgErr) {
+        return sendJson(res, 400, { success: false, message: imgErr.message });
+      }
+
+      const now = Date.now();
+      await pool.query(
+        `INSERT INTO cloud_product_images (image_id, user_phone, mime_type, image_data, size_bytes, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6)
+         ON CONFLICT (image_id) DO UPDATE SET
+           mime_type = EXCLUDED.mime_type,
+           image_data = EXCLUDED.image_data,
+           size_bytes = EXCLUDED.size_bytes,
+           updated_at = EXCLUDED.updated_at`,
+        [parsedImg.imageId, userPhone, parsedImg.cleanMime, parsedImg.buffer, parsedImg.sizeBytes, now]
+      );
+
+      return sendJson(res, 200, {
+        success: true,
+        imageId: parsedImg.imageId,
+        imageUri: `/api/product-image/${parsedImg.imageId}`,
+        sizeBytes: parsedImg.sizeBytes
       });
     }
 
