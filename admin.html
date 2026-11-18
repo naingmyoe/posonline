@@ -390,6 +390,9 @@
               <button onclick="switchDetailTab('cashiers')" data-dtab="cashiers" class="detail-tab px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap bg-indigo-600 text-white shadow-sm">
                 Cashier အကောင့်များ (<span id="dtabCountCashiers">0</span>)
               </button>
+              <button id="dtabBtnManagers" onclick="switchDetailTab('managers')" data-dtab="managers" class="detail-tab px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap bg-white text-slate-600 border border-slate-200 hover:bg-slate-100">
+                Branch Managers (<span id="dtabCountManagers">0</span>)
+              </button>
               <button onclick="switchDetailTab('products')" data-dtab="products" class="detail-tab px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap bg-white text-slate-600 border border-slate-200 hover:bg-slate-100">
                 ကုန်ပစ္စည်း (<span id="dtabCountProducts">0</span>)
               </button>
@@ -716,7 +719,7 @@
             <input type="password" id="editPassword" placeholder="မပြောင်းလိုပါက ဗလာထားပါ" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-none">
           </div>
           <div id="editJoinCodeGroup" class="hidden">
-            <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Cashier Join Code</label>
+            <label id="editJoinCodeLabel" class="block text-xs font-semibold text-slate-700 uppercase mb-1">Join Code</label>
             <input type="text" id="editJoinCode" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-none">
           </div>
         </div>
@@ -736,7 +739,7 @@
           </div>
         </div>
         <div id="editCashierExpiryNote" class="hidden text-[11px] text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-2">
-          Cashier အကောင့်များ၏ သက်တမ်းသည် ချိတ်ဆက်ထားသော Main Admin ၏ သက်တမ်းအတိုင်း အလိုအလျောက် လိုက်နာပါသည်။
+          Cashier နှင့် Branch Manager အကောင့်များ၏ သက်တမ်းသည် ချိတ်ဆက်ထားသော Main Admin ၏ သက်တမ်းအတိုင်း အလိုအလျောက် လိုက်နာပါသည်။
         </div>
         <div class="pt-2 flex items-center justify-between border-t border-slate-100">
           <button type="button" onclick="handleResetDevicesFromModal()" class="text-xs font-semibold text-amber-600 hover:text-amber-700 hover:underline flex items-center space-x-1">
@@ -1186,7 +1189,7 @@
     }
 
     function getMainAdminUsers() {
-      return allUsers.filter(u => (u.role || 'ADMIN').toUpperCase() !== 'CASHIER');
+      return allUsers.filter(u => (u.role || 'ADMIN').toUpperCase() === 'ADMIN');
     }
 
     function forceShowLoginOverlay(msg = '') {
@@ -1394,12 +1397,15 @@
         if (statsRes.ok) {
           const stats = await statsRes.json();
           const mainAdmins = getMainAdminUsers();
+          const managersTotal = stats.totalManagers !== undefined
+            ? stats.totalManagers
+            : allUsers.filter(u => (u.role || '').toUpperCase() === 'MANAGER').length;
           const cashiersTotal = stats.totalCashiers !== undefined
             ? stats.totalCashiers
             : allUsers.filter(u => (u.role || 'ADMIN').toUpperCase() === 'CASHIER').length;
 
           document.getElementById('statTotalUsers').textContent = stats.totalMainAdmins !== undefined ? stats.totalMainAdmins : mainAdmins.length;
-          document.getElementById('statTotalUsersSub').textContent = `Cashier အကောင့် ${cashiersTotal} ခု ချိတ်ဆက်ထားသည်`;
+          document.getElementById('statTotalUsersSub').textContent = `Branch Manager ${managersTotal} · Cashier ${cashiersTotal} ခု ချိတ်ဆက်ထားသည်`;
           document.getElementById('statActiveUsers').textContent = stats.activeUsers || 0;
           document.getElementById('statExpiredUsers').textContent = stats.expiredUsers || 0;
           document.getElementById('statTotalVouchers').textContent = stats.totalVouchers || 0;
@@ -1496,6 +1502,8 @@
           const isExpired = u.status === 'expired' || (u.expires_at && now > u.expires_at);
           const devCount = u.deviceCount || 0;
           const maxDevs = u.maxDevices || 5;
+          const linkedManagers = allUsers.filter(m => (m.role || '').toUpperCase() === 'MANAGER' && m.admin_phone === u.phone_no).length;
+          const mgrCount = Number(u.managersCount) || linkedManagers || 0;
           const linkedCashiers = allUsers.filter(c => (c.role || '').toUpperCase() === 'CASHIER' && c.admin_phone === u.phone_no).length;
           const cashierCount = Number(u.cashiersCount) || linkedCashiers || 0;
           const productsCount = Number(u.productsCount) || 0;
@@ -1529,6 +1537,7 @@
               </div>
 
               <div class="flex flex-wrap items-center gap-1.5 text-[11px]">
+                ${mgrCount > 0 ? `<span class="px-2 py-0.5 rounded-md font-bold bg-purple-50 text-purple-700 border border-purple-200/80 whitespace-nowrap">Managers: ${mgrCount}</span>` : ''}
                 <span class="px-2 py-0.5 rounded-md font-bold bg-indigo-50 text-indigo-700 border border-indigo-200/80 whitespace-nowrap">Cashiers: ${cashierCount}</span>
                 <span class="px-2 py-0.5 rounded-md font-semibold bg-slate-100 text-slate-700 whitespace-nowrap">${devCount}/${maxDevs} Devices</span>
                 ${modelLabel ? `<span class="px-2 py-0.5 rounded-md font-semibold bg-sky-50 text-sky-700 border border-sky-200 truncate max-w-[180px]">📱 ${escapeHtml(modelLabel)}</span>` : ''}
@@ -1568,6 +1577,8 @@
         const isExpired = u.status === 'expired' || (u.expires_at && now > u.expires_at);
         const devCount = u.deviceCount || 0;
         const maxDevs = u.maxDevices || 5;
+        const linkedManagers = allUsers.filter(m => (m.role || '').toUpperCase() === 'MANAGER' && m.admin_phone === u.phone_no).length;
+        const mgrCount = Number(u.managersCount) || linkedManagers || 0;
         const linkedCashiers = allUsers.filter(c => (c.role || '').toUpperCase() === 'CASHIER' && c.admin_phone === u.phone_no).length;
         const cashierCount = Number(u.cashiersCount) || linkedCashiers || 0;
         const productsCount = Number(u.productsCount) || 0;
@@ -1602,8 +1613,9 @@
                   ${escapeHtml((u.business_name || u.username || 'U').charAt(0).toUpperCase())}
                 </div>
                 <div class="min-w-0">
-                  <div class="flex items-center space-x-2">
+                  <div class="flex items-center flex-wrap gap-1.5">
                     <span class="font-bold text-slate-900 text-sm group-hover:text-indigo-700 transition whitespace-nowrap">${escapeHtml(u.business_name || 'UN POS Store')}</span>
+                    ${mgrCount > 0 ? `<span class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200/80 whitespace-nowrap">Managers: ${mgrCount}</span>` : ''}
                     <span class="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200/80 whitespace-nowrap">
                       Cashiers: ${cashierCount}
                     </span>
@@ -1750,11 +1762,17 @@
       }
     }
 
-    // Delete Confirmation Modal (handles both Main Admin cascade delete and Cashier delete)
+    // Delete Confirmation Modal (handles Main Admin, Branch Manager, and Cashier delete)
     function openDeleteConfirmModal(phoneNo, explicitUserObj = null) {
-      const target = explicitUserObj || allUsers.find(u => u.phone_no === phoneNo) || (currentAdminDetail && currentAdminDetail.cashiers?.find(c => c.phone_no === phoneNo)) || (currentAdminDetail && currentAdminDetail.user?.phone_no === phoneNo ? currentAdminDetail.user : null);
-      const isCashier = target && (target.role || 'ADMIN').toUpperCase() === 'CASHIER';
-      pendingDeleteTarget = { phoneNo, isCashier };
+      const target = explicitUserObj
+        || allUsers.find(u => u.phone_no === phoneNo)
+        || (currentAdminDetail && currentAdminDetail.cashiers?.find(c => c.phone_no === phoneNo))
+        || (currentAdminDetail && currentAdminDetail.managers?.find(m => m.phone_no === phoneNo))
+        || (currentAdminDetail && currentAdminDetail.user?.phone_no === phoneNo ? currentAdminDetail.user : null);
+      const roleUpper = (target?.role || 'ADMIN').toUpperCase();
+      const isCashier = roleUpper === 'CASHIER';
+      const isManager = roleUpper === 'MANAGER';
+      pendingDeleteTarget = { phoneNo, role: roleUpper };
 
       const titleEl = document.getElementById('deleteConfirmTitle');
       const msgEl = document.getElementById('deleteConfirmMessage');
@@ -1767,11 +1785,25 @@
         warnEl.className = 'bg-amber-50 border border-amber-200 rounded-xl p-3.5 text-xs text-amber-800 space-y-1';
         warnEl.innerHTML = `
           <div>• ဤ Cashier အကောင့်သာ Database ထဲမှ ပျက်သွားမည်ဖြစ်ပါသည်။</div>
-          <div>• Main Admin အကောင့်နှင့် Cloud Business Data များကို ထိခိုက်မည်မဟုတ်ပါ။</div>
+          <div>• ပင်မဆိုင် / ဆိုင်ခွဲ Cloud Business Data များကို ထိခိုက်မည်မဟုတ်ပါ။</div>
         `;
         btnEl.textContent = 'Cashier ကို ဖျက်မည်';
+      } else if (isManager) {
+        const branchName = target.business_name || target.username || phoneNo;
+        const branchCashierCnt = Number(target.cashiersCount) || 0;
+        titleEl.textContent = 'Branch Manager နှင့် ဆိုင်ခွဲ Data ဖျက်ရန်';
+        msgEl.innerHTML = `Branch Manager <b>${escapeHtml(branchName)}</b> (<span class="font-mono">${escapeHtml(phoneNo)}</span>) ကို ဖျက်ပစ်မှာ သေချာပါသလား?`;
+        warnEl.className = 'bg-rose-50 border border-rose-200 rounded-xl p-3.5 text-xs text-rose-800 space-y-1.5 font-medium';
+        warnEl.innerHTML = `
+          <div class="font-bold text-rose-900">သတိပြုရန် - အောက်ပါ ဆိုင်ခွဲ Data များ အပြီးတိုင် ပျက်သွားပါမည်:</div>
+          <div>• Branch Manager အကောင့် (<span class="font-mono">${escapeHtml(phoneNo)}</span>)</div>
+          <div>• ဤဆိုင်ခွဲအောက်ရှိ Cashier အကောင့်များ (${branchCashierCnt} ခု)</div>
+          <div>• ဤဆိုင်ခွဲ၏ သီးသန့် Stock နှင့် Cloud Data များ (Main Admin Data ကို မထိခိုက်ပါ)</div>
+        `;
+        btnEl.textContent = 'Manager + ဆိုင်ခွဲ Data ဖျက်မည်';
       } else {
         const cashierCnt = target ? (Number(target.cashiersCount) || (currentAdminDetail?.user?.phone_no === phoneNo ? currentAdminDetail.cashiers.length : 0)) : 0;
+        const managerCnt = target ? (Number(target.managersCount) || (currentAdminDetail?.user?.phone_no === phoneNo ? (currentAdminDetail.managers || []).length : 0)) : 0;
         const shopName = target ? (target.business_name || target.username || phoneNo) : phoneNo;
         titleEl.textContent = 'Main Admin နှင့် Data အားလုံး ဖျက်ရန်';
         msgEl.innerHTML = `Main Admin <b>${escapeHtml(shopName)}</b> (<span class="font-mono">${escapeHtml(phoneNo)}</span>) ကို Database မှ လုံးဝ ဖျက်ပစ်မှာ သေချာပါသလား?`;
@@ -1779,10 +1811,10 @@
         warnEl.innerHTML = `
           <div class="font-bold text-rose-900">သတိပြုရန် - PostgreSQL Database ထဲမှ အောက်ပါအချက်အလက်များ ချက်ချင်း အပြီးတိုင် ပျက်သွားပါမည်:</div>
           <div>• Main Admin အကောင့် (<span class="font-mono">${escapeHtml(phoneNo)}</span>)</div>
-          <div>• ချိတ်ဆက်ထားသော Cashier အကောင့်များအားလုံး (${cashierCnt} ခု)</div>
+          <div>• ချိတ်ဆက်ထားသော Branch Manager များ (${managerCnt} ခု) နှင့် Cashier အကောင့်များ (${cashierCnt} ခု)</div>
           <div>• Cloud Data များအားလုံး (ကုန်ပစ္စည်း၊ ဘောက်ချာ၊ Customer၊ Supplier၊ အသုံးစရိတ်၊ Stock မှတ်တမ်းများ)</div>
         `;
-        btnEl.textContent = 'Admin + Cashiers + Data အားလုံးဖျက်မည်';
+        btnEl.textContent = 'Admin + Managers + Data အားလုံးဖျက်မည်';
       }
 
       document.getElementById('deleteConfirmModal').classList.remove('hidden');
@@ -1797,7 +1829,7 @@
 
     async function executeConfirmedDelete() {
       if (!pendingDeleteTarget) return;
-      const { phoneNo, isCashier } = pendingDeleteTarget;
+      const { phoneNo } = pendingDeleteTarget;
       const btn = document.getElementById('confirmDeleteBtn');
       const prevText = btn.textContent;
       btn.disabled = true;
@@ -1814,9 +1846,9 @@
           showToast(data.message || 'ဖျက်ပြီးပါပြီ');
           closeDeleteConfirmModal();
           await fetchUsersAndStats();
-          if (isCashier && currentView === 'adminDetail' && currentDetailAdminPhone) {
+          if (currentView === 'adminDetail' && currentDetailAdminPhone && currentDetailAdminPhone !== phoneNo) {
             await loadAdminDetail(currentDetailAdminPhone, true);
-          } else if (!isCashier && currentView === 'adminDetail' && currentDetailAdminPhone === phoneNo) {
+          } else if (currentView === 'adminDetail' && currentDetailAdminPhone === phoneNo) {
             closeAdminDetailView();
           }
         } else {
@@ -1830,18 +1862,22 @@
       }
     }
 
-    // Edit Modal (supports both Main Admin and Cashier)
+    // Edit Modal (supports Main Admin, Branch Manager, and Cashier)
     function openEditModal(phoneNo, explicitUserObj = null) {
       const user = explicitUserObj
         || allUsers.find(u => u.phone_no === phoneNo)
         || (currentAdminDetail && currentAdminDetail.cashiers?.find(c => c.phone_no === phoneNo))
+        || (currentAdminDetail && currentAdminDetail.managers?.find(m => m.phone_no === phoneNo))
         || (currentAdminDetail && currentAdminDetail.user?.phone_no === phoneNo ? currentAdminDetail.user : null);
       if (!user) return;
 
-      const isCashier = (user.role || 'ADMIN').toUpperCase() === 'CASHIER';
+      const roleUpper = (user.role || 'ADMIN').toUpperCase();
+      const isCashier = roleUpper === 'CASHIER';
+      const isManager = roleUpper === 'MANAGER';
+      const isSubAccount = isCashier || isManager;
 
       document.getElementById('editPhoneNo').value = user.phone_no;
-      document.getElementById('editRole').value = user.role || 'ADMIN';
+      document.getElementById('editRole').value = roleUpper;
       document.getElementById('editAdminPhone').value = user.admin_phone || '';
       document.getElementById('editPhoneDisplay').value = user.phone_no;
       document.getElementById('editBusinessName').value = user.business_name || '';
@@ -1851,13 +1887,21 @@
       document.getElementById('editExpiresAt').value = formatForInput(user.expires_at);
       document.getElementById('editJoinCode').value = user.join_code || '';
 
-      document.getElementById('editModalTitle').textContent = isCashier ? 'Cashier အကောင့် ပြင်ဆင်ခြင်း' : 'Main Admin အကောင့် ပြင်ဆင်ခြင်း';
-      document.getElementById('editRoleBadge').textContent = isCashier ? 'CASHIER' : 'MAIN ADMIN';
-      document.getElementById('editUsernameLabel').textContent = isCashier ? 'Cashier အမည် (Name)' : 'အမည် (Owner Name)';
+      document.getElementById('editModalTitle').textContent = isCashier
+        ? 'Cashier အကောင့် ပြင်ဆင်ခြင်း'
+        : (isManager ? 'Branch Manager အကောင့် ပြင်ဆင်ခြင်း' : 'Main Admin အကောင့် ပြင်ဆင်ခြင်း');
+      document.getElementById('editRoleBadge').textContent = isCashier ? 'CASHIER' : (isManager ? 'BRANCH MANAGER' : 'MAIN ADMIN');
+      document.getElementById('editUsernameLabel').textContent = isCashier
+        ? 'Cashier အမည် (Name)'
+        : (isManager ? 'Manager အမည် (Name)' : 'အမည် (Owner Name)');
+      const joinLbl = document.getElementById('editJoinCodeLabel');
+      if (joinLbl) {
+        joinLbl.textContent = isManager ? 'Manager Join Code' : 'Cashier Join Code';
+      }
 
-      document.getElementById('editJoinCodeGroup').classList.toggle('hidden', !isCashier);
-      document.getElementById('editExpiryGroup').classList.toggle('hidden', isCashier);
-      document.getElementById('editCashierExpiryNote').classList.toggle('hidden', !isCashier);
+      document.getElementById('editJoinCodeGroup').classList.toggle('hidden', !isSubAccount);
+      document.getElementById('editExpiryGroup').classList.toggle('hidden', isSubAccount);
+      document.getElementById('editCashierExpiryNote').classList.toggle('hidden', !isSubAccount);
 
       document.getElementById('editModal').classList.remove('hidden');
       document.getElementById('editModal').classList.add('flex');
@@ -1871,7 +1915,7 @@
     async function handleSaveEditUser(e) {
       e.preventDefault();
       const phoneNo = document.getElementById('editPhoneNo').value;
-      const role = document.getElementById('editRole').value || 'ADMIN';
+      const role = (document.getElementById('editRole').value || 'ADMIN').toUpperCase();
       const adminPhone = document.getElementById('editAdminPhone').value || '';
       const businessName = document.getElementById('editBusinessName').value;
       const username = document.getElementById('editUsername').value;
@@ -1880,7 +1924,7 @@
       const expiresAtInput = document.getElementById('editExpiresAt').value;
       const joinCode = document.getElementById('editJoinCode').value.trim();
 
-      const expiresAt = (role.toUpperCase() !== 'CASHIER' && expiresAtInput)
+      const expiresAt = (role === 'ADMIN' && expiresAtInput)
         ? new Date(expiresAtInput).getTime()
         : undefined;
 
@@ -1893,7 +1937,7 @@
           username,
           status,
           expiresAt,
-          joinCode: role.toUpperCase() === 'CASHIER' ? joinCode : undefined
+          joinCode: (role === 'CASHIER' || role === 'MANAGER') ? joinCode : undefined
         };
         if (password) payload.password = password;
 
@@ -2020,7 +2064,7 @@
         }
 
         currentAdminDetail = data;
-        renderAdminDetailHero(data.user, data.cashiers || []);
+        renderAdminDetailHero(data.user, data.cashiers || [], data.managers || []);
         renderAdminDetailSummary(data.summary || {}, (data.cashiers || []).length);
         updateDetailTabBadges(data);
         switchDetailTab(currentDetailTab);
@@ -2033,12 +2077,13 @@
       }
     }
 
-    function renderAdminDetailHero(u, cashiers) {
+    function renderAdminDetailHero(u, cashiers, managers = []) {
       const hero = document.getElementById('adminDetailHero');
       const safePhone = escapeJs(u.phone_no);
       const devCount = u.deviceCount || 0;
       const maxDevs = u.maxDevices || 5;
       const isExpired = u.isExpired;
+      const isManager = (u.role || 'ADMIN').toUpperCase() === 'MANAGER';
       const devDetails = Array.isArray(u.deviceDetails) ? u.deviceDetails : [];
 
       let statusPill = '';
@@ -2051,21 +2096,23 @@
       }
 
       hero.innerHTML = `
-        <div class="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 px-6 py-6 text-white">
+        <div class="bg-gradient-to-r ${isManager ? 'from-slate-900 via-purple-950 to-slate-900' : 'from-slate-900 via-indigo-950 to-slate-900'} px-6 py-6 text-white">
           <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
             <div class="flex items-start space-x-4">
-              <div class="w-14 h-14 rounded-2xl bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center font-black text-2xl text-white shadow-lg shadow-indigo-500/30 shrink-0">
+              <div class="w-14 h-14 rounded-2xl bg-gradient-to-tr ${isManager ? 'from-purple-500 to-teal-500' : 'from-indigo-500 to-purple-500'} flex items-center justify-center font-black text-2xl text-white shadow-lg shadow-indigo-500/30 shrink-0">
                 ${escapeHtml((u.business_name || u.username || 'A').charAt(0).toUpperCase())}
               </div>
               <div class="space-y-1">
                 <div class="flex flex-wrap items-center gap-2">
                   <h2 class="text-xl font-extrabold tracking-tight">${escapeHtml(u.business_name || 'UN POS Store')}</h2>
-                  <span class="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-indigo-500/30 text-indigo-200 border border-indigo-400/30">MAIN ADMIN</span>
+                  <span class="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider ${isManager ? 'bg-purple-500/30 text-purple-200 border border-purple-400/30' : 'bg-indigo-500/30 text-indigo-200 border border-indigo-400/30'}">${isManager ? 'BRANCH MANAGER' : 'MAIN ADMIN'}</span>
                   ${statusPill}
                 </div>
                 <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-300">
                   <span class="font-mono font-semibold text-white">${escapeHtml(u.phone_no)}</span>
-                  <span>Owner: <b class="text-white">${escapeHtml(u.username)}</b></span>
+                  <span>${isManager ? 'Manager' : 'Owner'}: <b class="text-white">${escapeHtml(u.username)}</b></span>
+                  ${isManager && u.admin_phone ? `<button type="button" onclick="openAdminDetail('${escapeJs(u.admin_phone)}')" class="underline text-purple-200 hover:text-white font-mono">Main Admin: ${escapeHtml(u.admin_phone)} ↗</button>` : ''}
+                  ${u.join_code && isManager ? `<span class="font-mono text-amber-200">Code: ${escapeHtml(u.join_code)}</span>` : ''}
                   ${u.business_type ? `<span>Type: ${escapeHtml(u.business_type)}</span>` : ''}
                   ${u.address ? `<span>Address: ${escapeHtml(u.address)}</span>` : ''}
                 </div>
@@ -2083,7 +2130,7 @@
               </button>
               <button onclick="openEditModal('${safePhone}')" class="inline-flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold border border-white/15 transition">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
-                <span>Admin ပြင်ဆင်မည်</span>
+                <span>${isManager ? 'Manager ပြင်ဆင်မည်' : 'Admin ပြင်ဆင်မည်'}</span>
               </button>
               <button onclick="handleToggleStatus('${safePhone}', '${isExpired ? 'on' : (u.status === 'on' ? 'off' : 'on')}')" class="inline-flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 text-xs font-bold border border-emerald-400/30 transition">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
@@ -2091,7 +2138,7 @@
               </button>
               <button onclick="openDeleteConfirmModal('${safePhone}')" class="inline-flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-lg shadow-rose-900/40 transition">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                <span>Admin + Data အားလုံးဖျက်မည်</span>
+                <span>${isManager ? 'Manager + ဆိုင်ခွဲ Data ဖျက်မည်' : 'Admin + Data အားလုံးဖျက်မည်'}</span>
               </button>
             </div>
           </div>
@@ -2117,13 +2164,17 @@
             <div class="text-[11px] text-slate-400">Created: ${formatDate(u.created_at)}</div>
           </div>
           <div>
-            <span class="text-slate-400 font-semibold uppercase tracking-wider block mb-1">အမြန်သက်တမ်းတိုး</span>
-            <div class="flex items-center space-x-1.5">
-              <button onclick="handleQuickRenew('${safePhone}', 7)" class="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold border border-slate-200 transition">+7d</button>
-              <button onclick="handleQuickRenew('${safePhone}', 30)" class="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold border border-indigo-200 transition">+30d</button>
-              <button onclick="handleQuickRenew('${safePhone}', 90)" class="px-2.5 py-1 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold border border-purple-200 transition">+90d</button>
-              <button onclick="handleQuickRenew('${safePhone}', 365)" class="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold border border-emerald-200 transition">+1y</button>
-            </div>
+            <span class="text-slate-400 font-semibold uppercase tracking-wider block mb-1">${isManager ? 'Main Admin ကြီးကြပ်မှု' : 'အမြန်သက်တမ်းတိုး'}</span>
+            ${isManager ? `
+              <div class="text-xs font-semibold text-purple-700">Main Admin (${escapeHtml(u.admin_phone || '-')}) ၏ သက်တမ်းအတိုင်း လိုက်နာသည်</div>
+            ` : `
+              <div class="flex items-center space-x-1.5">
+                <button onclick="handleQuickRenew('${safePhone}', 7)" class="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold border border-slate-200 transition">+7d</button>
+                <button onclick="handleQuickRenew('${safePhone}', 30)" class="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold border border-indigo-200 transition">+30d</button>
+                <button onclick="handleQuickRenew('${safePhone}', 90)" class="px-2.5 py-1 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold border border-purple-200 transition">+90d</button>
+                <button onclick="handleQuickRenew('${safePhone}', 365)" class="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold border border-emerald-200 transition">+1y</button>
+              </div>
+            `}
           </div>
         </div>
 
@@ -2142,6 +2193,7 @@
           <div class="flex items-center space-x-2">
             <button onclick="handleResetDevices('${safePhone}')" class="text-amber-600 hover:underline font-semibold">Reset All Devices</button>
             <span class="text-slate-300">|</span>
+            ${!isManager ? `<span class="font-bold text-purple-700">${managers.length} Managers</span><span class="text-slate-300">·</span>` : ''}
             <span class="font-bold text-indigo-700">${cashiers.length} Cashiers</span>
           </div>
         </div>
@@ -2207,7 +2259,18 @@
     function updateDetailTabBadges(detail) {
       const d = detail.data || {};
       const cashiers = detail.cashiers || [];
+      const managers = detail.managers || [];
+      const isManager = (detail.user?.role || 'ADMIN').toUpperCase() === 'MANAGER';
+      const mgrTabBtn = document.getElementById('dtabBtnManagers');
+      if (mgrTabBtn) {
+        mgrTabBtn.classList.toggle('hidden', isManager);
+      }
+      if (isManager && currentDetailTab === 'managers') {
+        currentDetailTab = 'cashiers';
+      }
       document.getElementById('dtabCountCashiers').textContent = cashiers.length;
+      const mgrCountEl = document.getElementById('dtabCountManagers');
+      if (mgrCountEl) mgrCountEl.textContent = managers.length;
       document.getElementById('dtabCountProducts').textContent = (d.products || []).length;
       document.getElementById('dtabCountVouchers').textContent = (d.vouchers || []).length;
       document.getElementById('dtabCountContacts').textContent = (d.customers || []).length + (d.suppliers || []).length;
@@ -2238,6 +2301,7 @@
       const q = (document.getElementById('detailSearchInput').value || '').toLowerCase().trim();
       const d = currentAdminDetail.data || {};
       const cashiers = currentAdminDetail.cashiers || [];
+      const managers = currentAdminDetail.managers || [];
 
       // TAB 1: CASHIERS
       if (currentDetailTab === 'cashiers') {
@@ -2253,7 +2317,7 @@
               <div class="w-12 h-12 mx-auto rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
               </div>
-              <p class="text-sm font-semibold text-slate-500">ဤ Main Admin နှင့် ချိတ်ဆက်ထားသော Cashier အကောင့် မရှိသေးပါ</p>
+              <p class="text-sm font-semibold text-slate-500">ဤအကောင့်နှင့် ချိတ်ဆက်ထားသော Cashier အကောင့် မရှိသေးပါ</p>
               <button onclick="openCreateCashierModal()" class="inline-flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-sm transition">
                 <span>+ Cashier အကောင့်အသစ် ဖွင့်မည်</span>
               </button>
@@ -2318,6 +2382,99 @@
 
                   <div class="flex items-center justify-between pt-1">
                     <span class="text-[11px] text-slate-400">Created: ${formatDate(c.created_at)}</span>
+                    <div class="flex items-center space-x-1.5">
+                      <button onclick="handleToggleStatus('${safePhone}', '${nextStatus}')" class="px-2.5 py-1.5 rounded-lg text-xs font-bold border transition ${st === 'on' ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100' : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'}">
+                        ${st === 'on' ? 'ပိတ်မည်' : 'ဖွင့်မည်'}
+                      </button>
+                      <button onclick="openEditModal('${safePhone}')" class="px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold transition">
+                        ပြင်မည်
+                      </button>
+                      <button onclick="openDeleteConfirmModal('${safePhone}')" class="px-2.5 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold transition">
+                        ဖျက်မည်
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        `;
+        return;
+      }
+
+      // TAB 1B: BRANCH MANAGERS
+      if (currentDetailTab === 'managers') {
+        const list = managers.filter(m =>
+          (m.username || '').toLowerCase().includes(q) ||
+          (m.business_name || '').toLowerCase().includes(q) ||
+          (m.phone_no || '').toLowerCase().includes(q) ||
+          (m.join_code || '').toLowerCase().includes(q)
+        );
+
+        if (list.length === 0) {
+          container.innerHTML = `
+            <div class="py-12 text-center space-y-2">
+              <p class="text-sm font-semibold text-slate-500">ဤ Main Admin အောက်တွင် ချိတ်ဆက်ထားသော Branch Manager မရှိသေးပါ</p>
+              <p class="text-xs text-slate-400">Manager အကောင့် Register လုပ်ပြီး Main Admin App ၏ Accounts ထဲမှ Add Manager ဖြင့် Code 6 လုံး ထည့်၍ ချိတ်ဆက်နိုင်ပါသည်။</p>
+            </div>
+          `;
+          return;
+        }
+
+        container.innerHTML = `
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            ${list.map(m => {
+              const safePhone = escapeJs(m.phone_no);
+              const st = (m.status || 'pending').toLowerCase();
+              const statusBadge = st === 'on'
+                ? `<span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">ON (Active)</span>`
+                : (st === 'pending'
+                  ? `<span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-700 border border-amber-200">PENDING</span>`
+                  : `<span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-100 text-rose-700 border border-rose-200">OFF</span>`);
+              const nextStatus = st === 'on' ? 'off' : 'on';
+              return `
+                <div class="rounded-2xl border border-purple-200/80 bg-purple-50/30 hover:bg-white hover:shadow-md transition p-5 space-y-4">
+                  <div class="flex items-start justify-between gap-3">
+                    <div class="flex items-center space-x-3">
+                      <div class="w-11 h-11 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center font-extrabold text-base shrink-0">
+                        ${escapeHtml((m.business_name || m.username || 'M').charAt(0).toUpperCase())}
+                      </div>
+                      <div>
+                        <div class="flex flex-wrap items-center gap-1.5">
+                          <h4 class="font-bold text-slate-900 text-sm">${escapeHtml(m.business_name || m.username || 'Branch Manager')}</h4>
+                          ${statusBadge}
+                        </div>
+                        <p class="text-xs text-slate-600 font-mono mt-0.5">${escapeHtml(m.phone_no)} · ${escapeHtml(m.username || 'Manager')}</p>
+                      </div>
+                    </div>
+                    <span class="px-2 py-1 rounded-lg bg-white border border-purple-200 text-[11px] font-mono text-purple-700">
+                      Code: <b>${escapeHtml(m.join_code || '-')}</b>
+                    </span>
+                  </div>
+
+                  <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs bg-white rounded-xl p-3 border border-purple-100">
+                    <div>
+                      <span class="text-slate-400 block text-[10px]">Stock ပစ္စည်း</span>
+                      <span class="font-bold text-slate-800">${Number(m.productsCount) || 0} မျိုး</span>
+                    </div>
+                    <div>
+                      <span class="text-slate-400 block text-[10px]">ဘောက်ချာ</span>
+                      <span class="font-bold text-slate-800">${Number(m.vouchersCount) || 0}</span>
+                    </div>
+                    <div>
+                      <span class="text-slate-400 block text-[10px]">Cashiers</span>
+                      <span class="font-bold text-indigo-700">${Number(m.cashiersCount) || 0} ခု</span>
+                    </div>
+                    <div>
+                      <span class="text-slate-400 block text-[10px]">အရောင်း</span>
+                      <span class="font-bold text-emerald-700">${(Number(m.salesTotal) || 0).toLocaleString()} Ks</span>
+                    </div>
+                  </div>
+
+                  <div class="flex flex-wrap items-center justify-between gap-2 pt-1">
+                    <button onclick="openAdminDetail('${safePhone}')" class="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition">
+                      ဆိုင်ခွဲ Data ကြည့်မည် →
+                    </button>
                     <div class="flex items-center space-x-1.5">
                       <button onclick="handleToggleStatus('${safePhone}', '${nextStatus}')" class="px-2.5 py-1.5 rounded-lg text-xs font-bold border transition ${st === 'on' ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100' : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'}">
                         ${st === 'on' ? 'ပိတ်မည်' : 'ဖွင့်မည်'}
@@ -2646,7 +2803,12 @@
           : devs.map(id => ({ deviceId: id, model: u.lastLoginModel || 'Android Device', firstLoginAt: u.lastLoginAt || 0, lastLoginAt: u.lastLoginAt || 0, lastSeenAt: u.lastLoginAt || 0 }));
         const devCount = Math.max(devs.length, details.length);
         const maxDevs = 5;
-        const isCashier = (u.role || 'ADMIN').toUpperCase() === 'CASHIER';
+        const roleUpper = (u.role || 'ADMIN').toUpperCase();
+        const isCashier = roleUpper === 'CASHIER';
+        const isManager = roleUpper === 'MANAGER';
+        const roleBadgeClass = isCashier
+          ? 'bg-emerald-50 text-emerald-700'
+          : (isManager ? 'bg-purple-50 text-purple-700' : 'bg-indigo-50 text-indigo-700');
         const safePhone = escapeJs(u.phone_no);
 
         return `
@@ -2655,7 +2817,7 @@
               <div>
                 <div class="flex items-center space-x-1.5">
                   <h4 class="font-bold text-slate-900 text-sm">${escapeHtml(u.business_name || 'UN POS Store')}</h4>
-                  <span class="px-1.5 py-0.5 rounded text-[10px] font-bold ${isCashier ? 'bg-emerald-50 text-emerald-700' : 'bg-indigo-50 text-indigo-700'}">${isCashier ? 'CASHIER' : 'ADMIN'}</span>
+                  <span class="px-1.5 py-0.5 rounded text-[10px] font-bold ${roleBadgeClass}">${roleUpper}</span>
                 </div>
                 <p class="text-xs text-slate-500 font-mono">${escapeHtml(u.phone_no)} (${escapeHtml(u.username)})</p>
                 <p class="text-[11px] text-slate-400 mt-0.5">Last Login: ${u.lastLoginAt > 0 ? formatDate(u.lastLoginAt) : 'မရှိသေးပါ'}</p>
@@ -2687,7 +2849,7 @@
             </div>
 
             <div class="pt-2 border-t border-slate-100 flex items-center justify-between">
-              <span class="text-xs text-slate-400">${isCashier ? `Admin: <b class="font-mono">${escapeHtml(u.admin_phone || '-')}</b>` : `Total Vouchers: <b>${u.vouchersCount || 0}</b>`}</span>
+              <span class="text-xs text-slate-400">${(isCashier || isManager) ? `Admin: <b class="font-mono">${escapeHtml(u.admin_phone || '-')}</b>` : `Total Vouchers: <b>${u.vouchersCount || 0}</b>`}</span>
               <button onclick="handleResetDevices('${safePhone}')" class="text-xs font-semibold text-rose-600 hover:text-rose-700 hover:underline">
                 စက်အားလုံး Reset မည်
               </button>
