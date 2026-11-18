@@ -5418,6 +5418,132 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { success: true, message: 'Supplier deleted from cloud' });
     }
 
+    // 8e. Sync Expense Categories & Expenses (POST /api/sync/expenses)
+    if (pathname === '/api/sync/expenses' && method === 'POST') {
+      const body = await parseJsonBody(req);
+      const auth = await authenticateSyncOrUserRequest(req, res, body?.userPhone);
+      if (!auth) return;
+      const userPhone = auth.tenantPhone;
+      const { expenseCategories, expenses, deletedExpenseCategories, deletedExpenses } = body;
+
+      let syncedCount = 0;
+      await withTransaction(async (client) => {
+        const now = Date.now();
+        if (Array.isArray(deletedExpenseCategories)) {
+          for (const dc of deletedExpenseCategories) {
+            const norm = String(dc || '').trim();
+            if (!norm) continue;
+            await client.query(
+              `DELETE FROM cloud_expense_categories WHERE user_phone = $1 AND LOWER(TRIM(name)) = LOWER($2)`,
+              [userPhone, norm]
+            );
+            await client.query(
+              `INSERT INTO cloud_deleted_entities (user_phone, entity_type, entity_key, deleted_at)
+               VALUES ($1, 'expense_category', $2, $3)
+               ON CONFLICT (user_phone, entity_type, entity_key) DO UPDATE SET deleted_at = EXCLUDED.deleted_at`,
+              [userPhone, norm, now]
+            );
+          }
+        }
+        if (Array.isArray(deletedExpenses)) {
+          for (const de of deletedExpenses) {
+            const tsVal = typeof de === 'object' ? Number(de?.timestamp) : Number(de);
+            if (!tsVal || isNaN(tsVal)) continue;
+            await client.query(
+              `DELETE FROM cloud_expenses WHERE user_phone = $1 AND timestamp = $2`,
+              [userPhone, tsVal]
+            );
+            await client.query(
+              `INSERT INTO cloud_deleted_entities (user_phone, entity_type, entity_key, deleted_at)
+               VALUES ($1, 'expense', $2, $3)
+               ON CONFLICT (user_phone, entity_type, entity_key) DO UPDATE SET deleted_at = EXCLUDED.deleted_at`,
+              [userPhone, String(tsVal), now]
+            );
+          }
+        }
+        if (Array.isArray(expenseCategories)) {
+          for (const ec of expenseCategories) {
+            const cName = (ec.name || ec.categoryName || ec.category_name || '').trim();
+            if (!cName) continue;
+            await client.query(
+              `INSERT INTO cloud_expense_categories (user_phone, name, icon_name)
+               VALUES ($1, $2, $3)
+               ON CONFLICT (user_phone, name) DO UPDATE SET icon_name = EXCLUDED.icon_name`,
+              [userPhone, cName, ec.iconName || ec.icon_name || 'ShoppingCart']
+            );
+            await client.query(
+              `DELETE FROM cloud_deleted_entities
+               WHERE user_phone = $1 AND entity_type = 'expense_category' AND LOWER(TRIM(entity_key)) = LOWER($2)`,
+              [userPhone, cName]
+            );
+          }
+        }
+        if (Array.isArray(expenses)) {
+          const clearedTimestamps = new Set();
+          for (const e of expenses) {
+            const ts = Number(e.timestamp) || now;
+            if (!clearedTimestamps.has(ts)) {
+              clearedTimestamps.add(ts);
+              await client.query(
+                `DELETE FROM cloud_expenses WHERE user_phone = $1 AND timestamp = $2`,
+                [userPhone, ts]
+              );
+              await client.query(
+                `DELETE FROM cloud_deleted_entities
+                 WHERE user_phone = $1 AND entity_type = 'expense' AND entity_key = $2`,
+                [userPhone, String(ts)]
+              );
+            }
+            await client.query(
+              `INSERT INTO cloud_expenses (
+                user_phone, category_name, description, amount, payment_method, note,
+                timestamp, date_string, time_string
+              ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+              [
+                userPhone,
+                e.categoryName || e.category_name || '',
+                e.description || '',
+                Number(e.amount) || 0,
+                e.paymentMethod || e.payment_method || 'CASH',
+                e.note || '',
+                ts,
+                e.dateString || e.date_string || '',
+                e.timeString || e.time_string || ''
+              ]
+            );
+            syncedCount++;
+          }
+        }
+      });
+      console.log(`[SYNC PG] Synced ${syncedCount} expenses for ${userPhone}`);
+      return sendJson(res, 200, { success: true, count: syncedCount, message: 'Expenses synced successfully' });
+    }
+
+    // 8e-del. Delete Expense (POST /api/sync/delete-expense)
+    if (pathname === '/api/sync/delete-expense' && method === 'POST') {
+      const body = await parseJsonBody(req);
+      const auth = await authenticateSyncOrUserRequest(req, res, body?.userPhone);
+      if (!auth) return;
+      const userPhone = auth.tenantPhone;
+      const tsVal = Number(body?.timestamp);
+      if (!tsVal || isNaN(tsVal)) {
+        return sendJson(res, 400, { success: false, message: 'Expense timestamp required' });
+      }
+      await withTransaction(async (client) => {
+        await client.query(
+          `DELETE FROM cloud_expenses WHERE user_phone = $1 AND timestamp = $2`,
+          [userPhone, tsVal]
+        );
+        await client.query(
+          `INSERT INTO cloud_deleted_entities (user_phone, entity_type, entity_key, deleted_at)
+           VALUES ($1, 'expense', $2, $3)
+           ON CONFLICT (user_phone, entity_type, entity_key) DO UPDATE SET deleted_at = EXCLUDED.deleted_at`,
+          [userPhone, String(tsVal), Date.now()]
+        );
+      });
+      return sendJson(res, 200, { success: true, message: 'Expense deleted from cloud' });
+    }
+
     // 9. Pull All Cloud Data for User (GET or POST /api/sync/pull)
     if (pathname === '/api/sync/pull' && (method === 'POST' || method === 'GET')) {
       let rawUserPhone = parsedUrl.query.phoneNo || parsedUrl.query.userPhone;
@@ -5459,7 +5585,7 @@ const server = http.createServer(async (req, res) => {
         pool.query(`SELECT entity_type, entity_key FROM cloud_deleted_entities WHERE user_phone = $1`, [userPhone])
       ]);
 
-      const deletedMap = { product: [], voucher: [], customer: [], supplier: [], group: [], unit: [], payment: [] };
+      const deletedMap = { product: [], voucher: [], customer: [], supplier: [], group: [], unit: [], payment: [], expense: [], expense_category: [] };
       for (const row of deletedRes.rows) {
         if (deletedMap[row.entity_type]) {
           deletedMap[row.entity_type].push(row.entity_key);
@@ -5512,21 +5638,27 @@ const server = http.createServer(async (req, res) => {
           note: s.note || ''
         }));
 
-      const userExpenseCategories = expCatsRes.rows.map(ec => ({
-        name: ec.name,
-        iconName: ec.icon_name || 'ShoppingCart'
-      }));
+      const deletedExpCatSet = new Set(deletedMap.expense_category.map(x => String(x).trim().toLowerCase()));
+      const userExpenseCategories = expCatsRes.rows
+        .filter(ec => !deletedExpCatSet.has(String(ec.name || '').trim().toLowerCase()))
+        .map(ec => ({
+          name: ec.name,
+          iconName: ec.icon_name || 'ShoppingCart'
+        }));
 
-      const userExpenses = expensesRes.rows.map(e => ({
-        categoryName: e.category_name || '',
-        description: e.description || '',
-        amount: Number(e.amount) || 0,
-        paymentMethod: e.payment_method || 'CASH',
-        note: e.note || '',
-        timestamp: Number(e.timestamp) || 0,
-        dateString: e.date_string || '',
-        timeString: e.time_string || ''
-      }));
+      const deletedExpSet = new Set(deletedMap.expense.map(x => String(x).trim()));
+      const userExpenses = expensesRes.rows
+        .filter(e => !deletedExpSet.has(String(e.timestamp)))
+        .map(e => ({
+          categoryName: e.category_name || '',
+          description: e.description || '',
+          amount: Number(e.amount) || 0,
+          paymentMethod: e.payment_method || 'CASH',
+          note: e.note || '',
+          timestamp: Number(e.timestamp) || 0,
+          dateString: e.date_string || '',
+          timeString: e.time_string || ''
+        }));
 
       const userStockAdjustments = stockAdjRes.rows.map(sa => ({
         productId: Number(sa.product_id) || 0,
@@ -5563,7 +5695,9 @@ const server = http.createServer(async (req, res) => {
         deletedSuppliers: deletedMap.supplier,
         deletedGroups: deletedMap.group,
         deletedUnits: deletedMap.unit,
-        deletedPayments: deletedMap.payment
+        deletedPayments: deletedMap.payment,
+        deletedExpenseCategories: deletedMap.expense_category,
+        deletedExpenses: deletedMap.expense
       });
     }
 
