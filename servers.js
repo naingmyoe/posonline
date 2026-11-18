@@ -656,12 +656,32 @@ async function resolveTenantPhone(dbClient, phone) {
   );
   const u = rows[0];
   if (!u) return null;
-  if (u.role === 'CASHIER' && u.status === 'on' && u.admin_phone) {
+  const role = (u.role || 'ADMIN').toUpperCase();
+  if (role === 'MANAGER') {
+    if (u.status !== 'on' || !u.admin_phone) return null;
     const { rows: adminRows } = await dbClient.query(
       `SELECT phone_no, status FROM users WHERE phone_no = $1 LIMIT 1`,
       [u.admin_phone]
     );
     if (!adminRows[0] || adminRows[0].status === 'off') return null;
+    return u.phone_no;
+  }
+  if (role === 'CASHIER') {
+    if (u.status !== 'on' || !u.admin_phone) return null;
+    const { rows: parentRows } = await dbClient.query(
+      `SELECT phone_no, role, status, admin_phone FROM users WHERE phone_no = $1 LIMIT 1`,
+      [u.admin_phone]
+    );
+    const parent = parentRows[0];
+    if (!parent || parent.status !== 'on') return null;
+    if ((parent.role || '').toUpperCase() === 'MANAGER') {
+      if (!parent.admin_phone) return null;
+      const { rows: rootRows } = await dbClient.query(
+        `SELECT phone_no, status FROM users WHERE phone_no = $1 LIMIT 1`,
+        [parent.admin_phone]
+      );
+      if (!rootRows[0] || rootRows[0].status === 'off') return null;
+    }
     return u.admin_phone;
   }
   return u.phone_no;
@@ -777,25 +797,56 @@ async function evaluateUserAccess(dbClient, u, clientDeviceId, phoneModel = '', 
 
   const createdAt = Number(u.created_at) || now;
   const expiresAt = Number(u.expires_at) || (createdAt + SEVEN_DAYS_MS);
+  const role = (u.role || 'ADMIN').toUpperCase();
 
   let effectiveExpiresAt = expiresAt;
-  if (u.role === 'CASHIER' && u.admin_phone) {
-    const { rows: adminRows } = await dbClient.query(
-      `SELECT expires_at FROM users WHERE phone_no = $1 LIMIT 1`,
+  let parentDisabled = false;
+  let missingParent = false;
+
+  if ((role === 'CASHIER' || role === 'MANAGER') && u.admin_phone) {
+    const { rows: parentRows } = await dbClient.query(
+      `SELECT phone_no, role, status, admin_phone, expires_at FROM users WHERE phone_no = $1 LIMIT 1`,
       [u.admin_phone]
     );
-    if (adminRows[0] && adminRows[0].expires_at) {
-      effectiveExpiresAt = Number(adminRows[0].expires_at);
+    const parent = parentRows[0];
+    if (!parent) {
+      missingParent = true;
+    } else {
+      if (parent.expires_at) {
+        effectiveExpiresAt = Number(parent.expires_at);
+      }
+      if (parent.status !== 'on') {
+        parentDisabled = true;
+      }
+      if ((parent.role || '').toUpperCase() === 'MANAGER') {
+        if (!parent.admin_phone) {
+          missingParent = true;
+        } else {
+          const { rows: rootRows } = await dbClient.query(
+            `SELECT status, expires_at FROM users WHERE phone_no = $1 LIMIT 1`,
+            [parent.admin_phone]
+          );
+          const rootAdmin = rootRows[0];
+          if (!rootAdmin) {
+            missingParent = true;
+          } else {
+            if (rootAdmin.expires_at) effectiveExpiresAt = Number(rootAdmin.expires_at);
+            if (rootAdmin.status !== 'on') parentDisabled = true;
+          }
+        }
+      }
     }
   }
 
   const daysLeft = Math.max(0, Math.ceil((effectiveExpiresAt - now) / (24 * 60 * 60 * 1000)));
 
-  if (u.status === 'pending' || (u.role === 'CASHIER' && (!u.admin_phone || u.status !== 'on'))) {
+  if (u.status === 'off') {
     return {
       allowed: false,
-      status: 'pending',
-      message: 'Admin မှ အတည်ပြုပေးရန် စောင့်ဆိုင်းနေပါသည် (Awaiting Admin Approval)',
+      status: 'off',
+      message: role === 'MANAGER'
+        ? 'Main Admin မှ Manager အကောင့်ကို ခေတ္တပိတ်ထားပါသည်'
+        : 'အကောင့်ကို Admin မှ မဖွင့်ပေးရသေးပါ (Account Off)',
       expiresAt: effectiveExpiresAt,
       daysLeft,
       deviceCount: devices.length,
@@ -805,11 +856,27 @@ async function evaluateUserAccess(dbClient, u, clientDeviceId, phoneModel = '', 
     };
   }
 
-  if (u.status === 'off') {
+  if (u.status === 'pending' || missingParent || ((role === 'CASHIER' || role === 'MANAGER') && (!u.admin_phone || u.status !== 'on'))) {
+    return {
+      allowed: false,
+      status: 'pending',
+      message: role === 'MANAGER'
+        ? 'Main Admin မှ Add Manager Code ဖြင့် အတည်ပြုပေးရန် စောင့်ဆိုင်းနေပါသည် (Awaiting Admin Approval)'
+        : 'Admin မှ အတည်ပြုပေးရန် စောင့်ဆိုင်းနေပါသည် (Awaiting Admin Approval)',
+      expiresAt: effectiveExpiresAt,
+      daysLeft,
+      deviceCount: devices.length,
+      maxDevices: 5,
+      devices,
+      deviceDetails
+    };
+  }
+
+  if (parentDisabled) {
     return {
       allowed: false,
       status: 'off',
-      message: 'အကောင့်ကို Admin မှ မဖွင့်ပေးရသေးပါ (Account Pending)',
+      message: 'Main Admin အကောင့် ပိတ်ထားပါသဖြင့် ဝင်ရောက်ခွင့် ခေတ္တပိတ်ထားပါသည်',
       expiresAt: effectiveExpiresAt,
       daysLeft,
       deviceCount: devices.length,
@@ -1498,11 +1565,30 @@ const server = http.createServer(async (req, res) => {
       const initialDeviceDetails = deviceId
         ? [{ deviceId, model: cleanModel || 'Android Device', firstLoginAt: now, lastLoginAt: now, lastSeenAt: now }]
         : [];
-      const isCashier = (role === 'CASHIER');
-      const cashierJoinCode = body.joinCode || Math.floor(100000 + Math.random() * 900000).toString();
-      const finalRole = role || 'ADMIN';
-      const status = isCashier ? 'pending' : 'on';
-      const joinCode = isCashier ? cashierJoinCode : '';
+      const requestedRole = String(role || 'ADMIN').trim().toUpperCase();
+      const finalRole = ['ADMIN', 'MANAGER', 'CASHIER'].includes(requestedRole) ? requestedRole : 'ADMIN';
+      const requiresApproval = (finalRole === 'CASHIER' || finalRole === 'MANAGER');
+
+      let joinCode = '';
+      if (requiresApproval) {
+        let candidate = String(body.joinCode || '').trim();
+        for (let attempt = 0; attempt < 15; attempt++) {
+          if (!/^\d{6}$/.test(candidate)) {
+            candidate = Math.floor(100000 + Math.random() * 900000).toString();
+          }
+          const dupCheck = await pool.query(`SELECT 1 FROM users WHERE TRIM(join_code) = $1 LIMIT 1`, [candidate]);
+          if (dupCheck.rows.length === 0) {
+            joinCode = candidate;
+            break;
+          }
+          candidate = '';
+        }
+        if (!joinCode) {
+          joinCode = Math.floor(100000 + Math.random() * 900000).toString();
+        }
+      }
+
+      const status = requiresApproval ? 'pending' : 'on';
       const expiresAt = now + SEVEN_DAYS_MS;
       const hashedPassword = hashPassword(password);
 
@@ -1541,9 +1627,14 @@ const server = http.createServer(async (req, res) => {
 
       const session = await createUserSession(phoneNo, deviceId || '', cleanModel);
       console.log(`[USER] Registered new ${finalRole} user in PostgreSQL: ${phoneNo} (${businessName || username}, model=${cleanModel || 'N/A'})`);
+      const regMsg = finalRole === 'MANAGER'
+        ? 'Manager account created. Awaiting Main Admin approval.'
+        : (finalRole === 'CASHIER'
+            ? 'Cashier account created. Awaiting admin approval.'
+            : 'အကောင့် အောင်မြင်စွာ ပြုလုပ်ပြီးပါပြီ (၇ ရက် အခမဲ့ စမ်းသပ်ခွင့် ရရှိပါသည်)');
       return sendJson(res, 200, {
         success: true,
-        message: isCashier ? 'Cashier account created. Awaiting admin approval.' : 'အကောင့် အောင်မြင်စွာ ပြုလုပ်ပြီးပါပြီ (၇ ရက် အခမဲ့ စမ်းသပ်ခွင့် ရရှိပါသည်)',
+        message: regMsg,
         status,
         joinCode,
         expiresAt,
@@ -1558,13 +1649,13 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    // Join Cashier (POST /api/join-cashier)
+    // Join Cashier (POST /api/join-cashier) - Strictly Cashier codes only! Allowed for ADMIN or MANAGER
     if (pathname === '/api/join-cashier' && method === 'POST') {
       const body = await parseJsonBody(req);
       const auth = await authenticateSyncOrUserRequest(req, res, body?.adminPhone);
       if (!auth) return;
       if ((auth.session.role || '').toUpperCase() === 'CASHIER') {
-        return sendJson(res, 403, { success: false, message: 'Admin အကောင့်ဖြင့်သာ Cashier ချိတ်ဆက်နိုင်ပါသည်' });
+        return sendJson(res, 403, { success: false, message: 'Admin သို့မဟုတ် Manager အကောင့်ဖြင့်သာ Cashier ချိတ်ဆက်နိုင်ပါသည်' });
       }
       const { joinCode } = body;
 
@@ -1573,17 +1664,34 @@ const server = http.createServer(async (req, res) => {
       }
 
       const cleanJoinCode = String(joinCode).trim();
-      const { rows: cashierRows } = await pool.query(
-        `SELECT * FROM users WHERE role = 'CASHIER' AND TRIM(join_code) = $1 LIMIT 1`,
+      const { rows: matchedRows } = await pool.query(
+        `SELECT * FROM users WHERE TRIM(join_code) = $1 LIMIT 1`,
         [cleanJoinCode]
       );
 
-      if (cashierRows.length === 0) {
-        return sendJson(res, 404, { success: false, message: 'ဤ Code ဖြင့် Cashier အကောင့် မတွေ့ရှိပါ' });
+      if (matchedRows.length === 0) {
+        return sendJson(res, 404, { success: false, code: 'CODE_NOT_FOUND', message: 'Code Error: ဤ Code ဖြင့် Cashier အကောင့် မတွေ့ရှိပါ' });
       }
 
-      const cashier = cashierRows[0];
-      const newAdminPhone = auth.tenantPhone;
+      const targetUser = matchedRows[0];
+      const targetRole = (targetUser.role || 'ADMIN').toUpperCase();
+      if (targetRole === 'MANAGER') {
+        return sendJson(res, 400, {
+          success: false,
+          code: 'WRONG_ROLE_CODE',
+          message: 'Code Error: ဤ Code သည် Manager Account Code ဖြစ်သောကြောင့် Add Cashier တွင် ထည့်သွင်း၍ မရပါ'
+        });
+      }
+      if (targetRole !== 'CASHIER') {
+        return sendJson(res, 400, {
+          success: false,
+          code: 'WRONG_ROLE_CODE',
+          message: 'Code Error: ဤ Code သည် Cashier Code မဟုတ်ပါ'
+        });
+      }
+
+      const cashier = targetUser;
+      const newAdminPhone = auth.tenantPhone; // ADMIN -> admin.phone_no, MANAGER -> manager.phone_no
       const { rows: adminRows } = await pool.query(`SELECT * FROM users WHERE phone_no = $1 LIMIT 1`, [newAdminPhone]);
       const adminUser = adminRows[0] || null;
 
@@ -1604,7 +1712,7 @@ const server = http.createServer(async (req, res) => {
         [newAdminPhone, newBusinessName, newBusinessType, newAddress, newExpiresAt, cashier.phone_no]
       );
 
-      console.log(`[CASHIER] Cashier ${cashier.phone_no} joined with Admin ${newAdminPhone}`);
+      console.log(`[CASHIER] Cashier ${cashier.phone_no} joined with Parent ${newAdminPhone}`);
       return sendJson(res, 200, {
         success: true,
         message: `Cashier '${cashier.username}' (${cashier.phone_no}) ကို အောင်မြင်စွာ Join ပေးပြီးပါပြီ`,
@@ -1622,7 +1730,194 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    // List Cashiers linked to Admin (GET /api/cashiers?phoneNo=...)
+    // Join Manager (POST /api/join-manager) - Strictly ADMIN only & Manager codes only!
+    if (pathname === '/api/join-manager' && method === 'POST') {
+      const body = await parseJsonBody(req);
+      const auth = await authenticateSyncOrUserRequest(req, res, body?.adminPhone);
+      if (!auth) return;
+      if ((auth.session.role || '').toUpperCase() !== 'ADMIN') {
+        return sendJson(res, 403, { success: false, message: 'Main Admin အကောင့်ဖြင့်သာ Manager ချိတ်ဆက်နိုင်ပါသည်' });
+      }
+      const { joinCode } = body;
+      if (!joinCode) {
+        return sendJson(res, 400, { success: false, message: 'Manager Code ၆ လုံး လိုအပ်ပါသည်' });
+      }
+
+      const cleanJoinCode = String(joinCode).trim();
+      const { rows: matchedRows } = await pool.query(
+        `SELECT * FROM users WHERE TRIM(join_code) = $1 LIMIT 1`,
+        [cleanJoinCode]
+      );
+      if (matchedRows.length === 0) {
+        return sendJson(res, 404, { success: false, code: 'CODE_NOT_FOUND', message: 'Code Error: ဤ Code ဖြင့် Manager အကောင့် မတွေ့ရှိပါ' });
+      }
+
+      const targetUser = matchedRows[0];
+      const targetRole = (targetUser.role || 'ADMIN').toUpperCase();
+      if (targetRole === 'CASHIER') {
+        return sendJson(res, 400, {
+          success: false,
+          code: 'WRONG_ROLE_CODE',
+          message: 'Code Error: ဤ Code သည် Cashier Account Code ဖြစ်သောကြောင့် Add Manager တွင် ထည့်သွင်း၍ မရပါ'
+        });
+      }
+      if (targetRole !== 'MANAGER') {
+        return sendJson(res, 400, {
+          success: false,
+          code: 'WRONG_ROLE_CODE',
+          message: 'Code Error: ဤ Code သည် Manager Code မဟုတ်ပါ'
+        });
+      }
+
+      const mainAdminPhone = auth.actorPhone;
+      const { rows: adminRows } = await pool.query(`SELECT * FROM users WHERE phone_no = $1 LIMIT 1`, [mainAdminPhone]);
+      const adminUser = adminRows[0] || null;
+      const newExpiresAt = (adminUser && adminUser.expires_at) ? Number(adminUser.expires_at) : Number(targetUser.expires_at);
+      // Preserve branch's own shop name/type/address if specified
+      const finalBName = targetUser.business_name || (adminUser?.business_name || '');
+      const finalBType = targetUser.business_type || (adminUser?.business_type || '');
+      const finalAddr = targetUser.address || (adminUser?.address || '');
+
+      await pool.query(
+        `UPDATE users
+         SET status = 'on',
+             admin_phone = $1,
+             business_name = $2,
+             business_type = $3,
+             address = $4,
+             expires_at = $5
+         WHERE phone_no = $6`,
+        [mainAdminPhone, finalBName, finalBType, finalAddr, newExpiresAt, targetUser.phone_no]
+      );
+
+      console.log(`[MANAGER] Manager ${targetUser.phone_no} (${finalBName}) approved under Main Admin ${mainAdminPhone}`);
+      return sendJson(res, 200, {
+        success: true,
+        message: `Manager '${targetUser.username}' (${targetUser.phone_no}) ကို ဆိုင်ခွဲ Manager အဖြစ် အတည်ပြုပြီးပါပြီ`,
+        manager: {
+          phoneNo: targetUser.phone_no,
+          username: targetUser.username,
+          businessName: finalBName,
+          businessType: finalBType,
+          address: finalAddr,
+          role: 'MANAGER',
+          status: 'on',
+          joinCode: targetUser.join_code,
+          adminPhone: mainAdminPhone
+        }
+      });
+    }
+
+    // List Branch Managers under Main Admin (GET /api/managers?phoneNo=...)
+    if (pathname === '/api/managers' && method === 'GET') {
+      const requestedAdmin = parsedUrl.query.phoneNo || parsedUrl.query.adminPhone || '';
+      const auth = await authenticateSyncOrUserRequest(req, res, requestedAdmin);
+      if (!auth) return;
+      if ((auth.session.role || '').toUpperCase() !== 'ADMIN') {
+        return sendJson(res, 403, { success: false, message: 'Main Admin အကောင့်ဖြင့်သာ Manager စာရင်း ကြည့်နိုင်ပါသည်' });
+      }
+
+      const { rows } = await pool.query(
+        `SELECT u.phone_no, u.username, u.business_name, u.business_type, u.address, u.status, u.join_code, u.admin_phone, u.created_at, u.last_login_at,
+                COALESCE(cc.cnt, 0) AS cashiers_count,
+                COALESCE(pc.cnt, 0) AS products_count,
+                COALESCE(vc.cnt, 0) AS vouchers_count,
+                COALESCE(vc.sales_total, 0) AS sales_total
+         FROM users u
+         LEFT JOIN (SELECT admin_phone, COUNT(*)::int AS cnt FROM users WHERE role = 'CASHIER' GROUP BY admin_phone) cc
+           ON cc.admin_phone = u.phone_no
+         LEFT JOIN (SELECT user_phone, COUNT(*)::int AS cnt FROM cloud_products GROUP BY user_phone) pc
+           ON pc.user_phone = u.phone_no
+         LEFT JOIN (
+           SELECT user_phone,
+                  COUNT(*) FILTER (WHERE is_purchase = FALSE)::int AS cnt,
+                  COALESCE(SUM(total_amount) FILTER (WHERE is_purchase = FALSE), 0) AS sales_total
+           FROM cloud_vouchers GROUP BY user_phone
+         ) vc ON vc.user_phone = u.phone_no
+         WHERE u.role = 'MANAGER' AND u.admin_phone = $1
+         ORDER BY u.created_at ASC`,
+        [auth.actorPhone]
+      );
+
+      const managers = rows.map(u => ({
+        phoneNo: u.phone_no,
+        username: u.username,
+        businessName: u.business_name || '',
+        businessType: u.business_type || '',
+        address: u.address || '',
+        role: 'MANAGER',
+        status: u.status,
+        joinCode: u.join_code || '',
+        adminPhone: u.admin_phone || '',
+        cashiersCount: Number(u.cashiers_count) || 0,
+        productsCount: Number(u.products_count) || 0,
+        vouchersCount: Number(u.vouchers_count) || 0,
+        salesTotal: Number(u.sales_total) || 0,
+        lastLoginAt: Number(u.last_login_at) || 0
+      }));
+      return sendJson(res, 200, { success: true, managers });
+    }
+
+    // Main Admin: Toggle Manager Status ON/OFF (POST /api/toggle-manager-status)
+    if (pathname === '/api/toggle-manager-status' && method === 'POST') {
+      const body = await parseJsonBody(req);
+      const auth = await authenticateSyncOrUserRequest(req, res, body?.adminPhone);
+      if (!auth) return;
+      if ((auth.session.role || '').toUpperCase() !== 'ADMIN') {
+        return sendJson(res, 403, { success: false, message: 'Main Admin အကောင့်ဖြင့်သာ Manager Status ပြောင်းနိုင်ပါသည်' });
+      }
+      const { managerPhone, newStatus } = body;
+      const nextSt = (String(newStatus || '').toLowerCase() === 'off') ? 'off' : 'on';
+      if (!managerPhone) {
+        return sendJson(res, 400, { success: false, message: 'Manager ဖုန်းနံပါတ် လိုအပ်ပါသည်' });
+      }
+      const { rows } = await pool.query(
+        `SELECT phone_no, role, admin_phone FROM users WHERE phone_no = $1 LIMIT 1`,
+        [managerPhone]
+      );
+      const target = rows[0];
+      if (!target || (target.role || '').toUpperCase() !== 'MANAGER' || target.admin_phone !== auth.actorPhone) {
+        return sendJson(res, 403, { success: false, message: 'ဤ Manager အကောင့်အား စီမံခွင့်မရှိပါ' });
+      }
+      await pool.query(`UPDATE users SET status = $1 WHERE phone_no = $2`, [nextSt, managerPhone]);
+      if (nextSt === 'off') {
+        await pool.query(`DELETE FROM user_sessions WHERE phone_no = $1`, [managerPhone]).catch(() => {});
+      }
+      return sendJson(res, 200, {
+        success: true,
+        status: nextSt,
+        message: nextSt === 'on' ? 'Manager အကောင့်ကို ပြန်ဖွင့်ပေးပြီးပါပြီ (ON)' : 'Manager အကောင့်ကို ခေတ္တပိတ်ထားပြီးပါပြီ (OFF)'
+      });
+    }
+
+    // Main Admin: Remove Manager (POST /api/remove-manager)
+    if (pathname === '/api/remove-manager' && method === 'POST') {
+      const body = await parseJsonBody(req);
+      const auth = await authenticateSyncOrUserRequest(req, res, body?.adminPhone);
+      if (!auth) return;
+      if ((auth.session.role || '').toUpperCase() !== 'ADMIN') {
+        return sendJson(res, 403, { success: false, message: 'Main Admin အကောင့်ဖြင့်သာ Manager ဖျက်နိုင်ပါသည်' });
+      }
+      const { managerPhone } = body;
+      if (!managerPhone) {
+        return sendJson(res, 400, { success: false, message: 'Manager ဖုန်းနံပါတ် လိုအပ်ပါသည်' });
+      }
+      const { rows } = await pool.query(`SELECT phone_no, role, admin_phone FROM users WHERE phone_no = $1 LIMIT 1`, [managerPhone]);
+      const target = rows[0];
+      if (!target) {
+        return sendJson(res, 200, { success: true, message: 'Manager account removed' });
+      }
+      if ((target.role || '').toUpperCase() !== 'MANAGER' || target.admin_phone !== auth.actorPhone) {
+        return sendJson(res, 403, { success: false, message: 'ခွင့်ပြုချက်မရှိပါ' });
+      }
+      await withTransaction(async (client) => {
+        await deleteUserCascade(client, managerPhone);
+      });
+      console.log(`[MANAGER] Removed branch manager ${managerPhone} by Admin ${auth.actorPhone}`);
+      return sendJson(res, 200, { success: true, message: 'Manager အကောင့်နှင့် ဆိုင်ခွဲ Data များကို ဖျက်ပြီးပါပြီ' });
+    }
+
+    // List Cashiers linked to Admin or Manager (GET /api/cashiers?phoneNo=...)
     if (pathname === '/api/cashiers' && method === 'GET') {
       const requestedAdmin = parsedUrl.query.phoneNo || parsedUrl.query.adminPhone || '';
       const auth = await authenticateSyncOrUserRequest(req, res, requestedAdmin);
@@ -1649,13 +1944,13 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { success: true, cashiers });
     }
 
-    // Remove Cashier (POST /api/remove-cashier)
+    // Remove Cashier (POST /api/remove-cashier) - Allowed for ADMIN or MANAGER (own branch cashiers)
     if (pathname === '/api/remove-cashier' && method === 'POST') {
       const body = await parseJsonBody(req);
       const auth = await authenticateSyncOrUserRequest(req, res, body?.adminPhone);
       if (!auth) return;
       if ((auth.session.role || '').toUpperCase() === 'CASHIER') {
-        return sendJson(res, 403, { success: false, message: 'Admin အကောင့်ဖြင့်သာ Cashier ဖျက်နိုင်ပါသည်' });
+        return sendJson(res, 403, { success: false, message: 'Admin သို့မဟုတ် Manager အကောင့်ဖြင့်သာ Cashier ဖျက်နိုင်ပါသည်' });
       }
       const { cashierPhone } = body;
       if (!cashierPhone) {
@@ -1667,14 +1962,14 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 200, { success: true, message: 'Cashier account removed' });
       }
       if (target.role !== 'CASHIER') {
-        return sendJson(res, 403, { success: false, message: 'Admin အကောင့်ကို ဖျက်ခွင့်မရှိပါ' });
+        return sendJson(res, 403, { success: false, message: 'Cashier အကောင့်ကိုသာ ဖျက်ခွင့်ရှိပါသည်' });
       }
       if (target.admin_phone && target.admin_phone !== auth.tenantPhone) {
         return sendJson(res, 403, { success: false, message: 'ခွင့်ပြုချက်မရှိပါ' });
       }
       await pool.query(`DELETE FROM user_sessions WHERE phone_no = $1`, [cashierPhone]);
       await pool.query(`DELETE FROM users WHERE phone_no = $1`, [cashierPhone]);
-      console.log(`[CASHIER] Removed cashier ${cashierPhone} by Admin ${auth.tenantPhone}`);
+      console.log(`[CASHIER] Removed cashier ${cashierPhone} by Parent ${auth.tenantPhone}`);
       return sendJson(res, 200, { success: true, message: 'Cashier အကောင့် ဖျက်ပြီးပါပြီ' });
     }
 
@@ -1802,7 +2097,7 @@ const server = http.createServer(async (req, res) => {
       'cloud_deleted_entities'
     ];
 
-    // Helper: Cascade delete user (if Main Admin, delete all linked Cashiers, sessions & all cloud data; if Cashier, delete only cashier row)
+    // Helper: Cascade delete user (ADMIN -> Managers + Cashiers + all cloud data; MANAGER -> its Cashiers + branch cloud data; CASHIER -> single cashier)
     async function deleteUserCascade(client, phoneNo) {
       const { rows } = await client.query(
         `SELECT phone_no, role FROM users WHERE phone_no = $1 LIMIT 1`,
@@ -1813,20 +2108,37 @@ const server = http.createServer(async (req, res) => {
       }
 
       const target = rows[0];
-      if ((target.role || 'ADMIN').toUpperCase() === 'CASHIER') {
+      const targetRole = (target.role || 'ADMIN').toUpperCase();
+      if (targetRole === 'CASHIER') {
         await client.query(`DELETE FROM user_sessions WHERE phone_no = $1`, [phoneNo]);
         await client.query(`DELETE FROM users WHERE phone_no = $1`, [phoneNo]);
-        return { deleted: true, role: 'CASHIER', deletedCashiers: 0 };
+        return { deleted: true, role: 'CASHIER', deletedCashiers: 0, deletedManagers: 0 };
       }
 
+      let managerPhones = [];
+      if (targetRole === 'ADMIN') {
+        const { rows: mgrRows } = await client.query(
+          `SELECT phone_no FROM users WHERE role = 'MANAGER' AND admin_phone = $1`,
+          [phoneNo]
+        );
+        managerPhones = mgrRows.map(r => r.phone_no);
+      }
+
+      const parentPhonesForCashiers = [phoneNo, ...managerPhones];
       const { rows: cashierRows } = await client.query(
-        `SELECT phone_no FROM users WHERE role = 'CASHIER' AND admin_phone = $1`,
-        [phoneNo]
+        `SELECT phone_no FROM users WHERE role = 'CASHIER' AND admin_phone = ANY($1::text[])`,
+        [parentPhonesForCashiers]
       );
-      const phonesToClean = [phoneNo, ...cashierRows.map(r => r.phone_no)];
+      const cashierPhones = cashierRows.map(r => r.phone_no);
+      const phonesToClean = [phoneNo, ...managerPhones, ...cashierPhones];
 
       await client.query(`DELETE FROM user_sessions WHERE phone_no = ANY($1::text[])`, [phonesToClean]);
-      await client.query(`DELETE FROM users WHERE role = 'CASHIER' AND admin_phone = $1`, [phoneNo]);
+      if (cashierPhones.length > 0) {
+        await client.query(`DELETE FROM users WHERE phone_no = ANY($1::text[])`, [cashierPhones]);
+      }
+      if (managerPhones.length > 0) {
+        await client.query(`DELETE FROM users WHERE phone_no = ANY($1::text[])`, [managerPhones]);
+      }
 
       const { rows: imgRowsToClean } = await client.query(
         `SELECT image_id, user_phone FROM cloud_product_images WHERE user_phone = ANY($1::text[])`,
@@ -1852,8 +2164,9 @@ const server = http.createServer(async (req, res) => {
       await client.query(`DELETE FROM users WHERE phone_no = $1`, [phoneNo]);
       return {
         deleted: true,
-        role: target.role || 'ADMIN',
-        deletedCashiers: cashierRows.length
+        role: targetRole,
+        deletedCashiers: cashierPhones.length,
+        deletedManagers: managerPhones.length
       };
     }
 
@@ -1993,7 +2306,8 @@ const server = http.createServer(async (req, res) => {
         SELECT u.*,
                COALESCE(vc.cnt, 0) AS vouchers_count,
                COALESCE(pc.cnt, 0) AS products_count,
-               COALESCE(cc.cnt, 0) AS cashiers_count
+               COALESCE(cc.cnt, 0) AS cashiers_count,
+               COALESCE(mc.cnt, 0) AS managers_count
         FROM users u
         LEFT JOIN (SELECT user_phone, COUNT(*)::int AS cnt FROM cloud_vouchers GROUP BY user_phone) vc
           ON vc.user_phone = u.phone_no
@@ -2001,6 +2315,8 @@ const server = http.createServer(async (req, res) => {
           ON pc.user_phone = u.phone_no
         LEFT JOIN (SELECT admin_phone, COUNT(*)::int AS cnt FROM users WHERE role = 'CASHIER' AND admin_phone <> '' GROUP BY admin_phone) cc
           ON cc.admin_phone = u.phone_no
+        LEFT JOIN (SELECT admin_phone, COUNT(*)::int AS cnt FROM users WHERE role = 'MANAGER' AND admin_phone <> '' GROUP BY admin_phone) mc
+          ON mc.admin_phone = u.phone_no
         ORDER BY u.created_at DESC
       `);
 
@@ -2038,7 +2354,8 @@ const server = http.createServer(async (req, res) => {
           isTrial: !!u.trial_days,
           vouchersCount: Number(u.vouchers_count) || 0,
           productsCount: Number(u.products_count) || 0,
-          cashiersCount: Number(u.cashiers_count) || 0
+          cashiersCount: Number(u.cashiers_count) || 0,
+          managersCount: Number(u.managers_count) || 0
         };
       });
 
@@ -2065,11 +2382,17 @@ const server = http.createServer(async (req, res) => {
       let expiredCount = 0;
       let offCount = 0;
       let mainAdminCount = 0;
+      let managerCount = 0;
       let cashierCount = 0;
 
       for (const u of usersRes.rows) {
-        if ((u.role || 'ADMIN').toUpperCase() === 'CASHIER') {
+        const r = (u.role || 'ADMIN').toUpperCase();
+        if (r === 'CASHIER') {
           cashierCount++;
+          continue;
+        }
+        if (r === 'MANAGER') {
+          managerCount++;
           continue;
         }
         mainAdminCount++;
@@ -2083,6 +2406,7 @@ const server = http.createServer(async (req, res) => {
         success: true,
         totalUsers: mainAdminCount,
         totalMainAdmins: mainAdminCount,
+        totalManagers: managerCount,
         totalCashiers: cashierCount,
         totalAllUsers: usersRes.rows.length,
         activeUsers: activeCount,
@@ -2121,6 +2445,16 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
+      async function propagateExpiry(targetUser, nextExp) {
+        if ((targetUser.role || 'ADMIN').toUpperCase() === 'ADMIN') {
+          const { rows: mgrs } = await pool.query(`SELECT phone_no FROM users WHERE role = 'MANAGER' AND admin_phone = $1`, [targetUser.phone_no]);
+          const parentPhones = [targetUser.phone_no, ...mgrs.map(m => m.phone_no)];
+          await pool.query(`UPDATE users SET expires_at = $1 WHERE role IN ('CASHIER', 'MANAGER') AND admin_phone = ANY($2::text[])`, [nextExp, parentPhones]);
+        } else if ((targetUser.role || 'ADMIN').toUpperCase() === 'MANAGER') {
+          await pool.query(`UPDATE users SET expires_at = $1 WHERE role = 'CASHIER' AND admin_phone = $2`, [nextExp, targetUser.phone_no]);
+        }
+      }
+
       if (action === 'set_status' && newStatus) {
         let updatedExpiry = Number(user.expires_at) || (now + SEVEN_DAYS_MS);
         if (newStatus === 'on' && updatedExpiry < now) {
@@ -2130,6 +2464,7 @@ const server = http.createServer(async (req, res) => {
           `UPDATE users SET status = $1, expires_at = $2 WHERE phone_no = $3`,
           [newStatus, updatedExpiry, phoneNo]
         );
+        await propagateExpiry(user, updatedExpiry);
         if (newStatus === 'off') {
           await pool.query(`DELETE FROM user_sessions WHERE phone_no = $1`, [phoneNo]).catch(() => {});
         }
@@ -2147,6 +2482,7 @@ const server = http.createServer(async (req, res) => {
           `UPDATE users SET expires_at = $1, status = 'on' WHERE phone_no = $2`,
           [expMs, phoneNo]
         );
+        await propagateExpiry(user, expMs);
         const daysLeft = Math.ceil((expMs - now) / (24 * 60 * 60 * 1000));
         return sendJson(res, 200, {
           success: true,
@@ -2163,6 +2499,7 @@ const server = http.createServer(async (req, res) => {
         `UPDATE users SET expires_at = $1, status = 'on' WHERE phone_no = $2`,
         [newExpiry, phoneNo]
       );
+      await propagateExpiry(user, newExpiry);
 
       const daysLeft = Math.ceil((newExpiry - now) / (24 * 60 * 60 * 1000));
       return sendJson(res, 200, {
@@ -2223,7 +2560,17 @@ const server = http.createServer(async (req, res) => {
         ]
       );
 
-      if ((nextRole || 'ADMIN').toUpperCase() !== 'CASHIER') {
+      if ((nextRole || 'ADMIN').toUpperCase() === 'ADMIN') {
+        const { rows: mgrs } = await pool.query(
+          `SELECT phone_no FROM users WHERE role = 'MANAGER' AND admin_phone = $1`,
+          [phoneNo]
+        );
+        const childAdmins = [phoneNo, ...mgrs.map(m => m.phone_no)];
+        await pool.query(
+          `UPDATE users SET expires_at = $1 WHERE role IN ('CASHIER', 'MANAGER') AND admin_phone = ANY($2::text[])`,
+          [nextExpiry, childAdmins]
+        );
+      } else if ((nextRole || 'ADMIN').toUpperCase() === 'MANAGER') {
         await pool.query(
           `UPDATE users SET expires_at = $1 WHERE role = 'CASHIER' AND admin_phone = $2`,
           [nextExpiry, phoneNo]
@@ -2349,8 +2696,10 @@ const server = http.createServer(async (req, res) => {
       }
       const msg = result.role === 'CASHIER'
         ? 'Cashier အကောင့်ကို Database ထဲမှ ဖျက်ပြီးပါပြီ'
-        : `Main Admin အကောင့်၊ Cashier (${result.deletedCashiers} ခု) နှင့် PostgreSQL Cloud Data အားလုံးကို ဖျက်ပြီးပါပြီ`;
-      console.log(`[ADMIN DELETE] Deleted ${result.role} ${phoneNo} (cascade cashiers=${result.deletedCashiers})`);
+        : (result.role === 'MANAGER'
+            ? `Branch Manager အကောင့်၊ Cashier (${result.deletedCashiers} ခု) နှင့် ဆိုင်ခွဲ Cloud Data များကို ဖျက်ပြီးပါပြီ`
+            : `Main Admin အကောင့်၊ Manager (${result.deletedManagers || 0} ခု)၊ Cashier (${result.deletedCashiers} ခု) နှင့် PostgreSQL Cloud Data အားလုံးကို ဖျက်ပြီးပါပြီ`);
+      console.log(`[ADMIN DELETE] Deleted ${result.role} ${phoneNo} (cascade managers=${result.deletedManagers || 0}, cashiers=${result.deletedCashiers})`);
       return sendJson(res, 200, { success: true, message: msg, ...result });
     }
 
@@ -2373,6 +2722,7 @@ const server = http.createServer(async (req, res) => {
 
       const [
         cashiersRes,
+        managersRes,
         productsRes,
         vouchersRes,
         voucherSummaryRes,
@@ -2386,6 +2736,19 @@ const server = http.createServer(async (req, res) => {
         stockAdjRes
       ] = await Promise.all([
         pool.query(`SELECT * FROM users WHERE role = 'CASHIER' AND admin_phone = $1 ORDER BY created_at DESC`, [phoneNo]),
+        pool.query(`
+          SELECT u.*,
+                 COALESCE(cc.cnt, 0) AS cashiers_count,
+                 COALESCE(pc.cnt, 0) AS products_count,
+                 COALESCE(vc.cnt, 0) AS vouchers_count,
+                 COALESCE(vc.sales_total, 0) AS sales_total
+          FROM users u
+          LEFT JOIN (SELECT admin_phone, COUNT(*)::int AS cnt FROM users WHERE role = 'CASHIER' GROUP BY admin_phone) cc ON cc.admin_phone = u.phone_no
+          LEFT JOIN (SELECT user_phone, COUNT(*)::int AS cnt FROM cloud_products GROUP BY user_phone) pc ON pc.user_phone = u.phone_no
+          LEFT JOIN (SELECT user_phone, COUNT(*) FILTER (WHERE is_purchase = FALSE)::int AS cnt, COALESCE(SUM(total_amount) FILTER (WHERE is_purchase = FALSE), 0) AS sales_total FROM cloud_vouchers GROUP BY user_phone) vc ON vc.user_phone = u.phone_no
+          WHERE u.role = 'MANAGER' AND u.admin_phone = $1
+          ORDER BY u.created_at DESC
+        `, [phoneNo]),
         pool.query(`SELECT * FROM cloud_products WHERE user_phone = $1 ORDER BY name ASC`, [phoneNo]),
         pool.query(`SELECT * FROM cloud_vouchers WHERE user_phone = $1 ORDER BY timestamp DESC LIMIT 500`, [phoneNo]),
         pool.query(
@@ -2417,7 +2780,7 @@ const server = http.createServer(async (req, res) => {
         const expiresAt = Number(u.expires_at) || (u.created_at ? Number(u.created_at) + SEVEN_DAYS_MS : now + SEVEN_DAYS_MS);
         const daysLeft = Math.ceil((expiresAt - now) / (24 * 60 * 60 * 1000));
         const isExpired = now > expiresAt;
-        const currentStatus = isExpired && (u.role || 'ADMIN').toUpperCase() !== 'CASHIER' ? 'expired' : (u.status || 'on');
+        const currentStatus = isExpired && (u.role || 'ADMIN').toUpperCase() === 'ADMIN' ? 'expired' : (u.status || 'on');
         return {
           phone_no: u.phone_no,
           username: u.username || 'User',
@@ -2439,7 +2802,11 @@ const server = http.createServer(async (req, res) => {
           created_at: Number(u.created_at) || now,
           expires_at: expiresAt,
           daysLeft: Math.max(0, daysLeft),
-          isExpired
+          isExpired,
+          cashiersCount: Number(u.cashiers_count) || 0,
+          productsCount: Number(u.products_count) || 0,
+          vouchersCount: Number(u.vouchers_count) || 0,
+          salesTotal: Number(u.sales_total) || 0
         };
       };
 
@@ -2452,6 +2819,7 @@ const server = http.createServer(async (req, res) => {
         success: true,
         user: mapAccount(adminUser),
         cashiers: cashiersRes.rows.map(mapAccount),
+        managers: managersRes.rows.map(mapAccount),
         summary: {
           salesCount: Number(vs.sales_count) || 0,
           salesTotal: Number(vs.sales_total) || 0,
