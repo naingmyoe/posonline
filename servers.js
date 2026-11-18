@@ -1037,23 +1037,30 @@ function normalizeStoredImageUrl(rawUri, userPhone = '') {
   return trimmed;
 }
 
-async function deleteUnusedProductImageFile(dbClient, rawUriOrId, userPhone = '') {
+async function deleteUnusedProductImageFile(dbClient, rawUriOrId, userPhone = '', excludeProductId = null, excludeProductName = '') {
   const normalized = normalizeStoredImageUrl(rawUriOrId, userPhone);
   const match = normalized.match(/^\/api\/product-image\/(?:([a-zA-Z0-9._-]+)\/)?([a-zA-Z0-9._-]+)$/);
   const folder = match && match[1] ? match[1] : (userPhone ? sanitizeAccountFolder(userPhone) : '');
   const fileId = sanitizeImageFileName(match && match[2] ? match[2] : normalized);
-  if (!fileId) return;
+  if (!fileId) return false;
   try {
+    const cleanExId = excludeProductId !== null && excludeProductId !== undefined && Number(excludeProductId) > 0
+      ? Number(excludeProductId)
+      : null;
+    const cleanExName = String(excludeProductName || '').trim();
     const { rows } = userPhone
       ? await dbClient.query(
-          `SELECT COUNT(*)::int AS cnt FROM cloud_products WHERE user_phone = $1 AND (image_uri = $2 OR image_uri LIKE $3)`,
-          [userPhone, normalized, `%/${fileId}`]
+          `SELECT COUNT(*)::int AS cnt FROM cloud_products
+           WHERE user_phone = $1
+             AND (image_uri = $2 OR image_uri LIKE $3)
+             AND NOT (($4::bigint IS NOT NULL AND product_id = $4) OR ($5 <> '' AND LOWER(TRIM(name)) = LOWER(TRIM($5))))`,
+          [userPhone, normalized, `%/${fileId}`, cleanExId, cleanExName]
         )
       : await dbClient.query(
           `SELECT COUNT(*)::int AS cnt FROM cloud_products WHERE image_uri = $1 OR image_uri LIKE $2`,
           [normalized, `%/${fileId}`]
         );
-    if ((rows[0]?.cnt || 0) > 0) return;
+    if ((rows[0]?.cnt || 0) > 0) return false;
 
     await dbClient.query(
       userPhone
@@ -1066,14 +1073,15 @@ async function deleteUnusedProductImageFile(dbClient, rawUriOrId, userPhone = ''
       if (userDiskPath && fs.existsSync(userDiskPath)) {
         fs.unlinkSync(userDiskPath);
       }
-    } else {
-      const flatPath = getDiskImagePath(fileId, '');
-      if (flatPath && fs.existsSync(flatPath)) {
-        fs.unlinkSync(flatPath);
-      }
     }
+    const flatPath = getDiskImagePath(fileId, '');
+    if (flatPath && fs.existsSync(flatPath)) {
+      fs.unlinkSync(flatPath);
+    }
+    return true;
   } catch (err) {
     console.warn(`[IMG CLEANUP] Skip cleanup for ${fileId}:`, err.message);
+    return false;
   }
 }
 
@@ -1527,6 +1535,28 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    // 1b. Check phone number existence (GET or POST /api/check-phone)
+    if (pathname === '/api/check-phone' && (method === 'GET' || method === 'POST')) {
+      const body = method === 'POST' ? await parseJsonBody(req) : null;
+      const phoneNo = String((body?.phoneNo ?? query?.phoneNo) || '').trim();
+      if (!phoneNo) {
+        return sendJson(res, 200, { success: true, exists: false });
+      }
+      const existing = await pool.query(
+        `SELECT phone_no, role FROM users WHERE TRIM(phone_no) = $1 LIMIT 1`,
+        [phoneNo]
+      );
+      if (existing.rows.length > 0) {
+        return sendJson(res, 200, {
+          success: true,
+          exists: true,
+          role: existing.rows[0].role || 'ADMIN',
+          message: 'ဤဖုန်းနံပါတ်ဖြင့် အကောင့်ပြုလုပ်ပြီးသားဖြစ်ပါသည် (This phone number is already registered)'
+        });
+      }
+      return sendJson(res, 200, { success: true, exists: false });
+    }
+
     // 2. Register (POST /api/register)
     if (pathname === '/api/register' && method === 'POST') {
       const clientIp = getClientIp(req);
@@ -1539,7 +1569,8 @@ const server = http.createServer(async (req, res) => {
       }
 
       const body = await parseJsonBody(req);
-      const { phoneNo, username, businessName, businessType, address, role, password, deviceId, phoneModel } = body;
+      const phoneNo = String(body.phoneNo || '').trim();
+      const { username, businessName, businessType, address, role, password, deviceId, phoneModel } = body;
 
       if (!phoneNo || !username || !password) {
         return sendJson(res, 400, {
@@ -1550,12 +1581,13 @@ const server = http.createServer(async (req, res) => {
 
       recordFailedAttempt(`register:${clientIp}`, 10 * 60 * 1000);
 
-      const existing = await pool.query(`SELECT phone_no FROM users WHERE phone_no = $1 LIMIT 1`, [phoneNo]);
+      // Reject ALL roles (ADMIN, MANAGER, CASHIER) if phone number already exists in database
+      const existing = await pool.query(`SELECT phone_no, role FROM users WHERE TRIM(phone_no) = $1 LIMIT 1`, [phoneNo]);
       if (existing.rows.length > 0) {
         return sendJson(res, 409, {
           success: false,
           status: 'already_exists',
-          message: 'ဤဖုန်းနံပါတ်ဖြင့် အကောင့်ဖွင့်ပြီးသား ဖြစ်ပါသည် (Phone number already registered)'
+          message: 'ဤဖုန်းနံပါတ်ဖြင့် အကောင့်ပြုလုပ်ပြီးသားဖြစ်ပါသည် (This phone number is already registered)'
         });
       }
 
@@ -1915,6 +1947,277 @@ const server = http.createServer(async (req, res) => {
       });
       console.log(`[MANAGER] Removed branch manager ${managerPhone} by Admin ${auth.actorPhone}`);
       return sendJson(res, 200, { success: true, message: 'Manager အကောင့်နှင့် ဆိုင်ခွဲ Data များကို ဖျက်ပြီးပါပြီ' });
+    }
+
+    // Main Admin: View Combined ("ALL") or Single Branch Manager Data (GET or POST /api/branches/data)
+    if (pathname === '/api/branches/data' && (method === 'GET' || method === 'POST')) {
+      let requestedAdmin = parsedUrl.query.adminPhone || parsedUrl.query.phoneNo || '';
+      let requestedManager = (parsedUrl.query.managerPhone || 'ALL').trim();
+      if (method === 'POST') {
+        const body = await parseJsonBody(req);
+        if (body?.adminPhone || body?.phoneNo) requestedAdmin = body.adminPhone || body.phoneNo;
+        if (body?.managerPhone !== undefined) requestedManager = String(body.managerPhone || 'ALL').trim();
+      }
+      const auth = await authenticateSyncOrUserRequest(req, res, requestedAdmin);
+      if (!auth) return;
+      if ((auth.session.role || '').toUpperCase() !== 'ADMIN') {
+        return sendJson(res, 403, { success: false, message: 'Main Admin အကောင့်ဖြင့်သာ ဆိုင်ခွဲ Data များကို ကြည့်ရှုနိုင်ပါသည်' });
+      }
+
+      const { rows: managerRows } = await pool.query(
+        `SELECT phone_no, username, business_name, business_type, address, status, join_code, created_at, last_login_at
+         FROM users
+         WHERE role = 'MANAGER' AND admin_phone = $1
+         ORDER BY created_at ASC`,
+        [auth.actorPhone]
+      );
+
+      const managerMap = new Map();
+      const allManagerPhones = [];
+      for (const m of managerRows) {
+        const branchLabel = (m.business_name && m.business_name.trim()) ? m.business_name.trim() : (m.username || m.phone_no);
+        managerMap.set(m.phone_no, {
+          phoneNo: m.phone_no,
+          username: m.username || 'Manager',
+          businessName: m.business_name || '',
+          branchName: branchLabel,
+          businessType: m.business_type || '',
+          address: m.address || '',
+          status: m.status || 'on',
+          joinCode: m.join_code || '',
+          lastLoginAt: Number(m.last_login_at) || 0
+        });
+        allManagerPhones.push(m.phone_no);
+      }
+
+      const isAll = !requestedManager || requestedManager.toUpperCase() === 'ALL';
+      if (!isAll && !managerMap.has(requestedManager)) {
+        return sendJson(res, 403, { success: false, message: 'ဤဆိုင်ခွဲ Data ကို ကြည့်ရှုခွင့်မရှိပါ' });
+      }
+      const targetPhones = isAll ? allManagerPhones : [requestedManager];
+
+      if (allManagerPhones.length === 0) {
+        return sendJson(res, 200, {
+          success: true,
+          selectedTarget: 'ALL',
+          branches: [],
+          products: [],
+          vouchers: [],
+          expenses: [],
+          customers: [],
+          suppliers: [],
+          payments: [],
+          stockAdjustments: [],
+          cashiers: []
+        });
+      }
+
+      // Recalculate stock accurately for targeted branch(es)
+      for (const tPhone of targetPhones) {
+        await recalculateUserProductStock(pool, tPhone);
+      }
+
+      const [
+        allProductsRes,
+        allVouchersRes,
+        targetItemsRes,
+        allExpensesRes,
+        targetCustomersRes,
+        targetSuppliersRes,
+        targetPaymentsRes,
+        targetStockAdjRes,
+        allCashiersRes
+      ] = await Promise.all([
+        pool.query(`SELECT * FROM cloud_products WHERE user_phone = ANY($1::text[]) ORDER BY user_phone ASC, name ASC`, [allManagerPhones]),
+        pool.query(`SELECT * FROM cloud_vouchers WHERE user_phone = ANY($1::text[]) ORDER BY timestamp DESC`, [allManagerPhones]),
+        pool.query(`SELECT * FROM cloud_voucher_items WHERE user_phone = ANY($1::text[]) ORDER BY id ASC`, [targetPhones]),
+        pool.query(`SELECT * FROM cloud_expenses WHERE user_phone = ANY($1::text[]) ORDER BY timestamp DESC`, [allManagerPhones]),
+        pool.query(`SELECT * FROM cloud_customers WHERE user_phone = ANY($1::text[]) ORDER BY name ASC`, [targetPhones]),
+        pool.query(`SELECT * FROM cloud_suppliers WHERE user_phone = ANY($1::text[]) ORDER BY name ASC`, [targetPhones]),
+        pool.query(`SELECT user_phone, method, amount, date FROM cloud_payments WHERE user_phone = ANY($1::text[]) ORDER BY method ASC`, [targetPhones]),
+        pool.query(`SELECT * FROM cloud_stock_adjustments WHERE user_phone = ANY($1::text[]) ORDER BY timestamp DESC LIMIT 500`, [targetPhones]),
+        pool.query(`SELECT phone_no, username, business_name, status, join_code, admin_phone FROM users WHERE role = 'CASHIER' AND admin_phone = ANY($1::text[]) ORDER BY created_at ASC`, [allManagerPhones])
+      ]);
+
+      // Build per-branch summary across all branches under this Main Admin
+      const branchStatsMap = new Map();
+      for (const mPhone of allManagerPhones) {
+        const info = managerMap.get(mPhone);
+        branchStatsMap.set(mPhone, {
+          ...info,
+          cashiersCount: 0,
+          productsCount: 0,
+          stockQty: 0,
+          stockPurchaseValue: 0,
+          stockSellingValue: 0,
+          vouchersCount: 0,
+          purchasesCount: 0,
+          salesTotal: 0,
+          purchasesTotal: 0,
+          expensesTotal: 0,
+          receivableTotal: 0,
+          payableTotal: 0
+        });
+      }
+
+      for (const c of allCashiersRes.rows) {
+        const st = branchStatsMap.get(c.admin_phone);
+        if (st) st.cashiersCount += 1;
+      }
+      for (const p of allProductsRes.rows) {
+        const st = branchStatsMap.get(p.user_phone);
+        if (st) {
+          const qty = Number(p.quantity) || 0;
+          const pPrice = Number(p.purchase_price) || 0;
+          const sPrice = Number(p.selling_price) || 0;
+          st.productsCount += 1;
+          st.stockQty += qty;
+          st.stockPurchaseValue += qty * pPrice;
+          st.stockSellingValue += qty * sPrice;
+        }
+      }
+      for (const v of allVouchersRes.rows) {
+        const st = branchStatsMap.get(v.user_phone);
+        if (st) {
+          const amt = Number(v.total_amount) || 0;
+          const bal = Number(v.balance_amount) || 0;
+          if (v.is_purchase) {
+            st.purchasesCount += 1;
+            st.purchasesTotal += amt;
+            if (bal > 0) st.payableTotal += bal;
+          } else {
+            st.vouchersCount += 1;
+            st.salesTotal += amt;
+            if (bal > 0) st.receivableTotal += bal;
+          }
+        }
+      }
+      for (const e of allExpensesRes.rows) {
+        const st = branchStatsMap.get(e.user_phone);
+        if (st) st.expensesTotal += Number(e.amount) || 0;
+      }
+
+      const targetSet = new Set(targetPhones);
+
+      const itemsByVoucher = new Map();
+      for (const it of targetItemsRes.rows) {
+        const key = `${it.user_phone}::${it.voucher_id}`;
+        if (!itemsByVoucher.has(key)) itemsByVoucher.set(key, []);
+        itemsByVoucher.get(key).push({
+          branchPhone: it.user_phone,
+          voucherId: it.voucher_id,
+          productId: Number(it.product_id) || 0,
+          productName: it.product_name || '',
+          quantity: Number(it.quantity) || 1,
+          purchasePrice: Number(it.purchase_price) || 0,
+          sellingPrice: Number(it.selling_price) || 0,
+          unitName: it.unit_name || '',
+          conversionFactor: Math.max(1, Number(it.conversion_factor) || 1)
+        });
+      }
+
+      const products = allProductsRes.rows
+        .filter(p => targetSet.has(p.user_phone))
+        .map(p => ({
+          ...mapProductRow(p),
+          branchPhone: p.user_phone,
+          branchName: managerMap.get(p.user_phone)?.branchName || p.user_phone
+        }));
+
+      const vouchers = allVouchersRes.rows
+        .filter(v => targetSet.has(v.user_phone))
+        .map(v => {
+          const bInfo = managerMap.get(v.user_phone);
+          return {
+            ...mapVoucherRow(v),
+            branchPhone: v.user_phone,
+            branchName: bInfo?.branchName || v.user_phone,
+            items: itemsByVoucher.get(`${v.user_phone}::${v.receipt_no}`) || []
+          };
+        });
+
+      const expenses = allExpensesRes.rows
+        .filter(e => targetSet.has(e.user_phone))
+        .map(e => ({
+          branchPhone: e.user_phone,
+          branchName: managerMap.get(e.user_phone)?.branchName || e.user_phone,
+          categoryName: e.category_name || '',
+          description: e.description || '',
+          amount: Number(e.amount) || 0,
+          paymentMethod: e.payment_method || 'CASH',
+          note: e.note || '',
+          timestamp: Number(e.timestamp) || 0,
+          dateString: e.date_string || '',
+          timeString: e.time_string || ''
+        }));
+
+      const customers = targetCustomersRes.rows.map(c => ({
+        branchPhone: c.user_phone,
+        branchName: managerMap.get(c.user_phone)?.branchName || c.user_phone,
+        id: Number(c.customer_id) || 0,
+        name: c.name,
+        phone: c.phone || '',
+        address: c.address || '',
+        note: c.note || ''
+      }));
+
+      const suppliers = targetSuppliersRes.rows.map(s => ({
+        branchPhone: s.user_phone,
+        branchName: managerMap.get(s.user_phone)?.branchName || s.user_phone,
+        id: Number(s.supplier_id) || 0,
+        name: s.name,
+        phone: s.phone || '',
+        address: s.address || '',
+        note: s.note || ''
+      }));
+
+      const payments = targetPaymentsRes.rows.map(p => ({
+        branchPhone: p.user_phone,
+        branchName: managerMap.get(p.user_phone)?.branchName || p.user_phone,
+        method: p.method,
+        amount: Number(p.amount) || 0,
+        date: Number(p.date) || 0
+      }));
+
+      const stockAdjustments = targetStockAdjRes.rows.map(sa => ({
+        branchPhone: sa.user_phone,
+        branchName: managerMap.get(sa.user_phone)?.branchName || sa.user_phone,
+        productId: Number(sa.product_id) || 0,
+        productName: sa.product_name || '',
+        adjustmentType: sa.adjustment_type || 'STOCK_OUT',
+        reasonTitle: sa.reason_title || '',
+        description: sa.description || '',
+        quantity: Number(sa.quantity) || 0,
+        beforeQuantity: Number(sa.before_quantity) || 0,
+        afterQuantity: Number(sa.after_quantity) || 0,
+        timestamp: Number(sa.timestamp) || 0,
+        adjustedBy: sa.adjusted_by || ''
+      }));
+
+      const cashiers = allCashiersRes.rows
+        .filter(c => targetSet.has(c.admin_phone))
+        .map(c => ({
+          phoneNo: c.phone_no,
+          username: c.username || 'Cashier',
+          status: c.status || 'off',
+          joinCode: c.join_code || '',
+          branchPhone: c.admin_phone,
+          branchName: managerMap.get(c.admin_phone)?.branchName || c.admin_phone
+        }));
+
+      return sendJson(res, 200, {
+        success: true,
+        selectedTarget: isAll ? 'ALL' : requestedManager,
+        branches: allManagerPhones.map(p => branchStatsMap.get(p)),
+        products,
+        vouchers,
+        expenses,
+        customers,
+        suppliers,
+        payments,
+        stockAdjustments,
+        cashiers
+      });
     }
 
     // List Cashiers linked to Admin or Manager (GET /api/cashiers?phoneNo=...)
@@ -3995,12 +4298,56 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    // 6a. Delete Old Product Image From VPS Disk & Cloud DB Before New Upload (POST /api/sync/delete-product-image)
+    if (pathname === '/api/sync/delete-product-image' && method === 'POST') {
+      const body = await parseJsonBody(req);
+      const auth = await authenticateSyncOrUserRequest(req, res, body?.userPhone);
+      if (!auth) return;
+      const userPhone = auth.tenantPhone;
+      const rawUri = String(body?.imageUri || '').trim();
+      const productId = body?.productId !== undefined && body?.productId !== null && Number(body.productId) > 0
+        ? Number(body.productId)
+        : null;
+      const productName = String(body?.productName || '').trim();
+      const clearProductUri = body?.clearProductUri !== false;
+
+      if (!rawUri) {
+        return sendJson(res, 200, { success: true, message: 'No imageUri to delete' });
+      }
+
+      const deleted = await withTransaction(async (client) => {
+        const normalized = normalizeStoredImageUrl(rawUri, userPhone);
+        if (clearProductUri && (productId || productName)) {
+          await client.query(
+            `UPDATE cloud_products
+             SET image_uri = '', updated_at = $1
+             WHERE user_phone = $2
+               AND (($3::bigint IS NOT NULL AND product_id = $3) OR ($4 <> '' AND LOWER(TRIM(name)) = LOWER(TRIM($4))))
+               AND (image_uri = $5 OR image_uri = $6)`,
+            [Date.now(), userPhone, productId, productName, rawUri, normalized]
+          );
+        }
+        return deleteUnusedProductImageFile(client, rawUri, userPhone, productId, productName);
+      });
+
+      return sendJson(res, 200, {
+        success: true,
+        deleted,
+        message: deleted ? 'အရင်ပုံကို VPS မှ ဖျက်ပြီးပါပြီ' : 'ပုံဖျက်ပြီး သို့မဟုတ် အခြားပစ္စည်းတွင် သုံးနေဆဲဖြစ်ပါသည်'
+      });
+    }
+
     // 6b. Upload Compressed Product Image (POST /api/sync/upload-product-image)
     if (pathname === '/api/sync/upload-product-image' && method === 'POST') {
       const body = await parseJsonBody(req);
       const auth = await authenticateSyncOrUserRequest(req, res, body?.userPhone);
       if (!auth) return;
       const userPhone = auth.tenantPhone;
+      const previousImageUri = String(body?.previousImageUri || '').trim();
+      const productId = body?.productId !== undefined && body?.productId !== null && Number(body.productId) > 0
+        ? Number(body.productId)
+        : null;
+      const productName = String(body?.productName || '').trim();
 
       let parsedImg;
       try {
@@ -4011,8 +4358,19 @@ const server = http.createServer(async (req, res) => {
 
       const now = Date.now();
       const accountFolder = sanitizeAccountFolder(userPhone);
-      saveProductImageToDisk(parsedImg.imageId, parsedImg.buffer, userPhone);
       const imageUrl = buildProductImageUrl(userPhone, parsedImg.imageId);
+
+      // Delete old image on VPS first BEFORE saving the new image if previousImageUri differs
+      if (previousImageUri) {
+        const normalizedPrev = normalizeStoredImageUrl(previousImageUri, userPhone);
+        if (normalizedPrev && normalizedPrev !== imageUrl) {
+          await withTransaction(async (client) => {
+            await deleteUnusedProductImageFile(client, previousImageUri, userPhone, productId, productName);
+          });
+        }
+      }
+
+      saveProductImageToDisk(parsedImg.imageId, parsedImg.buffer, userPhone);
       await pool.query(
         `INSERT INTO cloud_product_images (image_id, user_phone, mime_type, file_name, image_url, image_data, size_bytes, updated_at)
          VALUES ($1,$2,$3,$4,$5,NULL,$6,$7)
@@ -4090,6 +4448,11 @@ const server = http.createServer(async (req, res) => {
             const finalUnitPrices = incomingUnitPrices !== null
               ? incomingUnitPrices
               : normalizeUnitPrices(existing.unit_prices);
+            const previousImageUri = existing.image_uri || '';
+            const nextImageUri = normalizeStoredImageUrl(
+              p.imageUri !== undefined ? p.imageUri : existing.image_uri,
+              userPhone
+            );
 
             await client.query(
               `UPDATE cloud_products SET
@@ -4122,13 +4485,16 @@ const server = http.createServer(async (req, res) => {
                 newQty,
                 newInitialQty,
                 p.alertQuantity !== undefined ? Number(p.alertQuantity) : (p.alert_quantity !== undefined ? Number(p.alert_quantity) : existing.alert_quantity),
-                normalizeStoredImageUrl(p.imageUri !== undefined ? p.imageUri : existing.image_uri, userPhone),
+                nextImageUri,
                 JSON.stringify(finalUnitPrices),
                 now,
                 userPhone,
                 existing.product_key
               ]
             );
+            if (previousImageUri && previousImageUri !== nextImageUri) {
+              await deleteUnusedProductImageFile(client, previousImageUri, userPhone);
+            }
           } else {
             const newKey = pId ? String(pId) : pName;
             const initialQty = Number(p.quantity) || 0;
@@ -4240,12 +4606,23 @@ const server = http.createServer(async (req, res) => {
       const { productId, productName } = body;
 
       await withTransaction(async (client) => {
+        const { rows: oldImgs } = await client.query(
+          `SELECT image_uri FROM cloud_products
+           WHERE user_phone = $1
+             AND (($2::bigint IS NOT NULL AND product_id = $2) OR ($3 <> '' AND LOWER(TRIM(name)) = LOWER(TRIM($3))))`,
+          [userPhone, productId ? Number(productId) : null, productName || '']
+        );
         await client.query(
           `DELETE FROM cloud_products
            WHERE user_phone = $1
              AND (($2::bigint IS NOT NULL AND product_id = $2) OR ($3 <> '' AND LOWER(TRIM(name)) = LOWER(TRIM($3))))`,
           [userPhone, productId ? Number(productId) : null, productName || '']
         );
+        for (const row of oldImgs) {
+          if (row.image_uri) {
+            await deleteUnusedProductImageFile(client, row.image_uri, userPhone);
+          }
+        }
         const now = Date.now();
         for (const t of [productName ? String(productName).trim() : null, productId ? String(productId) : null].filter(Boolean)) {
           await client.query(
@@ -4378,7 +4755,13 @@ const server = http.createServer(async (req, res) => {
         }
 
         // 3. Mirror products (exact snapshot replacement with back-computed initial_quantity so stocks match 100%)
+        let previousMirrorImages = [];
         if (Array.isArray(products)) {
+          const { rows: oldMirrorImgs } = await client.query(
+            `SELECT DISTINCT image_uri FROM cloud_products WHERE user_phone = $1 AND image_uri <> ''`,
+            [userPhone]
+          );
+          previousMirrorImages = oldMirrorImgs.map(r => r.image_uri).filter(Boolean);
           await client.query(`DELETE FROM cloud_products WHERE user_phone = $1`, [userPhone]);
 
           const mirroredProducts = [];
@@ -4500,6 +4883,9 @@ const server = http.createServer(async (req, res) => {
                 now
               ]
             );
+          }
+          for (const oldUri of previousMirrorImages) {
+            await deleteUnusedProductImageFile(client, oldUri, userPhone);
           }
         }
 
