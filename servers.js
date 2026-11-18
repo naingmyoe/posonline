@@ -1,4 +1,4 @@
-/**
+/**a
  * UN POS Backend Server for VPS (Linux / Ubuntu / Debian / Windows)
  * Direct PostgreSQL Database Storage (NO .json files, NO in-memory database cache!)
  *
@@ -856,7 +856,21 @@ async function evaluateUserAccess(dbClient, u, clientDeviceId, phoneModel = '', 
     };
   }
 
-  if (u.status === 'pending' || missingParent || ((role === 'CASHIER' || role === 'MANAGER') && (!u.admin_phone || u.status !== 'on'))) {
+  if (missingParent) {
+    return {
+      allowed: false,
+      status: 'not_found',
+      message: 'Account not found on server',
+      expiresAt: effectiveExpiresAt,
+      daysLeft,
+      deviceCount: devices.length,
+      maxDevices: 5,
+      devices,
+      deviceDetails
+    };
+  }
+
+  if (u.status === 'pending' || ((role === 'CASHIER' || role === 'MANAGER') && (!u.admin_phone || u.status !== 'on'))) {
     return {
       allowed: false,
       status: 'pending',
@@ -1364,6 +1378,16 @@ async function authenticateSyncOrUserRequest(req, res, claimedPhone) {
     [tokenHash, now]
   );
   if (rows.length === 0) {
+    if (claimedPhone) {
+      const { rows: existsRows } = await pool.query(
+        `SELECT 1 FROM users WHERE phone_no = $1 LIMIT 1`,
+        [claimedPhone]
+      );
+      if (existsRows.length === 0) {
+        sendJson(res, 404, { success: false, code: 'account_deleted', status: 'not_found', message: 'အကောင့်ဖျတ်သိမ်းလိုက်ပြီ' });
+        return null;
+      }
+    }
     sendJson(res, 401, { success: false, code: 'session_expired', message: 'Session သက်တမ်းကုန်ဆုံးသွားပါပြီ။ Login ပြန်ဝင်ပါ။' });
     return null;
   }
@@ -1493,6 +1517,13 @@ const server = http.createServer(async (req, res) => {
         const u = rows[0];
         if (u) {
           const evalResult = await evaluateUserAccess(pool, u, deviceId, phoneModel, false);
+          if (evalResult.status === 'not_found') {
+            return sendJson(res, 404, {
+              success: false,
+              status: 'not_found',
+              message: 'Account not found on server'
+            });
+          }
           return sendJson(res, 200, {
             success: evalResult.allowed,
             status: evalResult.status,
