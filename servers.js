@@ -1,4 +1,4 @@
-/**
+/**a
  * UN POS Backend Server for VPS (Linux / Ubuntu / Debian / Windows)
  * Direct PostgreSQL Database Storage (NO .json files, NO in-memory database cache!)
  *
@@ -4649,7 +4649,20 @@ const server = http.createServer(async (req, res) => {
       const auth = await authenticateSyncOrUserRequest(req, res, body?.userPhone);
       if (!auth) return;
       const userPhone = auth.tenantPhone;
-      const { productId, productName, newQuantity, newAlertQuantity } = body;
+      const {
+        productId,
+        productName,
+        newQuantity,
+        newAlertQuantity,
+        adjustmentType,
+        reasonTitle,
+        description,
+        deltaQuantity,
+        beforeQuantity,
+        afterQuantity,
+        timestamp,
+        adjustedBy
+      } = body;
 
       if ((productId || productName) && newQuantity !== undefined) {
         const incomingQty = Number(newQuantity);
@@ -4678,6 +4691,40 @@ const server = http.createServer(async (req, res) => {
                 [adjustedBaseline, safeQty, alertQty, Date.now(), userPhone, target.product_key]
               );
               await recalculateUserProductStock(client, userPhone);
+            }
+
+            const adjTypeStr = String(adjustmentType || '').trim();
+            const adjDelta = Number(deltaQuantity) || 0;
+            const adjTs = Number(timestamp) || 0;
+            if ((adjTypeStr === 'STOCK_IN' || adjTypeStr === 'STOCK_OUT') && adjDelta > 0 && adjTs > 0) {
+              const resolvedName = pName || target?.name || '';
+              const existingAdj = await client.query(
+                `SELECT id FROM cloud_stock_adjustments
+                 WHERE user_phone = $1 AND timestamp = $2 AND LOWER(TRIM(product_name)) = LOWER(TRIM($3)) AND adjustment_type = $4 AND quantity = $5
+                 LIMIT 1`,
+                [userPhone, adjTs, resolvedName, adjTypeStr, adjDelta]
+              );
+              if (existingAdj.rows.length === 0) {
+                await client.query(
+                  `INSERT INTO cloud_stock_adjustments (
+                    user_phone, product_id, product_name, adjustment_type, reason_title,
+                    description, quantity, before_quantity, after_quantity, timestamp, adjusted_by
+                  ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+                  [
+                    userPhone,
+                    pId || (target ? Number(target.product_id) : 0) || 0,
+                    resolvedName,
+                    adjTypeStr,
+                    String(reasonTitle || ''),
+                    String(description || ''),
+                    adjDelta,
+                    Number(beforeQuantity) || 0,
+                    Number(afterQuantity) || 0,
+                    adjTs,
+                    String(adjustedBy || '')
+                  ]
+                );
+              }
             }
           });
           console.log(`[SYNC PG] Stock adjusted explicitly on cloud for ${userPhone}: ${productName || productId} -> ${incomingQty}`);
@@ -5613,6 +5660,60 @@ const server = http.createServer(async (req, res) => {
       });
       console.log(`[SYNC PG] Synced ${syncedCount} expenses for ${userPhone}`);
       return sendJson(res, 200, { success: true, count: syncedCount, message: 'Expenses synced successfully' });
+    }
+
+    // 8f. Sync Stock Adjustments (POST /api/sync/stock-adjustments)
+    if (pathname === '/api/sync/stock-adjustments' && method === 'POST') {
+      const body = await parseJsonBody(req);
+      const auth = await authenticateSyncOrUserRequest(req, res, body?.userPhone);
+      if (!auth) return;
+      const userPhone = auth.tenantPhone;
+      const { stockAdjustments } = body;
+
+      let syncedCount = 0;
+      if (Array.isArray(stockAdjustments) && stockAdjustments.length > 0) {
+        await withTransaction(async (client) => {
+          const now = Date.now();
+          for (const sa of stockAdjustments) {
+            const pName = String(sa.productName || '').trim();
+            const adjType = String(sa.adjustmentType || 'STOCK_OUT').trim();
+            const qty = Number(sa.quantity) || 0;
+            const ts = Number(sa.timestamp) || now;
+            if (!pName || qty <= 0) continue;
+
+            const existing = await client.query(
+              `SELECT id FROM cloud_stock_adjustments
+               WHERE user_phone = $1 AND timestamp = $2 AND LOWER(TRIM(product_name)) = LOWER(TRIM($3)) AND adjustment_type = $4 AND quantity = $5
+               LIMIT 1`,
+              [userPhone, ts, pName, adjType, qty]
+            );
+            if (existing.rows.length === 0) {
+              await client.query(
+                `INSERT INTO cloud_stock_adjustments (
+                  user_phone, product_id, product_name, adjustment_type, reason_title,
+                  description, quantity, before_quantity, after_quantity, timestamp, adjusted_by
+                ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+                [
+                  userPhone,
+                  Number(sa.productId) || 0,
+                  pName,
+                  adjType,
+                  String(sa.reasonTitle || ''),
+                  String(sa.description || ''),
+                  qty,
+                  Number(sa.beforeQuantity) || 0,
+                  Number(sa.afterQuantity) || 0,
+                  ts,
+                  String(sa.adjustedBy || '')
+                ]
+              );
+              syncedCount++;
+            }
+          }
+        });
+      }
+      console.log(`[SYNC PG] Synced ${syncedCount} stock adjustments for ${userPhone}`);
+      return sendJson(res, 200, { success: true, count: syncedCount, message: 'Stock adjustments synced successfully' });
     }
 
     // 8e-del. Delete Expense (POST /api/sync/delete-expense)
