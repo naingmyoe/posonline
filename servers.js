@@ -1,4 +1,4 @@
-/**a
+/**
  * UN POS Backend Server for VPS (Linux / Ubuntu / Debian / Windows)
  * Direct PostgreSQL Database Storage (NO .json files, NO in-memory database cache!)
  *
@@ -227,7 +227,8 @@ async function initDatabase() {
         admin_phone TEXT NOT NULL DEFAULT '',
         created_at BIGINT NOT NULL,
         expires_at BIGINT NOT NULL,
-        trial_days INTEGER NOT NULL DEFAULT 7
+        trial_days INTEGER NOT NULL DEFAULT 7,
+        max_devices INTEGER NOT NULL DEFAULT 5
       );
     `);
     await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS business_name TEXT NOT NULL DEFAULT '';`);
@@ -241,7 +242,13 @@ async function initDatabase() {
     await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at BIGINT NOT NULL DEFAULT 0;`);
     await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_device TEXT NOT NULL DEFAULT '';`);
     await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_model TEXT NOT NULL DEFAULT '';`);
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS max_devices INTEGER NOT NULL DEFAULT 5;`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_users_admin_phone ON users (admin_phone);`);
+    await client.query(
+      `INSERT INTO app_settings (key, value, updated_at) VALUES ('trial_enabled', 'true', $1)
+       ON CONFLICT (key) DO NOTHING`,
+      [Date.now()]
+    );
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS admin_sessions (
@@ -717,8 +724,25 @@ function normalizeDeviceDetails(rawDetails, legacyDevices, legacyDeviceId, fallb
   return Array.from(byId.values());
 }
 
+function getEffectiveMaxDevices(u) {
+  const parsed = parseInt(u?.max_devices, 10);
+  return (Number.isFinite(parsed) && parsed >= 1) ? Math.min(50, parsed) : 5;
+}
+
+async function getTrialEnabledSetting(dbClient = pool) {
+  try {
+    const { rows } = await dbClient.query(`SELECT value FROM app_settings WHERE key = 'trial_enabled' LIMIT 1`);
+    if (rows.length === 0) return true;
+    const raw = String(rows[0].value ?? 'true').trim().toLowerCase();
+    return raw !== 'false' && raw !== '0' && raw !== 'off';
+  } catch (_) {
+    return true;
+  }
+}
+
 async function evaluateUserAccess(dbClient, u, clientDeviceId, phoneModel = '', isLoginEvent = false) {
   const now = Date.now();
+  const maxDevices = getEffectiveMaxDevices(u);
   let devices = Array.isArray(u.devices) ? [...u.devices] : [];
   if (devices.length === 0 && u.device_id) {
     devices.push(u.device_id);
@@ -727,20 +751,23 @@ async function evaluateUserAccess(dbClient, u, clientDeviceId, phoneModel = '', 
   let deviceDetails = normalizeDeviceDetails(u.device_details, devices, u.device_id, Number(u.last_login_at) || Number(u.created_at) || now);
   let metadataDirty = false;
 
-  if (clientDeviceId && !devices.includes(clientDeviceId)) {
-    if (devices.length >= 5) {
-      return {
-        allowed: false,
-        status: 'device_limit_reached',
-        message: 'ဤအကောင့်ကို အများဆုံး စက် ၅ လုံးအထိသာ သုံးခွင့်ပြုထားပါသည် (Device limit of 5 reached)',
-        expiresAt: Number(u.expires_at) || (Number(u.created_at) + SEVEN_DAYS_MS),
-        daysLeft: Math.max(0, Math.ceil(((Number(u.expires_at) || now) - now) / (24 * 60 * 60 * 1000))),
-        deviceCount: devices.length,
-        maxDevices: 5,
-        devices,
-        deviceDetails
-      };
-    }
+  const existingDevIndex = clientDeviceId ? devices.indexOf(clientDeviceId) : -1;
+  if (clientDeviceId && (existingDevIndex === -1 ? devices.length >= maxDevices : existingDevIndex >= maxDevices)) {
+    return {
+      allowed: false,
+      status: 'device_limit_reached',
+      message: `ဤအကောင့်ကို အများဆုံး စက် ${maxDevices} လုံးအထိသာ သုံးခွင့်ပြုထားပါသည် (Device limit of ${maxDevices} reached)`,
+      expiresAt: Number(u.expires_at) || (Number(u.created_at) + SEVEN_DAYS_MS),
+      daysLeft: Math.max(0, Math.ceil(((Number(u.expires_at) || now) - now) / (24 * 60 * 60 * 1000))),
+      isTrial: Number(u.trial_days) > 0,
+      deviceCount: Math.min(devices.length, maxDevices),
+      maxDevices,
+      devices,
+      deviceDetails
+    };
+  }
+
+  if (clientDeviceId && existingDevIndex === -1) {
     devices.push(clientDeviceId);
     u.devices = devices;
     u.device_id = clientDeviceId;
@@ -853,8 +880,9 @@ async function evaluateUserAccess(dbClient, u, clientDeviceId, phoneModel = '', 
         : 'အကောင့်ကို Admin မှ မဖွင့်ပေးရသေးပါ (Account Off)',
       expiresAt: effectiveExpiresAt,
       daysLeft,
+      isTrial: Number(u.trial_days) > 0,
       deviceCount: devices.length,
-      maxDevices: 5,
+      maxDevices,
       devices,
       deviceDetails
     };
@@ -867,8 +895,9 @@ async function evaluateUserAccess(dbClient, u, clientDeviceId, phoneModel = '', 
       message: 'Account not found on server',
       expiresAt: effectiveExpiresAt,
       daysLeft,
+      isTrial: Number(u.trial_days) > 0,
       deviceCount: devices.length,
-      maxDevices: 5,
+      maxDevices,
       devices,
       deviceDetails
     };
@@ -883,8 +912,9 @@ async function evaluateUserAccess(dbClient, u, clientDeviceId, phoneModel = '', 
         : 'Admin မှ အတည်ပြုပေးရန် စောင့်ဆိုင်းနေပါသည် (Awaiting Admin Approval)',
       expiresAt: effectiveExpiresAt,
       daysLeft,
+      isTrial: Number(u.trial_days) > 0,
       deviceCount: devices.length,
-      maxDevices: 5,
+      maxDevices,
       devices,
       deviceDetails
     };
@@ -897,8 +927,9 @@ async function evaluateUserAccess(dbClient, u, clientDeviceId, phoneModel = '', 
       message: 'Main Admin အကောင့် ပိတ်ထားပါသဖြင့် ဝင်ရောက်ခွင့် ခေတ္တပိတ်ထားပါသည်',
       expiresAt: effectiveExpiresAt,
       daysLeft,
+      isTrial: Number(u.trial_days) > 0,
       deviceCount: devices.length,
-      maxDevices: 5,
+      maxDevices,
       devices,
       deviceDetails
     };
@@ -915,8 +946,9 @@ async function evaluateUserAccess(dbClient, u, clientDeviceId, phoneModel = '', 
       message: 'အကောင့် သက်တမ်းကုန်ဆုံးသွားပါပြီ။ သက်တမ်းတိုးရန် ဆက်သွယ်ပါ (Account Expired)',
       expiresAt: effectiveExpiresAt,
       daysLeft: 0,
+      isTrial: Number(u.trial_days) > 0,
       deviceCount: devices.length,
-      maxDevices: 5,
+      maxDevices,
       devices,
       deviceDetails
     };
@@ -928,9 +960,9 @@ async function evaluateUserAccess(dbClient, u, clientDeviceId, phoneModel = '', 
     message: 'Active',
     expiresAt: effectiveExpiresAt,
     daysLeft,
-    isTrial: true,
+    isTrial: Number(u.trial_days) > 0,
     deviceCount: devices.length,
-    maxDevices: 5,
+    maxDevices,
     devices,
     deviceDetails
   };
@@ -1378,7 +1410,7 @@ async function authenticateSyncOrUserRequest(req, res, claimedPhone) {
   const tokenHash = hashToken(rawToken);
   const now = Date.now();
   const { rows } = await pool.query(
-    `SELECT s.*, u.role, u.status, u.admin_phone, u.expires_at AS user_expires_at, u.devices
+    `SELECT s.*, u.role, u.status, u.admin_phone, u.expires_at AS user_expires_at, u.devices, u.max_devices
      FROM user_sessions s
      JOIN users u ON u.phone_no = s.phone_no
      WHERE s.token_hash = $1 AND s.expires_at > $2
@@ -1403,6 +1435,20 @@ async function authenticateSyncOrUserRequest(req, res, claimedPhone) {
   if (sess.device_id && deviceHeader && sess.device_id !== deviceHeader) {
     sendJson(res, 401, { success: false, code: 'device_mismatch', message: 'Device မကိုက်ညီပါ။ Login ပြန်ဝင်ပါ။' });
     return null;
+  }
+  const maxDevs = getEffectiveMaxDevices(sess);
+  const sessDevs = Array.isArray(sess.devices) ? sess.devices : [];
+  const checkDevId = deviceHeader || sess.device_id || '';
+  if (checkDevId && sessDevs.length > 0) {
+    const devIdx = sessDevs.indexOf(checkDevId);
+    if (devIdx === -1 || devIdx >= maxDevs) {
+      sendJson(res, 401, {
+        success: false,
+        code: 'device_limit_reached',
+        message: `ဤအကောင့်ကို အများဆုံး စက် ${maxDevs} လုံးအထိသာ သုံးခွင့်ပြုထားပါသည် (Device limit of ${maxDevs} reached)`
+      });
+      return null;
+    }
   }
   const tenantPhone = await resolveTenantPhone(pool, sess.phone_no);
   if (!tenantPhone) {
@@ -1540,6 +1586,13 @@ const server = http.createServer(async (req, res) => {
             });
           }
 
+          if (evalResult.status === 'device_limit_reached' && normalizedClientDev) {
+            await pool.query(
+              `DELETE FROM user_sessions WHERE phone_no = $1 AND device_id = $2`,
+              [u.phone_no, normalizedClientDev]
+            ).catch(() => {});
+          }
+
           let refreshedAuthToken = '';
           if (evalResult.allowed && wasAlreadyRegisteredDevice) {
             const incomingToken = extractBearerToken(req);
@@ -1585,7 +1638,7 @@ const server = http.createServer(async (req, res) => {
             lastLoginModel: u.last_login_model || '',
             lastLoginDevice: u.last_login_device || '',
             deviceCount: evalResult.deviceCount,
-            maxDevices: 5,
+            maxDevices: evalResult.maxDevices,
             expiresAt: evalResult.expiresAt,
             daysLeft: evalResult.daysLeft,
             isTrial: evalResult.isTrial
@@ -1697,8 +1750,13 @@ const server = http.createServer(async (req, res) => {
         }
       }
 
-      const status = requiresApproval ? 'pending' : 'on';
-      const expiresAt = now + SEVEN_DAYS_MS;
+      const trialEnabled = await getTrialEnabledSetting(pool);
+      const isTrialAccount = !requiresApproval && trialEnabled;
+      const status = requiresApproval ? 'pending' : (trialEnabled ? 'on' : 'off');
+      const trialDays = isTrialAccount ? 7 : 0;
+      const expiresAt = isTrialAccount ? (now + SEVEN_DAYS_MS) : now;
+      const daysLeft = isTrialAccount ? 7 : 0;
+      const maxDevices = 5;
       const hashedPassword = hashPassword(password);
 
       const { rows } = await pool.query(
@@ -1706,11 +1764,11 @@ const server = http.createServer(async (req, res) => {
           phone_no, username, business_name, business_type, address, role,
           password_hash, device_id, devices, device_details,
           last_login_at, last_login_device, last_login_model,
-          status, join_code, admin_phone, created_at, expires_at, trial_days
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+          status, join_code, admin_phone, created_at, expires_at, trial_days, max_devices
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
         RETURNING phone_no, username, business_name, business_type, address, role,
                   device_id, devices, device_details, last_login_at, last_login_device, last_login_model,
-                  status, join_code, admin_phone, created_at, expires_at, trial_days`,
+                  status, join_code, admin_phone, created_at, expires_at, trial_days, max_devices`,
         [
           phoneNo,
           username,
@@ -1730,25 +1788,30 @@ const server = http.createServer(async (req, res) => {
           '',
           now,
           expiresAt,
-          7
+          trialDays,
+          maxDevices
         ]
       );
 
       const session = await createUserSession(phoneNo, deviceId || '', cleanModel);
-      console.log(`[USER] Registered new ${finalRole} user in PostgreSQL: ${phoneNo} (${businessName || username}, model=${cleanModel || 'N/A'})`);
+      console.log(`[USER] Registered new ${finalRole} user in PostgreSQL: ${phoneNo} (${businessName || username}, model=${cleanModel || 'N/A'}, trialEnabled=${trialEnabled}, status=${status})`);
       const regMsg = finalRole === 'MANAGER'
         ? 'Manager account created. Awaiting Main Admin approval.'
         : (finalRole === 'CASHIER'
             ? 'Cashier account created. Awaiting admin approval.'
-            : 'အကောင့် အောင်မြင်စွာ ပြုလုပ်ပြီးပါပြီ (၇ ရက် အခမဲ့ စမ်းသပ်ခွင့် ရရှိပါသည်)');
+            : (trialEnabled
+                ? 'အကောင့် အောင်မြင်စွာ ပြုလုပ်ပြီးပါပြီ (၇ ရက် အခမဲ့ စမ်းသပ်ခွင့် ရရှိပါသည်)'
+                : 'အကောင့်ဖွင့်ပြီးပါပြီ။ Admin မှ ခွင့်ပြုချက်ပေးပြီးမှသာ အသုံးပြုနိုင်ပါမည်'));
       return sendJson(res, 200, {
         success: true,
         message: regMsg,
         status,
         joinCode,
         expiresAt,
-        daysLeft: 7,
-        maxDevices: 5,
+        daysLeft,
+        isTrial: isTrialAccount,
+        trialEnabled,
+        maxDevices,
         authToken: session.rawToken,
         deviceDetails: initialDeviceDetails,
         lastLoginAt: now,
@@ -2411,7 +2474,7 @@ const server = http.createServer(async (req, res) => {
           expiresAt: evalResult.expiresAt,
           daysLeft: evalResult.daysLeft,
           deviceCount: evalResult.deviceCount,
-          maxDevices: 5,
+          maxDevices: evalResult.maxDevices,
           deviceDetails: evalResult.deviceDetails,
           user: {
             phoneNo: user.phone_no,
@@ -2433,7 +2496,7 @@ const server = http.createServer(async (req, res) => {
         daysLeft: evalResult.daysLeft,
         isTrial: evalResult.isTrial,
         deviceCount: evalResult.deviceCount,
-        maxDevices: 5,
+        maxDevices: evalResult.maxDevices,
         authToken: session.rawToken,
         deviceDetails: evalResult.deviceDetails,
         lastLoginAt: Number(user.last_login_at) || Date.now(),
@@ -2676,6 +2739,40 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { success: true, message: 'Admin စကားဝှက်ကို အောင်မြင်စွာ ပြောင်းလဲပြီးပါပြီ' });
     }
 
+    // Admin: Get / Update System Settings (GET / POST /api/admin/settings)
+    if (pathname === '/api/admin/settings' && method === 'GET') {
+      const adminAuth = await requireAdminAuth(req, res);
+      if (!adminAuth) return;
+
+      const trialEnabled = await getTrialEnabledSetting(pool);
+      return sendJson(res, 200, {
+        success: true,
+        trialEnabled
+      });
+    }
+
+    if (pathname === '/api/admin/settings' && method === 'POST') {
+      const adminAuth = await requireAdminAuth(req, res);
+      if (!adminAuth) return;
+
+      const body = await parseJsonBody(req);
+      const trialEnabled = Boolean(body.trialEnabled);
+      await pool.query(
+        `INSERT INTO app_settings (key, value, updated_at)
+         VALUES ('trial_enabled', $1, $2)
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at`,
+        [trialEnabled ? 'true' : 'false', Date.now()]
+      );
+      console.log(`[ADMIN SETTINGS] trial_enabled updated to ${trialEnabled}`);
+      return sendJson(res, 200, {
+        success: true,
+        trialEnabled,
+        message: trialEnabled
+          ? '၇ ရက် အခမဲ့ စမ်းသပ်ခွင့် (Free Trial) ကို ဖွင့်လိုက်ပါပြီ'
+          : 'Free Trial ကို ပိတ်လိုက်ပါပြီ (အကောင့်သစ်များ Admin ခွင့်ပြုချက်ဖြင့်သာ ဝင်နိုင်မည်)'
+      });
+    }
+
     // Admin: Get all registered users (GET /api/admin/users)
     if (pathname === '/api/admin/users' && method === 'GET') {
       const adminAuth = await requireAdminAuth(req, res);
@@ -2725,13 +2822,13 @@ const server = http.createServer(async (req, res) => {
           lastLoginDevice: u.last_login_device || '',
           lastLoginModel: u.last_login_model || '',
           deviceCount: devCount,
-          maxDevices: 5,
+          maxDevices: getEffectiveMaxDevices(u),
           status: currentStatus,
           created_at: Number(u.created_at) || now,
           expires_at: expiresAt,
           daysLeft: Math.max(0, daysLeft),
           isExpired,
-          isTrial: !!u.trial_days,
+          isTrial: Number(u.trial_days) > 0,
           vouchersCount: Number(u.vouchers_count) || 0,
           productsCount: Number(u.products_count) || 0,
           cashiersCount: Number(u.cashiers_count) || 0,
@@ -2837,7 +2934,7 @@ const server = http.createServer(async (req, res) => {
 
       if (action === 'set_status' && newStatus) {
         let updatedExpiry = Number(user.expires_at) || (now + SEVEN_DAYS_MS);
-        if (newStatus === 'on' && updatedExpiry < now) {
+        if (newStatus === 'on' && updatedExpiry <= now) {
           updatedExpiry = now + (30 * 24 * 60 * 60 * 1000);
         }
         await pool.query(
@@ -2897,17 +2994,53 @@ const server = http.createServer(async (req, res) => {
       if (!adminAuth) return;
 
       const body = await parseJsonBody(req);
-      const { phoneNo, username, businessName, businessType, address, role, password, status, expiresAt, joinCode, adminPhone } = body;
+      const { phoneNo, username, businessName, businessType, address, role, password, status, expiresAt, joinCode, adminPhone, maxDevices } = body;
       const { rows } = await pool.query(`SELECT * FROM users WHERE phone_no = $1 LIMIT 1`, [phoneNo]);
       const user = rows[0];
       if (!user) {
         return sendJson(res, 404, { success: false, message: 'အကောင့် ရှာမတွေ့ပါ' });
       }
 
-      const nextExpiry = expiresAt ? Number(expiresAt) : Number(user.expires_at);
+      const now = Date.now();
+      let nextExpiry = expiresAt ? Number(expiresAt) : Number(user.expires_at);
+      const nextStatus = status || user.status;
+      if (nextStatus === 'on' && (!nextExpiry || nextExpiry <= now) && !expiresAt) {
+        nextExpiry = now + (30 * 24 * 60 * 60 * 1000);
+      }
       const nextRole = role || user.role;
       const hasNewPass = password !== undefined && password !== null && String(password).trim().length > 0;
       const nextPassHash = hasNewPass ? hashPassword(String(password).trim()) : user.password_hash;
+
+      const parsedMaxDevs = (maxDevices !== undefined && maxDevices !== null && maxDevices !== '')
+        ? parseInt(maxDevices, 10)
+        : getEffectiveMaxDevices(user);
+      const nextMaxDevices = (Number.isFinite(parsedMaxDevs) && parsedMaxDevs >= 1)
+        ? Math.min(50, parsedMaxDevs)
+        : getEffectiveMaxDevices(user);
+
+      let nextDevices = Array.isArray(user.devices) ? [...user.devices] : (user.device_id ? [user.device_id] : []);
+      let nextDeviceDetails = normalizeDeviceDetails(
+        user.device_details,
+        nextDevices,
+        user.device_id,
+        Number(user.last_login_at) || Number(user.created_at) || 0
+      );
+      let nextDeviceId = user.device_id || '';
+      if (nextDevices.length > nextMaxDevices) {
+        const ranked = [...nextDeviceDetails].sort(
+          (a, b) => (Number(b.lastSeenAt || b.lastLoginAt || 0) - Number(a.lastSeenAt || a.lastLoginAt || 0))
+        );
+        const keepSet = new Set(ranked.slice(0, nextMaxDevices).map(d => d.deviceId));
+        nextDevices = nextDevices.filter(id => keepSet.has(id)).slice(0, nextMaxDevices);
+        nextDeviceDetails = nextDeviceDetails.filter(d => keepSet.has(d.deviceId)).slice(0, nextMaxDevices);
+        if (nextDeviceId && !keepSet.has(nextDeviceId)) {
+          nextDeviceId = nextDevices[0] || '';
+        }
+        await pool.query(
+          `DELETE FROM user_sessions WHERE phone_no = $1 AND device_id <> '' AND NOT (device_id = ANY($2::text[]))`,
+          [phoneNo, nextDevices]
+        ).catch(() => {});
+      }
 
       const { rows: updatedRows } = await pool.query(
         `UPDATE users SET
@@ -2920,11 +3053,15 @@ const server = http.createServer(async (req, res) => {
           status = $7,
           expires_at = $8,
           join_code = $9,
-          admin_phone = $10
-         WHERE phone_no = $11
+          admin_phone = $10,
+          max_devices = $11,
+          devices = $12::jsonb,
+          device_details = $13::jsonb,
+          device_id = $14
+         WHERE phone_no = $15
          RETURNING phone_no, username, business_name, business_type, address, role,
                    device_id, devices, device_details, last_login_at, last_login_device, last_login_model,
-                   status, join_code, admin_phone, created_at, expires_at, trial_days`,
+                   status, join_code, admin_phone, created_at, expires_at, trial_days, max_devices`,
         [
           username || user.username,
           businessName !== undefined ? businessName : user.business_name,
@@ -2932,10 +3069,14 @@ const server = http.createServer(async (req, res) => {
           address !== undefined ? address : user.address,
           nextRole,
           nextPassHash,
-          status || user.status,
+          nextStatus,
           nextExpiry,
           joinCode !== undefined ? joinCode : (user.join_code || ''),
           adminPhone !== undefined ? adminPhone : (user.admin_phone || ''),
+          nextMaxDevices,
+          JSON.stringify(nextDevices),
+          JSON.stringify(nextDeviceDetails),
+          nextDeviceId,
           phoneNo
         ]
       );
@@ -2970,7 +3111,7 @@ const server = http.createServer(async (req, res) => {
       if (!adminAuth) return;
 
       const body = await parseJsonBody(req);
-      const { phoneNo, username, businessName, password, days } = body;
+      const { phoneNo, username, businessName, password, days, maxDevices } = body;
       if (!phoneNo || !username || !password) {
         return sendJson(res, 400, { success: false, message: 'ဖုန်းနံပါတ်၊ အမည် နှင့် Password ဖြည့်ပါ' });
       }
@@ -2983,16 +3124,18 @@ const server = http.createServer(async (req, res) => {
       const now = Date.now();
       const trialDays = Number(days) || 7;
       const expiresAt = now + (trialDays * 24 * 60 * 60 * 1000);
+      const parsedCreateMaxDevs = parseInt(maxDevices, 10);
+      const createMaxDevices = (Number.isFinite(parsedCreateMaxDevs) && parsedCreateMaxDevs >= 1) ? Math.min(50, parsedCreateMaxDevs) : 5;
       const { rows } = await pool.query(
         `INSERT INTO users (
           phone_no, username, business_name, business_type, address, role,
           password_hash, device_id, devices, device_details, status, join_code, admin_phone,
-          created_at, expires_at, trial_days
-        ) VALUES ($1,$2,$3,'','','ADMIN',$4,'','[]'::jsonb,'[]'::jsonb,'on','','',$5,$6,$7)
+          created_at, expires_at, trial_days, max_devices
+        ) VALUES ($1,$2,$3,'','','ADMIN',$4,'','[]'::jsonb,'[]'::jsonb,'on','','',$5,$6,$7,$8)
         RETURNING phone_no, username, business_name, business_type, address, role,
                   device_id, devices, device_details, last_login_at, last_login_device, last_login_model,
-                  status, join_code, admin_phone, created_at, expires_at, trial_days`,
-        [phoneNo, username, businessName || '', hashPassword(password), now, expiresAt, trialDays]
+                  status, join_code, admin_phone, created_at, expires_at, trial_days, max_devices`,
+        [phoneNo, username, businessName || '', hashPassword(password), now, expiresAt, trialDays, createMaxDevices]
       );
 
       return sendJson(res, 200, {
@@ -3177,7 +3320,7 @@ const server = http.createServer(async (req, res) => {
           lastLoginDevice: u.last_login_device || '',
           lastLoginModel: u.last_login_model || '',
           deviceCount: devices.length,
-          maxDevices: 5,
+          maxDevices: getEffectiveMaxDevices(u),
           status: currentStatus,
           created_at: Number(u.created_at) || now,
           expires_at: expiresAt,
