@@ -306,6 +306,7 @@ async function initDatabase() {
         alert_quantity INTEGER NOT NULL DEFAULT 0,
         image_uri TEXT NOT NULL DEFAULT '',
         expire_date BIGINT NOT NULL DEFAULT 0,
+        expire_alert_days INTEGER NOT NULL DEFAULT 30,
         unit_prices JSONB NOT NULL DEFAULT '[]'::jsonb,
         updated_at BIGINT NOT NULL DEFAULT 0,
         PRIMARY KEY (user_phone, product_key)
@@ -313,6 +314,7 @@ async function initDatabase() {
     `);
     await client.query(`ALTER TABLE cloud_products ADD COLUMN IF NOT EXISTS unit_prices JSONB NOT NULL DEFAULT '[]'::jsonb;`);
     await client.query(`ALTER TABLE cloud_products ADD COLUMN IF NOT EXISTS expire_date BIGINT NOT NULL DEFAULT 0;`);
+    await client.query(`ALTER TABLE cloud_products ADD COLUMN IF NOT EXISTS expire_alert_days INTEGER NOT NULL DEFAULT 30;`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_cloud_products_user_pid ON cloud_products (user_phone, product_id);`);
 
     await client.query(`
@@ -1150,6 +1152,8 @@ function mapProductRow(r) {
     imageUri: normalizeStoredImageUrl(r.image_uri || '', r.user_phone || ''),
     expireDate: Number(r.expire_date) || 0,
     expire_date: Number(r.expire_date) || 0,
+    expireAlertDays: r.expire_alert_days !== undefined && r.expire_alert_days !== null ? (Number(r.expire_alert_days) || 0) : 30,
+    expire_alert_days: r.expire_alert_days !== undefined && r.expire_alert_days !== null ? (Number(r.expire_alert_days) || 0) : 30,
     unitPrices,
     unit_prices: unitPrices
   };
@@ -3438,8 +3442,8 @@ const server = http.createServer(async (req, res) => {
           `INSERT INTO cloud_products (
             user_phone, product_key, product_id, name, group_name, purchase_price,
             selling_price, unit, note, track_stock, barcode, quantity,
-            initial_quantity, alert_quantity, image_uri, expire_date, unit_prices, updated_at
-          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17::jsonb,$18)
+            initial_quantity, alert_quantity, image_uri, expire_date, expire_alert_days, unit_prices, updated_at
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18::jsonb,$19)
           ON CONFLICT (user_phone, product_key) DO UPDATE SET
             product_id = EXCLUDED.product_id, name = EXCLUDED.name, group_name = EXCLUDED.group_name,
             purchase_price = EXCLUDED.purchase_price, selling_price = EXCLUDED.selling_price,
@@ -3447,6 +3451,7 @@ const server = http.createServer(async (req, res) => {
             barcode = EXCLUDED.barcode, quantity = EXCLUDED.quantity,
             initial_quantity = EXCLUDED.initial_quantity, alert_quantity = EXCLUDED.alert_quantity,
             image_uri = EXCLUDED.image_uri, expire_date = EXCLUDED.expire_date,
+            expire_alert_days = EXCLUDED.expire_alert_days,
             unit_prices = EXCLUDED.unit_prices, updated_at = EXCLUDED.updated_at`,
           [
             up, p.product_key, p.product_id !== null && p.product_id !== undefined ? Number(p.product_id) : null,
@@ -3456,6 +3461,7 @@ const server = http.createServer(async (req, res) => {
             Number(p.initial_quantity !== undefined && p.initial_quantity !== null ? p.initial_quantity : p.quantity) || 0,
             Number(p.alert_quantity) || 0, normalizeStoredImageUrl(p.image_uri || '', up),
             Number(p.expire_date !== undefined ? p.expire_date : p.expireDate) || 0,
+            p.expire_alert_days !== undefined ? (Number(p.expire_alert_days) || 0) : (p.expireAlertDays !== undefined ? (Number(p.expireAlertDays) || 0) : 30),
             JSON.stringify(restoredUnitPrices), Number(p.updated_at) || Date.now()
           ]
         );
@@ -4546,9 +4552,10 @@ const server = http.createServer(async (req, res) => {
                 alert_quantity = $12,
                 image_uri = $13,
                 expire_date = $14,
-                unit_prices = $15::jsonb,
-                updated_at = $16
-               WHERE user_phone = $17 AND product_key = $18`,
+                expire_alert_days = $15,
+                unit_prices = $16::jsonb,
+                updated_at = $17
+               WHERE user_phone = $18 AND product_key = $19`,
               [
                 pId,
                 pName,
@@ -4564,6 +4571,7 @@ const server = http.createServer(async (req, res) => {
                 p.alertQuantity !== undefined ? Number(p.alertQuantity) : (p.alert_quantity !== undefined ? Number(p.alert_quantity) : existing.alert_quantity),
                 nextImageUri,
                 p.expireDate !== undefined ? (Number(p.expireDate) || 0) : (p.expire_date !== undefined ? (Number(p.expire_date) || 0) : (Number(existing.expire_date) || 0)),
+                p.expireAlertDays !== undefined ? (Number(p.expireAlertDays) || 0) : (p.expire_alert_days !== undefined ? (Number(p.expire_alert_days) || 0) : (existing.expire_alert_days !== undefined && existing.expire_alert_days !== null ? Number(existing.expire_alert_days) : 30)),
                 JSON.stringify(finalUnitPrices),
                 now,
                 userPhone,
@@ -4581,8 +4589,8 @@ const server = http.createServer(async (req, res) => {
               `INSERT INTO cloud_products (
                 user_phone, product_key, product_id, name, group_name, purchase_price,
                 selling_price, unit, note, track_stock, barcode, quantity,
-                initial_quantity, alert_quantity, image_uri, expire_date, unit_prices, updated_at
-              ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17::jsonb,$18)
+                initial_quantity, alert_quantity, image_uri, expire_date, expire_alert_days, unit_prices, updated_at
+              ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18::jsonb,$19)
               ON CONFLICT (user_phone, product_key) DO UPDATE SET
                 product_id = EXCLUDED.product_id,
                 name = EXCLUDED.name,
@@ -4596,6 +4604,7 @@ const server = http.createServer(async (req, res) => {
                 alert_quantity = EXCLUDED.alert_quantity,
                 image_uri = EXCLUDED.image_uri,
                 expire_date = EXCLUDED.expire_date,
+                expire_alert_days = EXCLUDED.expire_alert_days,
                 unit_prices = EXCLUDED.unit_prices,
                 updated_at = EXCLUDED.updated_at`,
               [
@@ -4615,6 +4624,7 @@ const server = http.createServer(async (req, res) => {
                 Number(p.alertQuantity !== undefined ? p.alertQuantity : p.alert_quantity) || 0,
                 normalizeStoredImageUrl(p.imageUri || '', userPhone),
                 Number(p.expireDate !== undefined ? p.expireDate : p.expire_date) || 0,
+                p.expireAlertDays !== undefined ? (Number(p.expireAlertDays) || 0) : (p.expire_alert_days !== undefined ? (Number(p.expire_alert_days) || 0) : 30),
                 JSON.stringify(finalUnitPrices),
                 now
               ]
@@ -4878,6 +4888,7 @@ const server = http.createServer(async (req, res) => {
               alertQuantity: Number(p.alertQuantity !== undefined ? p.alertQuantity : p.alert_quantity) || 0,
               imageUri: normalizeStoredImageUrl(p.imageUri || '', userPhone),
               expireDate: Number(p.expireDate !== undefined ? p.expireDate : p.expire_date) || 0,
+              expireAlertDays: p.expireAlertDays !== undefined ? (Number(p.expireAlertDays) || 0) : (p.expire_alert_days !== undefined ? (Number(p.expire_alert_days) || 0) : 30),
               unitPrices: normalizeUnitPrices(p.unitPrices !== undefined ? p.unitPrices : p.unit_prices)
             };
             mirroredProducts.push(entry);
@@ -4926,8 +4937,8 @@ const server = http.createServer(async (req, res) => {
               `INSERT INTO cloud_products (
                 user_phone, product_key, product_id, name, group_name, purchase_price,
                 selling_price, unit, note, track_stock, barcode, quantity,
-                initial_quantity, alert_quantity, image_uri, expire_date, unit_prices, updated_at
-              ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17::jsonb,$18)
+                initial_quantity, alert_quantity, image_uri, expire_date, expire_alert_days, unit_prices, updated_at
+              ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18::jsonb,$19)
               ON CONFLICT (user_phone, product_key) DO UPDATE SET
                 product_id = EXCLUDED.product_id,
                 name = EXCLUDED.name,
@@ -4943,6 +4954,7 @@ const server = http.createServer(async (req, res) => {
                 alert_quantity = EXCLUDED.alert_quantity,
                 image_uri = EXCLUDED.image_uri,
                 expire_date = EXCLUDED.expire_date,
+                expire_alert_days = EXCLUDED.expire_alert_days,
                 unit_prices = EXCLUDED.unit_prices,
                 updated_at = EXCLUDED.updated_at`,
               [
@@ -4962,6 +4974,7 @@ const server = http.createServer(async (req, res) => {
                 mp.alertQuantity,
                 mp.imageUri,
                 mp.expireDate,
+                mp.expireAlertDays,
                 JSON.stringify(mp.unitPrices),
                 now
               ]
