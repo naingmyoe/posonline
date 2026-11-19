@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="my">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>UN Mobile POS — Android POS &amp; Cloud Inventory</title>
+  <meta name="description" content="UN Mobile POS — အော့ဖ်လိုင်း/အွန်လိုင်း နှစ်မျိုးသုံး ဆိုင်စီမံခန့်ခွဲမှု Android Application (APK Download)">
+  <meta name="theme-color" content="#3B1F9F">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Padauk:wght@400;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Plus Jakarta Sans', 'Padauk', sans-serif;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen antialiased selection:bg-indigo-500/30">
+
+  <!-- Top Navigation -->
+  <header class="sticky top-0 z-40 border-b border-slate-800/80 bg-slate-950/85 backdrop-blur-md">
+    <div class="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
+      <a href="/" class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-[#3B1F9F] via-indigo-600 to-violet-500 flex items-center justify-center font-black text-lg text-white shadow-lg shadow-indigo-600/30">
+          UN
+        </div>
+        <div>
+          <span class="block text-base font-extrabold tracking-tight text-white">UN Mobile POS</span>
+          <span class="block text-[11px] text-slate-400">Offline-First Cloud POS</span>
+        </div>
+      </a>
+
+      <div class="flex items-center space-x-2.5">
+        <span id="apiStatusPill" class="hidden sm:inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse mr-1.5"></span>
+          Cloud API Online
+        </span>
+        <a href="https://admin.unmobileposmm.top/" target="_blank" rel="noopener noreferrer"
+          class="inline-flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-200 text-xs font-bold border border-slate-700/80 transition">
+          <svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+          </svg>
+          <span>Admin Panel</span>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero & Direct APK Download -->
+  <main>
+    <section class="relative overflow-hidden pt-12 pb-16 sm:pt-20 sm:pb-24">
+      <div class="absolute inset-0 pointer-events-none">
+        <div class="absolute -top-32 left-1/2 -translate-x-1/2 w-[42rem] h-[42rem] rounded-full bg-indigo-600/15 blur-3xl"></div>
+        <div class="absolute top-24 right-0 w-72 h-72 rounded-full bg-violet-600/10 blur-3xl"></div>
+      </div>
+
+      <div class="relative max-w-6xl mx-auto px-4 sm:px-6 grid grid-cols-1 lg:grid-cols-12 gap-10 items-center">
+        <div class="lg:col-span-7 space-y-6">
+          <div class="inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-full bg-indigo-500/15 border border-indigo-400/30 text-indigo-300 text-xs font-bold">
+            <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+            <span id="apkVersionBadge">Version 2.0.5 • Android 7.0+</span>
+          </div>
+
+          <h1 class="text-3xl sm:text-5xl font-extrabold tracking-tight text-white leading-tight">
+            ဆိုင်လုပ်ငန်းများအတွက်<br>
+            <span class="bg-gradient-to-r from-indigo-400 via-violet-300 to-emerald-300 bg-clip-text text-transparent">
+              UN Mobile POS
+            </span>
+          </h1>
+
+          <p class="text-slate-300 text-sm sm:text-base leading-relaxed max-w-2xl">
+            အင်တာနက်မရှိချိန်တွင်လည်း အရောင်း/အဝယ်များကို စက်ထဲတွင် စိတ်ချစွာ မှတ်သားနိုင်ပြီး အင်တာနက်ရသည်နှင့် Cloud Server ပေါ်သို့ အလိုအလျောက် Sync လုပ်ပေးမည့် Modern Android POS စနစ် ဖြစ်ပါသည်။
+          </p>
+
+          <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 pt-2">
+            <a id="apkDownloadBtn" href="/downloads/UN-Mobile-POS.apk" download="UN-Mobile-POS.apk"
+              class="inline-flex items-center justify-center space-x-3 px-7 py-4 rounded-2xl bg-gradient-to-r from-[#3B1F9F] to-indigo-600 hover:from-indigo-600 hover:to-violet-600 text-white font-extrabold text-base shadow-xl shadow-indigo-600/30 transition transform hover:-translate-y-0.5">
+              <svg class="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+              </svg>
+              <div class="text-left">
+                <span class="block leading-tight">Android APK ဒေါင်းလုဒ်လုပ်ရန်</span>
+                <span id="apkMetaSubtext" class="block text-[11px] font-medium text-indigo-200 mt-0.5">Direct Official Download • HTTPS Secure</span>
+              </div>
+            </a>
+
+            <a href="#install-guide"
+              class="inline-flex items-center justify-center space-x-2 px-5 py-4 rounded-2xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 font-bold text-sm transition">
+              <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+              </svg>
+              <span>ထည့်သွင်းနည်း ကြည့်ရန်</span>
+            </a>
+          </div>
+
+          <div class="grid grid-cols-3 gap-3 pt-4 max-w-lg">
+            <div class="rounded-2xl bg-slate-900/80 border border-slate-800 p-3.5">
+              <p class="text-[11px] text-slate-400 font-semibold">Platform</p>
+              <p class="text-sm font-bold text-white mt-0.5">Android 7.0+</p>
+            </div>
+            <div class="rounded-2xl bg-slate-900/80 border border-slate-800 p-3.5">
+              <p class="text-[11px] text-slate-400 font-semibold">File Size</p>
+              <p id="apkSizeStat" class="text-sm font-bold text-emerald-300 mt-0.5">APK Installer</p>
+            </div>
+            <div class="rounded-2xl bg-slate-900/80 border border-slate-800 p-3.5">
+              <p class="text-[11px] text-slate-400 font-semibold">Sync Mode</p>
+              <p class="text-sm font-bold text-indigo-300 mt-0.5">Offline First</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Preview / App Info Card -->
+        <div class="lg:col-span-5">
+          <div class="rounded-3xl bg-gradient-to-b from-slate-900 to-slate-900/70 border border-slate-800 p-6 sm:p-7 shadow-2xl space-y-5">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-4">
+              <div class="flex items-center space-x-3">
+                <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-[#3B1F9F] to-indigo-500 flex items-center justify-center font-black text-xl text-white shadow-md">
+                  UN
+                </div>
+                <div>
+                  <h2 class="font-bold text-white text-base">UN Mobile POS</h2>
+                  <p class="text-xs text-slate-400 font-mono">com.unposonline</p>
+                </div>
+              </div>
+              <span class="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                SSL Verified
+              </span>
+            </div>
+
+            <ul class="space-y-3 text-sm text-slate-300">
+              <li class="flex items-start space-x-3">
+                <span class="w-5 h-5 rounded-full bg-indigo-500/20 text-indigo-300 flex items-center justify-center shrink-0 mt-0.5 text-xs font-bold">✓</span>
+                <span><strong>အရောင်း / အဝယ် / အကြွေး / ကုန်ကျစရိတ်</strong> စာရင်းအားလုံး တစ်နေရာတည်းတွင် စီမံနိုင်ခြင်း</span>
+              </li>
+              <li class="flex items-start space-x-3">
+                <span class="w-5 h-5 rounded-full bg-indigo-500/20 text-indigo-300 flex items-center justify-center shrink-0 mt-0.5 text-xs font-bold">✓</span>
+                <span><strong>Multi-Unit &amp; Expiry Tracking</strong> — ယူနစ်ခွဲစနစ်နှင့် သက်တမ်းကုန်ရက် သတိပေးစနစ်</span>
+              </li>
+              <li class="flex items-start space-x-3">
+                <span class="w-5 h-5 rounded-full bg-indigo-500/20 text-indigo-300 flex items-center justify-center shrink-0 mt-0.5 text-xs font-bold">✓</span>
+                <span><strong>Admin / Manager / Cashier</strong> — ဆိုင်ခွဲများနှင့် ဝန်ထမ်းအကောင့်များ ခွဲခြားထိန်းချုပ်နိုင်ခြင်း</span>
+              </li>
+              <li class="flex items-start space-x-3">
+                <span class="w-5 h-5 rounded-full bg-indigo-500/20 text-indigo-300 flex items-center justify-center shrink-0 mt-0.5 text-xs font-bold">✓</span>
+                <span><strong>Bluetooth Printer &amp; Barcode Scanner</strong> များနှင့် တိုက်ရိုက်ချိတ်ဆက် ဘောက်ချာထုတ်နိုင်ခြင်း</span>
+              </li>
+            </ul>
+
+            <div class="rounded-2xl bg-slate-950/70 border border-slate-800 p-4 text-xs text-slate-400 space-y-1.5">
+              <div class="flex items-center justify-between">
+                <span>API Server:</span>
+                <span class="font-mono text-indigo-300">https://api.unmobileposmm.top</span>
+              </div>
+              <div class="flex items-center justify-between">
+                <span>Admin Portal:</span>
+                <a href="https://admin.unmobileposmm.top/" class="font-mono text-emerald-300 hover:underline">admin.unmobileposmm.top</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Installation Steps -->
+    <section id="install-guide" class="py-12 border-t border-slate-800/80 bg-slate-900/40">
+      <div class="max-w-6xl mx-auto px-4 sm:px-6 space-y-8">
+        <div class="text-center max-w-2xl mx-auto space-y-2">
+          <h2 class="text-2xl font-extrabold text-white">APK ထည့်သွင်းအသုံးပြုပုံ အဆင့်ဆင့်</h2>
+          <p class="text-sm text-slate-400">Android ဖုန်းများတွင် ၁ မိနစ်အတွင်း အလွယ်တကူ ထည့်သွင်းနိုင်ပါသည်</p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+          <div class="rounded-2xl bg-slate-900 border border-slate-800 p-6 space-y-3">
+            <div class="w-9 h-9 rounded-xl bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 flex items-center justify-center font-extrabold">1</div>
+            <h3 class="font-bold text-white text-base">APK ဖိုင်ကို ဒေါင်းလုဒ်လုပ်ပါ</h3>
+            <p class="text-xs sm:text-sm text-slate-400 leading-relaxed">
+              အထက်ပါ "Android APK ဒေါင်းလုဒ်လုပ်ရန်" ခလုတ်ကို နှိပ်၍ <span class="text-slate-200 font-semibold">UN-Mobile-POS.apk</span> ဖိုင်ကို ဖုန်းထဲသို့ ဒေါင်းလုဒ်ချပါ။
+            </p>
+          </div>
+
+          <div class="rounded-2xl bg-slate-900 border border-slate-800 p-6 space-y-3">
+            <div class="w-9 h-9 rounded-xl bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 flex items-center justify-center font-extrabold">2</div>
+            <h3 class="font-bold text-white text-base">Install ခွင့်ပြုချက်ပေးပါ</h3>
+            <p class="text-xs sm:text-sm text-slate-400 leading-relaxed">
+              ဒေါင်းလုဒ်ပြီးသော APK ဖိုင်ကို ဖွင့်ပါ။ "Install unknown apps" တောင်းဆိုပါက Chrome / File Manager ကို <span class="text-slate-200 font-semibold">Allow</span> ဖွင့်ပြီး Install နှိပ်ပါ။
+            </p>
+          </div>
+
+          <div class="rounded-2xl bg-slate-900 border border-slate-800 p-6 space-y-3">
+            <div class="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 flex items-center justify-center font-extrabold">3</div>
+            <h3 class="font-bold text-white text-base">Register / Login ဝင်၍ သုံးပါ</h3>
+            <p class="text-xs sm:text-sm text-slate-400 leading-relaxed">
+              App ကိုဖွင့်ပြီး အကောင့်အသစ် Register ပြုလုပ်ခြင်း သို့မဟုတ် ရှိပြီးသား ဖုန်းနံပါတ်ဖြင့် Login ဝင်၍ ချက်ချင်း အသုံးပြုနိုင်ပါပြီ။
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Contact & Support -->
+    <section class="py-12 border-t border-slate-800/80">
+      <div class="max-w-4xl mx-auto px-4 sm:px-6 text-center space-y-5">
+        <h2 class="text-xl font-extrabold text-white">အကူအညီနှင့် ဆက်သွယ်ရန်</h2>
+        <p class="text-sm text-slate-400">အကောင့်ဖွင့်လှစ်ခြင်းနှင့် နည်းပညာပိုင်းဆိုင်ရာ မေးမြန်းလိုပါက အောက်ပါ Channel များမှ ဆက်သွယ်နိုင်ပါသည်</p>
+        <div class="flex flex-wrap items-center justify-center gap-3 pt-1">
+          <a href="https://t.me/unpatchpos" target="_blank" rel="noopener noreferrer"
+            class="px-5 py-2.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-400/30 text-sky-300 text-xs sm:text-sm font-bold transition">
+            Telegram (@unpatchpos)
+          </a>
+          <a href="https://m.me/mobilefirmwarepaid" target="_blank" rel="noopener noreferrer"
+            class="px-5 py-2.5 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-400/30 text-indigo-300 text-xs sm:text-sm font-bold transition">
+            Facebook Messenger
+          </a>
+          <a href="tel:09660983760"
+            class="px-5 py-2.5 rounded-xl bg-violet-500/15 hover:bg-violet-500/25 border border-violet-400/30 text-violet-300 text-xs sm:text-sm font-bold transition">
+            Viber / Phone: 09660983760
+          </a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="border-t border-slate-800/80 py-6 text-center text-xs text-slate-500">
+    <div class="max-w-6xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+      <p>© 2026 UN Mobile POS. All rights reserved.</p>
+      <div class="flex items-center space-x-4">
+        <a href="https://unmobileposmm.top/" class="hover:text-slate-300">Download Page</a>
+        <a href="https://admin.unmobileposmm.top/" class="hover:text-slate-300">Admin Dashboard</a>
+        <a href="https://api.unmobileposmm.top/" target="_blank" rel="noopener noreferrer" class="hover:text-slate-300">API Status</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    (async function checkApkAndApi() {
+      const apiOrigin = 'https://api.unmobileposmm.top';
+      try {
+        const res = await fetch(`${apiOrigin}/api/apk-info`, { cache: 'no-store' });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data && data.version) {
+          const badge = document.getElementById('apkVersionBadge');
+          if (badge) badge.textContent = `Version ${data.version} • Android 7.0+`;
+        }
+        if (data && data.available && data.sizeBytes > 0) {
+          const mb = (data.sizeBytes / (1024 * 1024)).toFixed(1);
+          const sizeStat = document.getElementById('apkSizeStat');
+          const subtext = document.getElementById('apkMetaSubtext');
+          if (sizeStat) sizeStat.textContent = `${mb} MB`;
+          if (subtext) subtext.textContent = `${data.fileName || 'UN-Mobile-POS.apk'} • ${mb} MB • HTTPS Secure`;
+          const btn = document.getElementById('apkDownloadBtn');
+          if (btn && data.downloadUrl && window.location.hostname !== 'unmobileposmm.top') {
+            btn.href = `${apiOrigin}${data.downloadUrl}`;
+          }
+        }
+      } catch (_) {
+        // Silent fallback when static nginx serves /downloads/UN-Mobile-POS.apk directly
+      }
+    })();
+  </script>
+</body>
+</html>
