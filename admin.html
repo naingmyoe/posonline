@@ -430,12 +430,12 @@
       <div class="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 class="text-lg font-bold text-slate-900 flex items-center space-x-2">
-            <span>ဖုန်း ၅ လုံးတွဲ တစ်ပြိုင်နက် ချိတ်ဆက်မှု အခြေအနေ (5-Device Monitor)</span>
+            <span>အကောင့်အလိုက် Device ချိတ်ဆက်မှု အခြေအနေ (Device Limit Monitor)</span>
             <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
               Auto Sync Active
             </span>
           </h2>
-          <p class="text-xs text-slate-500 mt-1">အကောင့်တစ်ခုစီတွင် တစ်ပြိုင်နက် ချိတ်ဆက်ထားသော ဖုန်းစက် ၅ လုံးစာရင်းနှင့် နောက်ဆုံး Sync ပြုလုပ်ချိန်များ</p>
+          <p class="text-xs text-slate-500 mt-1">အကောင့်တစ်ခုစီတွင် သတ်မှတ်ထားသော Device Limit အတိုင်း ချိတ်ဆက်ထားသည့် စက်စာရင်းနှင့် နောက်ဆုံး Sync ပြုလုပ်ချိန်များ</p>
         </div>
         <button onclick="fetchUsersAndStats()" class="inline-flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-700 text-xs font-semibold border border-indigo-200 hover:bg-indigo-100 transition">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
@@ -536,9 +536,34 @@
       </div>
     </div>
 
-    <!-- VIEW 5: ADMIN SETTINGS (Change Password & Orphaned Cloud Data Cleanup) -->
+    <!-- VIEW 5: ADMIN SETTINGS (Trial Control, Change Password & Orphaned Cloud Data Cleanup) -->
     <div id="viewSettings" class="space-y-6 hidden">
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+        <!-- Card 0: System Settings - Free Trial Toggle -->
+        <div class="lg:col-span-2 bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div class="space-y-1">
+              <div class="flex flex-wrap items-center gap-2">
+                <h2 class="text-lg font-bold text-slate-900">Free Trial စနစ် ပိတ်/ဖွင့် (Registration Trial Settings)</h2>
+                <span id="trialStatusBadge" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                  စစ်ဆေးနေပါသည်...
+                </span>
+              </div>
+              <p class="text-xs text-slate-500 leading-relaxed">
+                <b>ဖွင့်ထားပါက (ON):</b> App မှ အကောင့်အသစ်ဖွင့်သော Main Admin များသည် ၇ ရက် အခမဲ့ စမ်းသပ်ခွင့်ဖြင့် ချက်ချင်း ဝင်ရောက်သုံးစွဲနိုင်ပါမည်။<br>
+                <b>ပိတ်ထားပါက (OFF):</b> အကောင့်အသစ်များသည် Status <span class="font-mono font-bold text-rose-600">OFF</span> ဖြင့် စောင့်ဆိုင်းရမည်ဖြစ်ပြီး Web Admin မှ Status ဖွင့်ပေးမှသာ အသုံးပြုနိုင်ပါမည်။
+              </p>
+            </div>
+            <div class="flex items-center space-x-3 shrink-0 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3">
+              <span class="text-xs font-bold text-slate-700">7-Day Free Trial</span>
+              <label class="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" id="trialEnabledToggle" onchange="handleToggleTrialSetting(this.checked)" class="sr-only peer">
+                <div class="w-12 h-6 bg-slate-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-200 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+              </label>
+            </div>
+          </div>
+        </div>
+
         <!-- Card 1: Change Admin Password -->
         <div class="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm">
           <h2 class="text-lg font-bold text-slate-900 mb-1">Admin စကားဝှက် ပြောင်းလဲခြင်း</h2>
@@ -738,13 +763,18 @@
             <input type="datetime-local" id="editExpiresAt" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
           </div>
         </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">ခွင့်ပြုမည့် စက်အရေအတွက် (Device Limit)</label>
+          <input type="number" id="editMaxDevices" min="1" max="50" value="5" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+          <p class="text-[11px] text-slate-400 mt-1">သတ်မှတ်ထားသော စက်အရေအတွက်အတိုင်းသာ Login ဝင်ရောက်ခွင့်ပြုပါမည်။ (လျှော့ချပါက ကျော်လွန်နေသော စက်များ အလိုအလျောက် Logout ဖြစ်ပါမည်)</p>
+        </div>
         <div id="editCashierExpiryNote" class="hidden text-[11px] text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-2">
           Cashier နှင့် Branch Manager အကောင့်များ၏ သက်တမ်းသည် ချိတ်ဆက်ထားသော Main Admin ၏ သက်တမ်းအတိုင်း အလိုအလျောက် လိုက်နာပါသည်။
         </div>
         <div class="pt-2 flex items-center justify-between border-t border-slate-100">
           <button type="button" onclick="handleResetDevicesFromModal()" class="text-xs font-semibold text-amber-600 hover:text-amber-700 hover:underline flex items-center space-x-1">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-            <span>စက် ၅ လုံးစာရင်း Reset မည်</span>
+            <span>စက်စာရင်း (Devices) Reset မည်</span>
           </button>
           <div class="flex items-center space-x-2">
             <button type="button" onclick="closeEditModal()" class="px-4 py-2 border border-slate-300 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50">မလုပ်တော့ပါ</button>
@@ -781,14 +811,20 @@
           <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">စကားဝှက် (Password) *</label>
           <input type="text" id="createPassword" placeholder="အနည်းဆုံး ၆ လုံး" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-none">
         </div>
-        <div>
-          <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">စတင်ခွင့်ပြုမည့်ရက် (Initial Days)</label>
-          <select id="createDays" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white">
-            <option value="7">၇ ရက် (7 Days Free Trial)</option>
-            <option value="30">၃၀ ရက် (1 Month)</option>
-            <option value="90">၉၀ ရက် (3 Months)</option>
-            <option value="365">၃၆၅ ရက် (1 Year)</option>
-          </select>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">စတင်ခွင့်ပြုမည့်ရက် (Initial Days)</label>
+            <select id="createDays" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white">
+              <option value="7">၇ ရက် (7 Days Free Trial)</option>
+              <option value="30">၃၀ ရက် (1 Month)</option>
+              <option value="90">၉၀ ရက် (3 Months)</option>
+              <option value="365">၃၆၅ ရက် (1 Year)</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 uppercase mb-1">Device Limit</label>
+            <input type="number" id="createMaxDevices" min="1" max="50" value="5" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+          </div>
         </div>
         <div class="pt-3 flex items-center justify-end space-x-2 border-t border-slate-100">
           <button type="button" onclick="closeCreateModal()" class="px-4 py-2 border border-slate-300 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50">မလုပ်တော့ပါ</button>
@@ -1321,7 +1357,10 @@
       if (viewName === 'devices') renderDevicesView();
       if (viewName === 'vouchers') fetchCloudVouchers();
       if (viewName === 'stock') fetchCloudProducts();
-      if (viewName === 'settings') loadOrphanSummary();
+      if (viewName === 'settings') {
+        loadAdminSettings();
+        loadOrphanSummary();
+      }
     }
 
     // Toast utility
@@ -1715,7 +1754,7 @@
 
     // Reset devices
     async function handleResetDevices(phoneNo) {
-      if (!confirm(`ဖုန်းနံပါတ် ${phoneNo} ၏ စက်စာရင်း (Devices) ကို Reset လုပ်မှာ သေချာပါသလား? အကောင့်သည် စက်အသစ် ၅ လုံးဖြင့် ပြန်လည် ချိတ်ဆက်နိုင်မည်ဖြစ်ပါသည်။`)) {
+      if (!confirm(`ဖုန်းနံပါတ် ${phoneNo} ၏ စက်စာရင်း (Devices) ကို Reset လုပ်မှာ သေချာပါသလား? သတ်မှတ်ထားသော စက်အရေအတွက်အတိုင်း ပြန်လည် ချိတ်ဆက်နိုင်မည်ဖြစ်ပါသည်။`)) {
         return;
       }
       try {
@@ -1886,6 +1925,7 @@
       document.getElementById('editStatus').value = user.status || 'on';
       document.getElementById('editExpiresAt').value = formatForInput(user.expires_at);
       document.getElementById('editJoinCode').value = user.join_code || '';
+      document.getElementById('editMaxDevices').value = Math.max(1, parseInt(user.maxDevices, 10) || 5);
 
       document.getElementById('editModalTitle').textContent = isCashier
         ? 'Cashier အကောင့် ပြင်ဆင်ခြင်း'
@@ -1923,6 +1963,7 @@
       const status = document.getElementById('editStatus').value;
       const expiresAtInput = document.getElementById('editExpiresAt').value;
       const joinCode = document.getElementById('editJoinCode').value.trim();
+      const maxDevices = Math.max(1, Math.min(50, parseInt(document.getElementById('editMaxDevices').value, 10) || 5));
 
       const expiresAt = (role === 'ADMIN' && expiresAtInput)
         ? new Date(expiresAtInput).getTime()
@@ -1937,6 +1978,7 @@
           username,
           status,
           expiresAt,
+          maxDevices,
           joinCode: (role === 'CASHIER' || role === 'MANAGER') ? joinCode : undefined
         };
         if (password) payload.password = password;
@@ -2371,9 +2413,9 @@
                       ${cModel ? `<div class="text-[11px] text-sky-700 font-semibold mt-0.5 truncate">📱 ${escapeHtml(cModel)}</div>` : ''}
                     </div>
                     <div>
-                      <span class="text-slate-400 block text-[11px]">Devices (${c.deviceCount || 0}/5)</span>
+                      <span class="text-slate-400 block text-[11px]">Devices (${c.deviceCount || 0}/${c.maxDevices || 5})</span>
                       <div class="flex items-center space-x-2 mt-0.5">
-                        <span class="font-semibold text-slate-700">${c.deviceCount || 0} / 5</span>
+                        <span class="font-semibold text-slate-700">${c.deviceCount || 0} / ${c.maxDevices || 5}</span>
                         <button onclick="handleResetDevices('${safePhone}')" class="text-amber-600 hover:underline font-semibold text-[11px]">Reset</button>
                       </div>
                       <div class="text-[10px] text-slate-400 mt-0.5">Login: ${c.lastLoginAt > 0 ? formatDate(c.lastLoginAt) : 'မရှိသေးပါ'}</div>
@@ -2802,7 +2844,7 @@
           ? u.deviceDetails
           : devs.map(id => ({ deviceId: id, model: u.lastLoginModel || 'Android Device', firstLoginAt: u.lastLoginAt || 0, lastLoginAt: u.lastLoginAt || 0, lastSeenAt: u.lastLoginAt || 0 }));
         const devCount = Math.max(devs.length, details.length);
-        const maxDevs = 5;
+        const maxDevs = u.maxDevices || 5;
         const roleUpper = (u.role || 'ADMIN').toUpperCase();
         const isCashier = roleUpper === 'CASHIER';
         const isManager = roleUpper === 'MANAGER';
@@ -3818,9 +3860,66 @@
       }
     }
 
+    // Admin System Settings (Trial ON/OFF)
+    function updateTrialSettingUi(trialEnabled) {
+      const toggle = document.getElementById('trialEnabledToggle');
+      const badge = document.getElementById('trialStatusBadge');
+      if (toggle) toggle.checked = Boolean(trialEnabled);
+      if (badge) {
+        if (trialEnabled) {
+          badge.className = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700 border border-emerald-200';
+          badge.textContent = 'ON · 7-Day Free Trial ဖွင့်ထားသည်';
+        } else {
+          badge.className = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-700 border border-rose-200';
+          badge.textContent = 'OFF · Free Trial ပိတ်ထားသည်';
+        }
+      }
+    }
+
+    async function loadAdminSettings() {
+      try {
+        const res = await adminFetch(`${API_BASE}/api/admin/settings`);
+        if (res.status === 401) return;
+        const data = await res.json();
+        if (res.ok && data.success) {
+          updateTrialSettingUi(Boolean(data.trialEnabled));
+        }
+      } catch (err) {
+        console.warn('loadAdminSettings error:', err);
+      }
+    }
+
+    async function handleToggleTrialSetting(enabled) {
+      const toggle = document.getElementById('trialEnabledToggle');
+      if (toggle) toggle.disabled = true;
+      try {
+        const res = await adminFetch(`${API_BASE}/api/admin/settings`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ trialEnabled: Boolean(enabled) })
+        });
+        if (res.status === 401) return;
+        const data = await res.json();
+        if (res.ok && data.success) {
+          updateTrialSettingUi(Boolean(data.trialEnabled));
+          showToast(data.message || 'Setting သိမ်းဆည်းပြီးပါပြီ');
+        } else {
+          updateTrialSettingUi(!enabled);
+          showToast(data.message || 'Setting ပြောင်းလဲ၍ မရပါ', true);
+        }
+      } catch (err) {
+        updateTrialSettingUi(!enabled);
+        showToast('Error: ' + err.message, true);
+      } finally {
+        if (toggle) toggle.disabled = false;
+      }
+    }
+
     // Create Modal
     function openCreateUserModal() {
       document.getElementById('createUserForm').reset();
+      const maxDevEl = document.getElementById('createMaxDevices');
+      if (maxDevEl) maxDevEl.value = 5;
       document.getElementById('createModal').classList.remove('hidden');
       document.getElementById('createModal').classList.add('flex');
     }
@@ -3837,6 +3936,7 @@
       const username = document.getElementById('createUsername').value.trim();
       const password = document.getElementById('createPassword').value.trim();
       const days = document.getElementById('createDays').value;
+      const maxDevices = Math.max(1, Math.min(50, parseInt(document.getElementById('createMaxDevices')?.value, 10) || 5));
 
       try {
         const res = await adminFetch(`${API_BASE}/api/admin/user/create`, {
@@ -3847,7 +3947,8 @@
             businessName,
             username,
             password,
-            days
+            days,
+            maxDevices
           })
         });
         if (res.status === 401) return;
