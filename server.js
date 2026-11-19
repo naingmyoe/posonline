@@ -66,13 +66,39 @@ const ADMIN_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 const PRODUCT_IMAGE_DIR = process.env.PRODUCT_IMAGE_DIR
   ? path.resolve(process.env.PRODUCT_IMAGE_DIR)
   : path.join(__dirname, 'uploads', 'product_images');
+const APK_DOWNLOAD_DIR = process.env.APK_DOWNLOAD_DIR
+  ? path.resolve(process.env.APK_DOWNLOAD_DIR)
+  : path.join(__dirname, 'downloads');
 
 try {
   fs.mkdirSync(PRODUCT_IMAGE_DIR, { recursive: true });
+  fs.mkdirSync(APK_DOWNLOAD_DIR, { recursive: true });
 } catch (err) {
-  console.error(`[IMG DIR] Failed to create image directory ${PRODUCT_IMAGE_DIR}:`, err.message);
+  console.error(`[STORAGE DIR] Failed to create storage directory:`, err.message);
 }
 const USER_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+function resolveApkFile() {
+  const candidates = [
+    path.join(APK_DOWNLOAD_DIR, 'UN-Mobile-POS.apk'),
+    path.join(APK_DOWNLOAD_DIR, 'un-pos.apk'),
+    path.join(__dirname, 'UN-Mobile-POS.apk'),
+    path.join(__dirname, 'un-pos.apk')
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p) && fs.statSync(p).isFile()) {
+      return p;
+    }
+  }
+  try {
+    const files = fs.readdirSync(APK_DOWNLOAD_DIR).filter((f) => f.toLowerCase().endsWith('.apk'));
+    if (files.length > 0) {
+      files.sort((a, b) => fs.statSync(path.join(APK_DOWNLOAD_DIR, b)).mtimeMs - fs.statSync(path.join(APK_DOWNLOAD_DIR, a)).mtimeMs);
+      return path.join(APK_DOWNLOAD_DIR, files[0]);
+    }
+  } catch (_) {}
+  return null;
+}
 
 // Password hashing & timing-safe verification (Node built-in scrypt)
 function isScryptHash(val) {
@@ -1306,6 +1332,7 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Device-Id',
+  'Access-Control-Max-Age': '86400',
   'Content-Type': 'application/json'
 };
 
@@ -1477,8 +1504,101 @@ const server = http.createServer(async (req, res) => {
   const parsedUrl = url.parse(req.url, true);
   const pathname = parsedUrl.pathname;
   const method = req.method;
+  const rawHost = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(':')[0].toLowerCase().trim();
 
-  // Serve Admin Dashboard (GET / or /admin or /admin.html)
+  // APK Metadata endpoint for Landing Page
+  if (method === 'GET' && pathname === '/api/apk-info') {
+    const apkPath = resolveApkFile();
+    if (apkPath) {
+      const stat = fs.statSync(apkPath);
+      return sendJson(res, 200, {
+        success: true,
+        available: true,
+        version: '2.0.5',
+        fileName: path.basename(apkPath),
+        sizeBytes: stat.size,
+        updatedAt: stat.mtimeMs,
+        downloadUrl: `/downloads/${encodeURIComponent(path.basename(apkPath))}`
+      });
+    }
+    return sendJson(res, 200, {
+      success: true,
+      available: false,
+      version: '2.0.5',
+      fileName: 'UN-Mobile-POS.apk',
+      sizeBytes: 0,
+      updatedAt: null,
+      downloadUrl: '/downloads/UN-Mobile-POS.apk'
+    });
+  }
+
+  // Serve APK Download (/downloads/*.apk, /download/apk, /un-pos.apk, /UN-Mobile-POS.apk)
+  if (method === 'GET' && (pathname.startsWith('/downloads/') || pathname === '/download/apk' || pathname.toLowerCase() === '/un-pos.apk' || pathname.toLowerCase() === '/un-mobile-pos.apk')) {
+    let apkPath = null;
+    if (pathname.startsWith('/downloads/')) {
+      const requestedName = path.basename(decodeURIComponent(pathname.slice('/downloads/'.length))).replace(/[^a-zA-Z0-9._-]/g, '');
+      if (requestedName && requestedName.toLowerCase().endsWith('.apk')) {
+        const candidate = path.join(APK_DOWNLOAD_DIR, requestedName);
+        if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+          apkPath = candidate;
+        }
+      }
+    }
+    if (!apkPath) {
+      apkPath = resolveApkFile();
+    }
+    if (apkPath && fs.existsSync(apkPath)) {
+      const stat = fs.statSync(apkPath);
+      res.writeHead(200, {
+        'Content-Type': 'application/vnd.android.package-archive',
+        'Content-Length': stat.size,
+        'Content-Disposition': `attachment; filename="${path.basename(apkPath)}"`,
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'no-cache'
+      });
+      fs.createReadStream(apkPath).pipe(res);
+      return;
+    }
+    res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(`
+      <div style="font-family: sans-serif; text-align: center; padding: 50px;">
+        <h2 style="color: #3B1F9F;">APK ဖိုင် မတင်ရသေးပါ</h2>
+        <p>VPS ပေါ်ရှိ <b>downloads/UN-Mobile-POS.apk</b> ဖိုင်ထဲသို့ APK ထည့်သွင်းပေးပါ။</p>
+        <p><a href="/" style="color: #4f46e5;">ပင်မစာမျက်နှာသို့ ပြန်သွားရန်</a></p>
+      </div>
+    `);
+    return;
+  }
+
+  // API Domain root health response (api.unmobileposmm.top/)
+  if (method === 'GET' && pathname === '/' && rawHost === 'api.unmobileposmm.top') {
+    return sendJson(res, 200, {
+      success: true,
+      service: 'UN Mobile POS API',
+      status: 'online',
+      version: '2.0.5',
+      adminUrl: 'https://admin.unmobileposmm.top/',
+      downloadUrl: 'https://unmobileposmm.top/'
+    });
+  }
+
+  // Serve APK Download Landing Page (unmobileposmm.top/ or /index.html or /download)
+  const isLandingHost = rawHost === 'unmobileposmm.top' || rawHost === 'www.unmobileposmm.top';
+  if (method === 'GET' && (pathname === '/index.html' || pathname === '/download' || (pathname === '/' && isLandingHost))) {
+    const indexHtmlPath = path.join(__dirname, 'index.html');
+    if (fs.existsSync(indexHtmlPath)) {
+      const htmlContent = fs.readFileSync(indexHtmlPath, 'utf8');
+      res.writeHead(200, {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'no-cache, no-store, must-revalidate'
+      });
+      res.end(htmlContent);
+      return;
+    }
+  }
+
+  // Serve Admin Dashboard (GET / on admin.unmobileposmm.top or IP/localhost, or /admin or /admin.html)
   if (method === 'GET' && (pathname === '/' || pathname === '/admin' || pathname === '/admin.html')) {
     const adminHtmlPath = path.join(__dirname, 'admin.html');
     if (fs.existsSync(adminHtmlPath)) {
