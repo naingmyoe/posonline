@@ -1,4 +1,4 @@
-/**a
+/**
  * UN POS Backend Server for VPS (Linux / Ubuntu / Debian / Windows)
  * Direct PostgreSQL Database Storage (NO .json files, NO in-memory database cache!)
  *
@@ -1405,7 +1405,11 @@ async function authenticateSyncOrUserRequest(req, res, claimedPhone) {
     sendJson(res, 403, { success: false, code: 'forbidden', message: 'အခြားအကောင့်၏ Data ကို ဝင်ရောက်ခွင့်မရှိပါ' });
     return null;
   }
-  await pool.query(`UPDATE user_sessions SET last_used_at = $1 WHERE token_hash = $2`, [now, tokenHash]).catch(() => {});
+  const nextExpiresAt = now + USER_SESSION_TTL_MS;
+  await pool.query(
+    `UPDATE user_sessions SET last_used_at = $1, expires_at = GREATEST(expires_at, $2) WHERE token_hash = $3`,
+    [now, nextExpiresAt, tokenHash]
+  ).catch(() => {});
   return { session: sess, tenantPhone, actorPhone: sess.phone_no };
 }
 
@@ -1516,6 +1520,9 @@ const server = http.createServer(async (req, res) => {
         const { rows } = await pool.query(`SELECT * FROM users WHERE phone_no = $1 LIMIT 1`, [phoneNo]);
         const u = rows[0];
         if (u) {
+          const normalizedClientDev = String(deviceId || '').trim();
+          const preDevicesList = Array.isArray(u.devices) ? u.devices : (u.device_id ? [u.device_id] : []);
+          const wasAlreadyRegisteredDevice = Boolean(normalizedClientDev && preDevicesList.includes(normalizedClientDev));
           const evalResult = await evaluateUserAccess(pool, u, deviceId, phoneModel, false);
           if (evalResult.status === 'not_found') {
             return sendJson(res, 404, {
@@ -1524,7 +1531,34 @@ const server = http.createServer(async (req, res) => {
               message: 'Account not found on server'
             });
           }
-          return sendJson(res, 200, {
+
+          let refreshedAuthToken = '';
+          if (evalResult.allowed && wasAlreadyRegisteredDevice) {
+            const incomingToken = extractBearerToken(req);
+            const now = Date.now();
+            let hasValidSession = false;
+            if (incomingToken) {
+              const incomingHash = hashToken(incomingToken);
+              const sessCheck = await pool.query(
+                `SELECT token_hash, device_id FROM user_sessions WHERE token_hash = $1 AND phone_no = $2 AND expires_at > $3 LIMIT 1`,
+                [incomingHash, u.phone_no, now]
+              );
+              if (sessCheck.rows.length > 0 && (!sessCheck.rows[0].device_id || sessCheck.rows[0].device_id === normalizedClientDev)) {
+                hasValidSession = true;
+                await pool.query(
+                  `UPDATE user_sessions SET last_used_at = $1, expires_at = GREATEST(expires_at, $2) WHERE token_hash = $3`,
+                  [now, now + USER_SESSION_TTL_MS, incomingHash]
+                ).catch(() => {});
+              }
+            }
+            if (!hasValidSession) {
+              const cleanModel = String(phoneModel || '').trim().slice(0, 80);
+              const newSess = await createUserSession(u.phone_no, normalizedClientDev, cleanModel);
+              refreshedAuthToken = newSess.rawToken;
+            }
+          }
+
+          const checkStatusPayload = {
             success: evalResult.allowed,
             status: evalResult.status,
             message: evalResult.message,
@@ -1547,7 +1581,11 @@ const server = http.createServer(async (req, res) => {
             expiresAt: evalResult.expiresAt,
             daysLeft: evalResult.daysLeft,
             isTrial: evalResult.isTrial
-          });
+          };
+          if (refreshedAuthToken) {
+            checkStatusPayload.authToken = refreshedAuthToken;
+          }
+          return sendJson(res, 200, checkStatusPayload);
         }
 
         return sendJson(res, 404, {
