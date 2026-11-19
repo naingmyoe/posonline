@@ -48,7 +48,7 @@
               <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse mr-1.5"></span> Online
             </span>
           </div>
-          <p class="text-xs text-slate-400 hidden sm:block truncate">Backend Server: <span id="serverHostDisplay" class="font-mono text-slate-300">171.22.172.107:8081</span></p>
+          <p class="text-xs text-slate-400 hidden sm:block truncate">Backend Server: <span id="serverHostDisplay" class="font-mono text-slate-300">api.unmobileposmm.top</span></p>
         </div>
       </div>
 
@@ -145,7 +145,7 @@
       <div class="flex items-center justify-between">
         <div>
           <p class="text-xs font-semibold text-slate-200">UN POS Core v2.4</p>
-          <p class="text-[11px] text-slate-500 font-mono">171.22.172.107:8081</p>
+          <p id="drawerServerHost" class="text-[11px] text-slate-500 font-mono">api.unmobileposmm.top</p>
         </div>
         <button onclick="handleAdminLogout()" class="px-2.5 py-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900 text-rose-300 text-xs font-semibold border border-rose-800/60">
           Logout
@@ -1062,7 +1062,13 @@
   </div>
 
   <script>
-    const API_BASE = window.location.origin;
+    const API_BASE = (() => {
+      const host = (window.location.hostname || '').toLowerCase();
+      if (!host || window.location.protocol === 'file:' || host === 'admin.unmobileposmm.top' || host === 'unmobileposmm.top' || host === 'www.unmobileposmm.top') {
+        return 'https://api.unmobileposmm.top';
+      }
+      return window.location.origin;
+    })();
     let allUsers = [];
     let currentFilter = 'all';
     let currentView = 'users';
@@ -1079,7 +1085,10 @@
     let editingImageProductCtx = null;
     let pendingCompressedImagePayload = null;
 
-    document.getElementById('serverHostDisplay').textContent = window.location.host;
+    const resolvedApiHost = (() => { try { return new URL(API_BASE).host; } catch (_) { return window.location.host || 'api.unmobileposmm.top'; } })();
+    document.getElementById('serverHostDisplay').textContent = resolvedApiHost;
+    const drawerHostEl = document.getElementById('drawerServerHost');
+    if (drawerHostEl) drawerHostEl.textContent = resolvedApiHost;
 
     function resolveCloudImageUrl(rawUri) {
       const s = String(rawUri || '').trim();
