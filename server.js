@@ -1574,16 +1574,27 @@ const server = http.createServer(async (req, res) => {
   if (method === 'GET' && pathname === '/' && rawHost === 'api.unmobileposmm.top') {
     return sendJson(res, 200, {
       success: true,
-      service: 'UN Mobile POS API',
-      status: 'online',
-      version: '2.0.5',
-      adminUrl: 'https://admin.unmobileposmm.top/',
-      downloadUrl: 'https://unmobileposmm.top/'
+      status: 'ok',
+      message: 'API is OK'
+    });
+  }
+
+  // Block admin & landing HTML routes when accessed via API domain
+  if (method === 'GET' && rawHost === 'api.unmobileposmm.top' && (pathname === '/admin' || pathname === '/admin.html' || pathname === '/index.html' || pathname === '/download')) {
+    return sendJson(res, 404, {
+      success: false,
+      message: 'Not found'
     });
   }
 
   // Serve APK Download Landing Page (unmobileposmm.top/ or /index.html or /download)
   const isLandingHost = rawHost === 'unmobileposmm.top' || rawHost === 'www.unmobileposmm.top';
+  if (method === 'GET' && isLandingHost && (pathname === '/admin' || pathname === '/admin.html')) {
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('Not found');
+    return;
+  }
+
   if (method === 'GET' && (pathname === '/index.html' || pathname === '/download' || (pathname === '/' && isLandingHost))) {
     const indexHtmlPath = path.join(__dirname, 'index.html');
     if (fs.existsSync(indexHtmlPath)) {
