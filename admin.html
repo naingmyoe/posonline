@@ -27,130 +27,136 @@
 </head>
 <body class="bg-slate-50 text-slate-800 min-h-screen overflow-x-hidden">
 
-  <!-- Top Navbar -->
-  <header class="bg-slate-900 border-b border-slate-800 text-white sticky top-0 z-40 shadow-lg">
+  <!-- Top Navbar (Light SaaS Control Plane) -->
+  <header class="bg-white/95 backdrop-blur-md border-b border-slate-200/80 text-slate-800 sticky top-0 z-40">
     <div class="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-2">
       <div class="flex items-center space-x-2.5 sm:space-x-3 min-w-0">
         <!-- Drawer Hamburger Button -->
-        <button onclick="toggleDrawer()" class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 focus:outline-none transition shrink-0" title="Menu Drawer ဖွင့်မည်">
+        <button onclick="toggleDrawer()" class="p-2 rounded-xl bg-slate-100 hover:bg-slate-200/80 text-slate-700 border border-slate-200/80 focus:outline-none transition shrink-0" title="Workspace Menu">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
           </svg>
         </button>
 
-        <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-500 flex items-center justify-center shadow-md shadow-indigo-500/20 font-black text-lg sm:text-xl text-white shrink-0">
+        <div onclick="switchView('overview')" class="cursor-pointer w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center shadow-md shadow-indigo-500/20 font-black text-base sm:text-lg text-white shrink-0">
           UN
         </div>
         <div class="min-w-0">
           <div class="flex items-center space-x-2">
-            <h1 class="text-sm sm:text-lg font-bold tracking-tight text-white whitespace-nowrap truncate">UN POS Admin</h1>
-            <span class="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 whitespace-nowrap shrink-0">
-              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse mr-1.5"></span> Online
+            <h1 id="headerViewTitle" class="text-sm sm:text-base font-extrabold tracking-tight text-slate-900 whitespace-nowrap truncate">Overview (ပင်မစာမျက်နှာ)</h1>
+            <span class="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap shrink-0">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse mr-1.5"></span> Online
             </span>
           </div>
-          <p class="text-xs text-slate-400 hidden sm:block truncate">Backend Server: <span id="serverHostDisplay" class="font-mono text-slate-300">api.unmobileposmm.top</span></p>
+          <p class="text-[11px] text-slate-400 hidden sm:block truncate">UN POS Cloud · <span id="serverHostDisplay" class="font-mono text-slate-500">api.unmobileposmm.top</span></p>
         </div>
       </div>
 
-      <div class="flex items-center space-x-1.5 sm:space-x-3 shrink-0">
-        <button onclick="fetchUsersAndStats()" class="inline-flex items-center space-x-1.5 p-2 sm:px-3 sm:py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs sm:text-sm font-medium border border-slate-700 transition whitespace-nowrap">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <div class="flex items-center space-x-2 shrink-0">
+        <button onclick="refreshActiveWorkspace()" class="inline-flex items-center space-x-1.5 px-3 py-1.5 sm:py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-700 text-xs sm:text-sm font-semibold border border-slate-200 shadow-sm transition whitespace-nowrap">
+          <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
           </svg>
-          <span class="hidden md:inline">Refresh</span>
+          <span>Refresh</span>
         </button>
 
-        <button onclick="openCreateUserModal()" class="inline-flex items-center space-x-1 px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs sm:text-sm font-semibold shadow-md shadow-indigo-600/30 transition whitespace-nowrap">
+        <button onclick="openCreateUserModal()" class="inline-flex items-center space-x-1 px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs sm:text-sm font-semibold shadow-sm shadow-indigo-600/20 transition whitespace-nowrap">
           <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
           </svg>
-          <span>အကောင့်သစ်</span>
+          <span class="hidden sm:inline">အကောင့်သစ်</span>
         </button>
 
-        <button onclick="handleAdminLogout()" class="inline-flex items-center space-x-1 p-2 sm:px-3 sm:py-1.5 rounded-lg bg-rose-900/60 hover:bg-rose-800 text-rose-200 text-xs sm:text-sm font-medium border border-rose-700/60 transition whitespace-nowrap" title="Admin Logout">
+        <button onclick="handleAdminLogout()" class="hidden md:inline-flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-white hover:bg-rose-50 text-slate-600 hover:text-rose-600 text-xs sm:text-sm font-semibold border border-slate-200 transition whitespace-nowrap" title="Sign Out">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
           </svg>
-          <span class="hidden sm:inline">Logout</span>
+          <span>Sign Out</span>
         </button>
       </div>
     </div>
   </header>
 
-  <!-- Slide-out Menu Drawer (Mobile & Desktop) -->
-  <div id="drawerOverlay" onclick="toggleDrawer()" class="hidden fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-40 transition-opacity opacity-0 duration-300"></div>
+  <!-- Slide-out Menu Drawer (Light SaaS Control Plane) -->
+  <div id="drawerOverlay" onclick="toggleDrawer()" class="hidden fixed inset-0 bg-slate-900/40 backdrop-blur-[2px] z-40 transition-opacity opacity-0 duration-300"></div>
 
-  <aside id="menuDrawer" class="fixed top-0 left-0 bottom-0 w-72 sm:w-80 bg-slate-900 text-slate-100 z-50 transform -translate-x-full invisible pointer-events-none transition-all duration-300 ease-in-out flex flex-col shadow-2xl border-r border-slate-800">
+  <aside id="menuDrawer" class="fixed top-0 left-0 bottom-0 w-72 sm:w-80 bg-white text-slate-800 z-50 transform -translate-x-full invisible pointer-events-none transition-all duration-300 ease-in-out flex flex-col shadow-2xl border-r border-slate-200/80">
     <!-- Drawer Header -->
-    <div class="p-5 border-b border-slate-800 flex items-center justify-between">
+    <div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
       <div class="flex items-center space-x-3">
-        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-500 flex items-center justify-center font-black text-xl text-white shadow-md">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center font-black text-base text-white shadow-md shadow-indigo-500/25">
           UN
         </div>
         <div>
-          <h2 class="text-base font-bold text-white tracking-tight">UN POS Server</h2>
-          <p class="text-xs text-slate-400">Admin Control Center</p>
+          <h2 class="text-base font-extrabold text-slate-900 tracking-tight leading-tight">UN POS Cloud</h2>
+          <p class="text-xs text-slate-400 font-medium">SaaS Control Plane</p>
         </div>
       </div>
-      <button onclick="toggleDrawer()" class="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800">
+      <button onclick="toggleDrawer()" class="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition">
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
       </button>
     </div>
 
     <!-- Drawer Navigation Links -->
-    <nav class="flex-1 p-4 space-y-1.5 overflow-y-auto custom-scrollbar">
-      <button onclick="switchView('users'); toggleDrawer();" class="drawer-link active w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-sm font-semibold transition bg-indigo-600 text-white" data-view="users">
-        <svg class="w-5 h-5 text-indigo-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path>
+    <nav class="flex-1 px-4 py-5 space-y-1.5 overflow-y-auto custom-scrollbar">
+      <p class="px-3 pb-2 text-[11px] font-bold text-slate-400 uppercase tracking-wider">WORKSPACE MODULES</p>
+
+      <button onclick="switchView('overview'); toggleDrawer();" class="drawer-link active w-full flex items-center space-x-3 px-4 py-3 rounded-2xl text-sm font-semibold transition bg-indigo-600 text-white shadow-md shadow-indigo-500/25" data-view="overview">
+        <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path>
         </svg>
-        <span>အကောင့်များနှင့် သက်တမ်း</span>
+        <span>Overview (ပင်မစာမျက်နှာ)</span>
       </button>
 
-      <button onclick="switchView('devices'); toggleDrawer();" class="drawer-link w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-sm font-semibold transition text-slate-300 hover:bg-slate-800 hover:text-white" data-view="devices">
-        <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
+      <button onclick="switchView('accounts'); toggleDrawer();" class="drawer-link w-full flex items-center space-x-3 px-4 py-3 rounded-2xl text-sm font-semibold transition text-slate-600 hover:bg-slate-100 hover:text-slate-900" data-view="accounts">
+        <svg class="w-5 h-5 shrink-0 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"></path>
         </svg>
-        <span>၅ လုံးတွဲ စက်များ Monitor</span>
+        <span>Accounts &amp; Subscriptions</span>
       </button>
 
-      <button onclick="switchView('vouchers'); toggleDrawer();" class="drawer-link w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-sm font-semibold transition text-slate-300 hover:bg-slate-800 hover:text-white" data-view="vouchers">
-        <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+      <button onclick="switchView('products'); toggleDrawer();" class="drawer-link w-full flex items-center space-x-3 px-4 py-3 rounded-2xl text-sm font-semibold transition text-slate-600 hover:bg-slate-100 hover:text-slate-900" data-view="products">
+        <svg class="w-5 h-5 shrink-0 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path>
         </svg>
-        <span>Cloud ဘောက်ချာများ</span>
+        <span>Products &amp; Inventory</span>
       </button>
 
-      <button onclick="switchView('stock'); toggleDrawer();" class="drawer-link w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-sm font-semibold transition text-slate-300 hover:bg-slate-800 hover:text-white" data-view="stock">
-        <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path>
+      <button onclick="switchView('sales'); toggleDrawer();" class="drawer-link w-full flex items-center space-x-3 px-4 py-3 rounded-2xl text-sm font-semibold transition text-slate-600 hover:bg-slate-100 hover:text-slate-900" data-view="sales">
+        <svg class="w-5 h-5 shrink-0 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
         </svg>
-        <span>Stock နှင့် ချိန်ညှိမှု (Reconciliation)</span>
+        <span>Sales, Vouchers &amp; CRM</span>
       </button>
 
-      <div class="pt-3 pb-1 border-t border-slate-800 my-2">
-        <p class="px-3 text-[11px] font-bold text-slate-400 uppercase tracking-wider">စနစ်ဆက်တင်များ</p>
-      </div>
-
-      <button onclick="switchView('settings'); toggleDrawer();" class="drawer-link w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-sm font-semibold transition text-slate-300 hover:bg-slate-800 hover:text-white" data-view="settings">
-        <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+      <button onclick="switchView('database'); toggleDrawer();" class="drawer-link w-full flex items-center space-x-3 px-4 py-3 rounded-2xl text-sm font-semibold transition text-slate-600 hover:bg-slate-100 hover:text-slate-900" data-view="database">
+        <svg class="w-5 h-5 shrink-0 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path>
         </svg>
-        <span>Admin Password ပြောင်းမည်</span>
+        <span>Database &amp; Backups</span>
+      </button>
+
+      <button onclick="switchView('settings'); toggleDrawer();" class="drawer-link w-full flex items-center space-x-3 px-4 py-3 rounded-2xl text-sm font-semibold transition text-slate-600 hover:bg-slate-100 hover:text-slate-900" data-view="settings">
+        <svg class="w-5 h-5 shrink-0 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+        </svg>
+        <span>System Settings</span>
       </button>
     </nav>
 
     <!-- Drawer Footer -->
-    <div class="p-4 border-t border-slate-800 bg-slate-950/40">
-      <div class="flex items-center justify-between">
-        <div>
-          <p class="text-xs font-semibold text-slate-200">UN POS Core v2.4</p>
-          <p id="drawerServerHost" class="text-[11px] text-slate-500 font-mono">api.unmobileposmm.top</p>
-        </div>
-        <button onclick="handleAdminLogout()" class="px-2.5 py-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900 text-rose-300 text-xs font-semibold border border-rose-800/60">
-          Logout
-        </button>
+    <div class="p-4 border-t border-slate-100 bg-white space-y-3">
+      <div class="flex items-center space-x-2 px-1">
+        <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 shrink-0"></span>
+        <span id="drawerServerHost" class="text-xs text-slate-500 font-mono truncate">api.unmobileposmm.top</span>
       </div>
+      <button onclick="handleAdminLogout()" class="w-full py-2.5 px-4 rounded-xl bg-white hover:bg-slate-50 text-slate-700 text-sm font-semibold border border-slate-200 transition flex items-center justify-center space-x-2">
+        <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
+        </svg>
+        <span>Sign Out</span>
+      </button>
     </div>
   </aside>
 
@@ -202,8 +208,187 @@
   <!-- Main Content -->
   <main class="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-6 w-full space-y-6">
 
-    <!-- VIEW 1: USERS & SUBSCRIPTIONS (Default) -->
-    <div id="viewUsers" class="space-y-6">
+    <!-- MODULE 0: OVERVIEW (ပင်မစာမျက်နှာ) -->
+    <div id="viewOverview" class="space-y-6">
+      <!-- Top KPI Summary Cards -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div onclick="switchView('accounts')" class="cursor-pointer bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm hover:border-indigo-300 hover:shadow-md transition flex items-center justify-between">
+          <div>
+            <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">Main Admins</p>
+            <h3 id="ovStatTotalUsers" class="text-3xl font-extrabold text-slate-900 mt-1">0</h3>
+            <p id="ovStatTotalUsersSub" class="text-xs text-slate-500 mt-1">Manager 0 · Cashier 0</p>
+          </div>
+          <div class="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+          </div>
+        </div>
+
+        <div onclick="switchView('accounts'); setFilter('active');" class="cursor-pointer bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm hover:border-emerald-300 hover:shadow-md transition flex items-center justify-between">
+          <div>
+            <p class="text-xs font-bold text-emerald-600 uppercase tracking-wider">Active Accounts</p>
+            <h3 id="ovStatActiveUsers" class="text-3xl font-extrabold text-emerald-600 mt-1">0</h3>
+            <p id="ovStatExpiredSub" class="text-xs text-slate-500 mt-1">သက်တမ်းကုန် 0 · OFF 0</p>
+          </div>
+          <div class="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+          </div>
+        </div>
+
+        <div onclick="switchView('products')" class="cursor-pointer bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm hover:border-sky-300 hover:shadow-md transition flex items-center justify-between">
+          <div>
+            <p class="text-xs font-bold text-sky-600 uppercase tracking-wider">Cloud Products</p>
+            <h3 id="ovStatTotalProducts" class="text-3xl font-extrabold text-sky-600 mt-1">0</h3>
+            <p class="text-xs text-slate-500 mt-1">Multi-Unit နှင့် Stock စာရင်း</p>
+          </div>
+          <div class="w-12 h-12 rounded-2xl bg-sky-50 text-sky-600 flex items-center justify-center shrink-0">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path></svg>
+          </div>
+        </div>
+
+        <div onclick="switchView('sales')" class="cursor-pointer bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm hover:border-purple-300 hover:shadow-md transition flex items-center justify-between">
+          <div>
+            <p class="text-xs font-bold text-purple-600 uppercase tracking-wider">Cloud Vouchers</p>
+            <h3 id="ovStatTotalVouchers" class="text-3xl font-extrabold text-purple-600 mt-1">0</h3>
+            <p class="text-xs text-slate-500 mt-1">အရောင်း / အဝယ် ဘောက်ချာများ</p>
+          </div>
+          <div class="w-12 h-12 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+          </div>
+        </div>
+      </div>
+
+      <!-- Workspace Modules Quick Launch Grid -->
+      <div class="space-y-3">
+        <div class="flex items-center justify-between">
+          <h2 class="text-xs font-bold text-slate-400 uppercase tracking-wider">WORKSPACE MODULES (သီးသန့် UI စာမျက်နှာများ)</h2>
+          <span id="ovTrialBadge" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-600 border border-slate-200">Trial Status...</span>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <button type="button" onclick="switchView('accounts')" class="text-left bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm hover:border-indigo-300 hover:shadow-md transition group flex flex-col justify-between space-y-4">
+            <div class="flex items-start justify-between">
+              <div class="w-11 h-11 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+              </div>
+              <svg class="w-5 h-5 text-slate-300 group-hover:text-indigo-600 group-hover:translate-x-0.5 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+            </div>
+            <div>
+              <h3 class="text-sm font-extrabold text-slate-900">Accounts &amp; Subscriptions</h3>
+              <p class="text-xs text-slate-500 mt-1">Main Admin, Manager, Cashier နှင့် Device Monitor စီမံမှု</p>
+            </div>
+          </button>
+
+          <button type="button" onclick="switchView('products')" class="text-left bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm hover:border-sky-300 hover:shadow-md transition group flex flex-col justify-between space-y-4">
+            <div class="flex items-start justify-between">
+              <div class="w-11 h-11 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path></svg>
+              </div>
+              <svg class="w-5 h-5 text-slate-300 group-hover:text-sky-600 group-hover:translate-x-0.5 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+            </div>
+            <div>
+              <h3 class="text-sm font-extrabold text-slate-900">Products &amp; Inventory</h3>
+              <p class="text-xs text-slate-500 mt-1">ကုန်ပစ္စည်းစာရင်း၊ Stock လက်ကျန်၊ Multi-Unit နှင့် ဓာတ်ပုံ</p>
+            </div>
+          </button>
+
+          <button type="button" onclick="switchView('sales')" class="text-left bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm hover:border-purple-300 hover:shadow-md transition group flex flex-col justify-between space-y-4">
+            <div class="flex items-start justify-between">
+              <div class="w-11 h-11 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+              </div>
+              <svg class="w-5 h-5 text-slate-300 group-hover:text-purple-600 group-hover:translate-x-0.5 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+            </div>
+            <div>
+              <h3 class="text-sm font-extrabold text-slate-900">Sales, Vouchers &amp; CRM</h3>
+              <p class="text-xs text-slate-500 mt-1">Cloud ဘောက်ချာများ၊ Customer / Supplier နှင့် အသုံးစရိတ်</p>
+            </div>
+          </button>
+
+          <button type="button" onclick="switchView('database')" class="text-left bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm hover:border-amber-300 hover:shadow-md transition group flex flex-col justify-between space-y-4">
+            <div class="flex items-start justify-between">
+              <div class="w-11 h-11 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path></svg>
+              </div>
+              <svg class="w-5 h-5 text-slate-300 group-hover:text-amber-600 group-hover:translate-x-0.5 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+            </div>
+            <div>
+              <h3 class="text-sm font-extrabold text-slate-900">Database &amp; Backups</h3>
+              <p class="text-xs text-slate-500 mt-1">Full DB Backup/Restore, Account Backup နှင့် Orphan ရှင်းလင်းမှု</p>
+            </div>
+          </button>
+
+          <button type="button" onclick="switchView('settings')" class="text-left bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm hover:border-emerald-300 hover:shadow-md transition group flex flex-col justify-between space-y-4">
+            <div class="flex items-start justify-between">
+              <div class="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+              </div>
+              <svg class="w-5 h-5 text-slate-300 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+            </div>
+            <div>
+              <h3 class="text-sm font-extrabold text-slate-900">System Settings</h3>
+              <p class="text-xs text-slate-500 mt-1">7-Day Free Trial Control နှင့် Admin Password ပြောင်းလဲခြင်း</p>
+            </div>
+          </button>
+
+          <button type="button" onclick="openCreateUserModal()" class="text-left bg-gradient-to-br from-indigo-600 to-purple-600 rounded-2xl p-5 text-white shadow-md shadow-indigo-500/20 hover:opacity-95 transition group flex flex-col justify-between space-y-4">
+            <div class="flex items-start justify-between">
+              <div class="w-11 h-11 rounded-xl bg-white/15 text-white flex items-center justify-center">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path></svg>
+              </div>
+              <svg class="w-5 h-5 text-indigo-200 group-hover:translate-x-0.5 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+            </div>
+            <div>
+              <h3 class="text-sm font-extrabold">Create Main Admin</h3>
+              <p class="text-xs text-indigo-100 mt-1">ဆိုင်အကောင့်အသစ် ဖွင့်လှစ်ပြီး Device Limit သတ်မှတ်မည်</p>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      <!-- Two-column Overview Snapshot: Attention / Expiring Accounts + Recent Active Accounts -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+          <div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+            <div>
+              <h3 class="text-sm font-bold text-slate-900">သက်တမ်းကုန် / စောင့်ဆိုင်း အကောင့်များ</h3>
+              <p class="text-[11px] text-slate-500">သက်တမ်းတိုးရန် သို့မဟုတ် Status ဖွင့်ရန် လိုအပ်သူများ</p>
+            </div>
+            <button type="button" onclick="switchView('accounts'); setFilter('expired');" class="text-xs font-bold text-indigo-600 hover:underline">အားလုံးကြည့်မည် →</button>
+          </div>
+          <div id="overviewAttentionList" class="divide-y divide-slate-100 max-h-80 overflow-y-auto custom-scrollbar">
+            <div class="py-10 text-center text-xs text-slate-400">စစ်ဆေးနေပါသည်...</div>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+          <div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+            <div>
+              <h3 class="text-sm font-bold text-slate-900">လက်ရှိ Active ဆိုင်အကောင့်များ</h3>
+              <p class="text-[11px] text-slate-500">နောက်ဆုံး Sync / Login အခြေအနေ ကြည့်ရှုရန်</p>
+            </div>
+            <button type="button" onclick="switchView('accounts'); setAccountsSubTab('devices');" class="text-xs font-bold text-indigo-600 hover:underline">Devices Monitor →</button>
+          </div>
+          <div id="overviewActiveList" class="divide-y divide-slate-100 max-h-80 overflow-y-auto custom-scrollbar">
+            <div class="py-10 text-center text-xs text-slate-400">စစ်ဆေးနေပါသည်...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- END MODULE 0: OVERVIEW -->
+
+    <!-- MODULE 1: ACCOUNTS & SUBSCRIPTIONS -->
+    <div id="viewAccounts" class="space-y-6 hidden">
+      <!-- Accounts Sub-Tabs Bar -->
+      <div class="bg-white rounded-2xl p-2 border border-slate-200/80 shadow-sm inline-flex items-center space-x-1.5">
+        <button type="button" id="accSubTabListBtn" onclick="setAccountsSubTab('list')" class="px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 text-white shadow-sm transition">
+          Main Admin အကောင့်များ
+        </button>
+        <button type="button" id="accSubTabDevicesBtn" onclick="setAccountsSubTab('devices')" class="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition">
+          Device Limit Monitor (<span id="accTotalDevicesCount">0</span>)
+        </button>
+      </div>
+
+      <div id="accountsListPanel" class="space-y-6">
 
     <!-- Metrics Cards -->
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
@@ -336,8 +521,35 @@
         </table>
       </div>
     </div>
+      </div><!-- END accountsListPanel -->
+
+      <!-- Accounts Sub-Panel 2: Device Limit Monitor -->
+      <div id="accountsDevicesPanel" class="space-y-5 hidden">
+        <div class="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h2 class="text-base font-bold text-slate-900 flex items-center space-x-2">
+              <span>Device Limit Monitor (၅ လုံးတွဲ စက်ချိတ်ဆက်မှု စစ်ဆေးခြင်း)</span>
+              <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                Auto Sync Active
+              </span>
+            </h2>
+            <p class="text-xs text-slate-500 mt-1">အကောင့်တစ်ခုစီတွင် သတ်မှတ်ထားသော Device Limit အတိုင်း ချိတ်ဆက်ထားသည့် စက်စာရင်းနှင့် နောက်ဆုံး Login အချိန်များ</p>
+          </div>
+          <div class="flex items-center space-x-2">
+            <input type="text" id="deviceSearchInput" oninput="renderDevicesView()" placeholder="ဆိုင် / ဖုန်း / Model ရှာရန်..." class="w-48 sm:w-60 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <button onclick="fetchUsersAndStats()" class="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 text-indigo-700 text-xs font-bold border border-indigo-200 hover:bg-indigo-100 transition shrink-0">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+              <span>Refresh</span>
+            </button>
+          </div>
+        </div>
+
+        <div id="devicesContainer" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          <!-- Rendered dynamically by renderDevicesView() -->
+        </div>
+      </div>
     </div>
-    <!-- END VIEW 1: USERS -->
+    <!-- END MODULE 1: ACCOUNTS & SUBSCRIPTIONS -->
 
     <!-- VIEW 1B: MAIN ADMIN DETAIL VIEW (Cashiers + Cloud Business Data) -->
     <div id="viewAdminDetail" class="space-y-6 hidden">
@@ -346,7 +558,7 @@
         <div class="flex items-center space-x-3">
           <button onclick="closeAdminDetailView()" class="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
-            <span>Main Admin စာရင်းသို့</span>
+            <span>Accounts စာရင်းသို့</span>
           </button>
           <div class="h-4 w-px bg-slate-200 hidden sm:block"></div>
           <span class="text-xs font-semibold text-slate-500 hidden sm:inline">Main Admin အသေးစိတ်၊ Cashier များနှင့် Cloud Data စီမံခန့်ခွဲမှု</span>
@@ -374,7 +586,7 @@
         <div id="adminDetailLegacyNotice" class="hidden rounded-2xl bg-amber-50 border border-amber-200 px-4 py-3 text-xs text-amber-900 flex items-start space-x-2.5">
           <svg class="w-4 h-4 text-amber-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
           <div>
-            <b>Server Restart လိုအပ်နေပါသည်:</b> VPS ပေါ်ရှိ <span class="font-mono font-bold">server.js</span> အသစ်ကို Restart မချရသေးသဖြင့် Fallback API ဖြင့် ယာယီပြသထားပါသည်။ Cashier အသစ်ထည့်ခြင်းနှင့် Admin Cascade Delete အပြည့်အဝ သုံးနိုင်ရန် VPS ပေါ်တွင် <span class="font-mono font-bold">server.js</span> ကို Upload + Restart (<span class="font-mono">pm2 restart all</span>) လုပ်ပေးပါ။
+            <b>Server Restart လိုအပ်နေပါသည်:</b> VPS ပေါ်ရှိ <span class="font-mono font-bold">server.js</span> အသစ်ကို Restart မချရသေးသဖြင့် Fallback API ဖြင့် ယာယီပြသထားပါသည်။
           </div>
         </div>
         <!-- Hero Profile Card -->
@@ -425,93 +637,58 @@
     </div>
     <!-- END VIEW 1B: MAIN ADMIN DETAIL VIEW -->
 
-    <!-- VIEW 2: 5-DEVICE REAL-TIME MONITOR -->
-    <div id="viewDevices" class="space-y-6 hidden">
-      <div class="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h2 class="text-lg font-bold text-slate-900 flex items-center space-x-2">
-            <span>အကောင့်အလိုက် Device ချိတ်ဆက်မှု အခြေအနေ (Device Limit Monitor)</span>
-            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
-              Auto Sync Active
-            </span>
-          </h2>
-          <p class="text-xs text-slate-500 mt-1">အကောင့်တစ်ခုစီတွင် သတ်မှတ်ထားသော Device Limit အတိုင်း ချိတ်ဆက်ထားသည့် စက်စာရင်းနှင့် နောက်ဆုံး Sync ပြုလုပ်ချိန်များ</p>
+    <!-- MODULE 2: PRODUCTS & INVENTORY -->
+    <div id="viewProducts" class="space-y-6 hidden">
+      <!-- Inventory KPI Strip -->
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm">
+          <p class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">စုစုပေါင်း ကုန်ပစ္စည်း</p>
+          <h3 id="prodKpiTotal" class="text-2xl font-extrabold text-slate-900 mt-1">0</h3>
         </div>
-        <button onclick="fetchUsersAndStats()" class="inline-flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-700 text-xs font-semibold border border-indigo-200 hover:bg-indigo-100 transition">
+        <div class="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm">
+          <p class="text-[11px] font-bold text-rose-500 uppercase tracking-wider">လက်ကျန်နည်း (Low Stock)</p>
+          <h3 id="prodKpiLow" class="text-2xl font-extrabold text-rose-600 mt-1">0</h3>
+        </div>
+        <div class="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm">
+          <p class="text-[11px] font-bold text-indigo-500 uppercase tracking-wider">Multi-Unit ပါဝင်</p>
+          <h3 id="prodKpiMulti" class="text-2xl font-extrabold text-indigo-600 mt-1">0</h3>
+        </div>
+        <div class="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm">
+          <p class="text-[11px] font-bold text-emerald-600 uppercase tracking-wider">ဓာတ်ပုံတင်ထား</p>
+          <h3 id="prodKpiImages" class="text-2xl font-extrabold text-emerald-600 mt-1">0</h3>
+        </div>
+      </div>
+
+      <!-- Toolbar: Search + Shop Filter + Low Stock Filter -->
+      <div class="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+        <div class="flex flex-col sm:flex-row sm:items-center gap-2.5 flex-1">
+          <div class="relative flex-1 max-w-sm">
+            <svg class="w-4 h-4 text-slate-400 absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+            <input type="text" id="productSearchInput" oninput="renderCloudProductsTable()" placeholder="ပစ္စည်းအမည် / Group / Barcode ရှာရန်..." class="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          </div>
+          <select id="productShopFilter" onchange="renderCloudProductsTable()" class="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <option value="">ဆိုင်အားလုံး (All Shops)</option>
+          </select>
+          <div class="inline-flex items-center space-x-1 bg-slate-100 p-1 rounded-xl">
+            <button type="button" id="prodFilterAllBtn" onclick="setProductStockFilter('all')" class="px-3 py-1 rounded-lg text-xs font-bold bg-white text-slate-900 shadow-sm">အားလုံး</button>
+            <button type="button" id="prodFilterLowBtn" onclick="setProductStockFilter('low')" class="px-3 py-1 rounded-lg text-xs font-bold text-slate-600 hover:text-rose-600">Low Stock</button>
+          </div>
+        </div>
+        <button onclick="fetchCloudProducts()" class="inline-flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-sm transition shrink-0">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-          <span>Refresh Devices</span>
+          <span>Stock စာရင်း ပြန်ခေါ်မည်</span>
         </button>
       </div>
 
-      <div id="devicesContainer" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        <!-- Rendered dynamically by renderDevicesView() -->
-      </div>
-    </div>
-
-    <!-- VIEW 3: CLOUD VOUCHERS LEDGER -->
-    <div id="viewVouchers" class="space-y-6 hidden">
-      <div class="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h2 class="text-lg font-bold text-slate-900">Cloud ပေါ်ရှိ ဘောက်ချာစာရင်းများ (Cloud Vouchers Ledger)</h2>
-          <p class="text-xs text-slate-500 mt-1">စက် ၅ လုံးမှ Online/Offline ရောင်းချထားပြီး Server ပေါ်သို့ ပို့ဆောင်ထားသော စာရင်းများ</p>
-        </div>
-        <div class="flex items-center space-x-2">
-          <button onclick="fetchCloudVouchers()" class="inline-flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800 transition">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-            <span>ဆာဗာမှ ပြန်ခေါ်မည်</span>
-          </button>
+      <!-- Stock Reconciliation Info Card -->
+      <div class="bg-indigo-50/60 border border-indigo-200/70 rounded-2xl p-4 text-xs text-slate-700 flex items-start space-x-3">
+        <svg class="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+        <div class="leading-relaxed">
+          <b class="text-indigo-950">Delta-Based Stock Reconciliation:</b> စက် ၅ လုံး Online/Offline တစ်ပြိုင်နက် ရောင်းချမှုများကို Receipt ID နှင့် Stock Delta ဖြင့် တွက်ချက်ထားပြီး ပစ္စည်းတစ်ခုချင်းစီ၏ ဓာတ်ပုံနှင့် Multi-Unit စျေးနှုန်းများကို ဤနေရာမှ တိုက်ရိုက် ပြင်ဆင်နိုင်ပါသည်။
         </div>
       </div>
 
-      <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
-        <div class="overflow-x-auto custom-scrollbar">
-          <table class="w-full text-left border-collapse text-sm">
-            <thead>
-              <tr class="bg-slate-50/75 text-slate-500 font-semibold border-b border-slate-200/80 text-xs uppercase tracking-wider">
-                <th class="py-3.5 px-4 pl-6">ဘောက်ချာအမှတ် (Receipt No)</th>
-                <th class="py-3.5 px-4">ဆိုင်နှင့် အကောင့်</th>
-                <th class="py-3.5 px-4">အမျိုးအစား</th>
-                <th class="py-3.5 px-4">ကျသင့်ငွေ</th>
-                <th class="py-3.5 px-4">Customer</th>
-                <th class="py-3.5 px-4">ငွေပေးချေမှု</th>
-                <th class="py-3.5 px-4 pr-6 text-right">အချိန်</th>
-              </tr>
-            </thead>
-            <tbody id="vouchersTableBody" class="divide-y divide-slate-100">
-              <tr>
-                <td colspan="7" class="py-12 text-center text-slate-400">ဘောက်ချာစာရင်း ခေါ်ယူရန် "ဆာဗာမှ ပြန်ခေါ်မည်" ကို နှိပ်ပါ</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
-    <!-- VIEW 4: STOCK RECONCILIATION & RESOLUTION -->
-    <div id="viewStock" class="space-y-6 hidden">
-      <div class="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h2 class="text-lg font-bold text-slate-900">ပစ္စည်းလက်ကျန်နှင့် Offline/Online ချိန်ညှိမှု (Stock Reconciliation)</h2>
-          <p class="text-xs text-slate-500 mt-1">ဖုန်း ၅ လုံးမှ တစ်ပြိုင်နက် ရောင်း/ဝယ်ထားသော ပစ္စည်းလက်ကျန် (Stock Deltas) များကို Server ပေါ်တွင် အလိုအလျောက် တွက်ချက်ထားသည့် အချက်အလက်</p>
-        </div>
-        <button onclick="fetchCloudProducts()" class="inline-flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-500 transition">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-          <span>Stock စာရင်း ပြန်စစ်မည်</span>
-        </button>
-      </div>
-
-      <div class="bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-pink-500/10 border border-indigo-200/60 rounded-2xl p-5 text-sm space-y-2">
-        <h3 class="font-bold text-indigo-900 flex items-center space-x-2">
-          <svg class="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-          <span>ဖုန်း ၅ လုံး Offline / Online ရောင်းချမှု မတိုက်ဆိုင်ခြင်း (Stock Conflict) ဖြေရှင်းပုံ သဘောတရား</span>
-        </h3>
-        <p class="text-xs text-slate-700 leading-relaxed">
-          • <b>Receipt Uniqueness:</b> ဘောက်ချာတစ်ခုစီတွင် စက်၏ သီးခြား Device ID နှင့် Millisecond Timestamp ပါဝင်သဖြင့် စက်နှစ်လုံး Offline ဖြစ်နေချိန် ပြိုင်တူရောင်းလျှင်ပင် Receipt No ချင်း မထပ်ဘဲ သီးခြားစီ မှတ်တမ်းဝင်ပါသည်။<br>
-          • <b>Delta-Based Stock Accounting:</b> ဆာဗာသည် ရိုးရိုးလက်ကျန် Overwrite မလုပ်ဘဲ ဘောက်ချာတစ်ခုစီ၏ ရောင်းချမှု (-Qty) နှင့် အဝယ် (+Qty) များကို သီးခြားစီ စုပေါင်းတွက်ချက်ပြီး တိကျသော လက်ကျန်ကို ပြန်လည်ညှိနှိုင်း (Reconcile) ပေးပါသည်။<br>
-          • <b>Auto Sync & Pull-to-Refresh:</b> ဖုန်း ၅ လုံးစလုံးသည် အင်တာနက်မိသည်နှင့် (သို့မဟုတ် အောက်သို့ဆွဲချ Pull down လုပ်သည်နှင့်) ဆာဗာမှ ချိန်ညှိပြီးသား ပစ္စည်းလက်ကျန်အစစ်အမှန်ကို အလိုအလျောက် ရယူသွားမည် ဖြစ်ပါသည်။
-        </p>
-      </div>
-
+      <!-- Products Table -->
       <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
         <div class="overflow-x-auto custom-scrollbar">
           <table class="w-full text-left border-collapse text-sm">
@@ -520,7 +697,7 @@
                 <th class="py-3.5 px-4 pl-6">ပစ္စည်းအမည်</th>
                 <th class="py-3.5 px-4">ဆိုင်/အကောင့်</th>
                 <th class="py-3.5 px-4">အမျိုးအစား (Group)</th>
-                <th class="py-3.5 px-4">လက်ကျန်အရေအတွက် (Stock)</th>
+                <th class="py-3.5 px-4">လက်ကျန် (Stock)</th>
                 <th class="py-3.5 px-4">ယူနစ်ခွဲများ (Multi-Unit)</th>
                 <th class="py-3.5 px-4">ဝယ်ဈေး / ရောင်းဈေး</th>
                 <th class="py-3.5 px-4 pr-6 text-right">လုပ်ဆောင်ချက်</th>
@@ -528,18 +705,238 @@
             </thead>
             <tbody id="stockTableBody" class="divide-y divide-slate-100">
               <tr>
-                <td colspan="7" class="py-12 text-center text-slate-400">Stock စာရင်း ခေါ်ယူရန် "Stock စာရင်း ပြန်စစ်မည်" ကို နှိပ်ပါ</td>
+                <td colspan="7" class="py-12 text-center text-slate-400">Stock စာရင်း ခေါ်ယူနေပါသည်...</td>
               </tr>
             </tbody>
           </table>
         </div>
       </div>
     </div>
+    <!-- END MODULE 2: PRODUCTS & INVENTORY -->
 
-    <!-- VIEW 5: ADMIN SETTINGS (Trial Control, Change Password & Orphaned Cloud Data Cleanup) -->
+    <!-- MODULE 3: SALES, VOUCHERS & CRM -->
+    <div id="viewSales" class="space-y-6 hidden">
+      <!-- Sub-tabs & Shop Selector -->
+      <div class="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+        <div class="flex items-center space-x-1.5 overflow-x-auto pb-1 lg:pb-0">
+          <button type="button" id="salesSubTabVouchersBtn" onclick="setSalesSubTab('vouchers')" class="px-3.5 py-2 rounded-xl text-xs font-bold bg-indigo-600 text-white shadow-sm whitespace-nowrap transition">
+            Cloud ဘောက်ချာများ
+          </button>
+          <button type="button" id="salesSubTabCrmBtn" onclick="setSalesSubTab('crm')" class="px-3.5 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 whitespace-nowrap transition">
+            Customers &amp; Suppliers (CRM)
+          </button>
+          <button type="button" id="salesSubTabFinanceBtn" onclick="setSalesSubTab('finance')" class="px-3.5 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 whitespace-nowrap transition">
+            အသုံးစရိတ် &amp; ငွေစာရင်း
+          </button>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2">
+          <select id="salesShopFilter" onchange="onSalesShopChange()" class="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <option value="">ဆိုင်အားလုံး (Recent Vouchers)</option>
+          </select>
+          <div class="relative">
+            <svg class="w-4 h-4 text-slate-400 absolute left-3 top-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+            <input type="text" id="salesSearchInput" oninput="renderActiveSalesPanel()" placeholder="Receipt / Customer ရှာရန်..." class="w-48 sm:w-56 pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          </div>
+          <button onclick="refreshActiveSalesPanel()" class="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+            <span>Refresh</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Panel A: Cloud Vouchers Ledger -->
+      <div id="salesVouchersPanel" class="space-y-4">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div class="inline-flex items-center space-x-1.5 bg-white border border-slate-200 p-1 rounded-xl shadow-sm">
+            <button type="button" id="vTypeAllBtn" onclick="setGlobalVoucherType('all')" class="px-3 py-1 rounded-lg text-xs font-bold bg-slate-900 text-white">အားလုံး</button>
+            <button type="button" id="vTypeSaleBtn" onclick="setGlobalVoucherType('sale')" class="px-3 py-1 rounded-lg text-xs font-bold text-emerald-700 hover:bg-emerald-50">အရောင်း (Sale)</button>
+            <button type="button" id="vTypePurchaseBtn" onclick="setGlobalVoucherType('purchase')" class="px-3 py-1 rounded-lg text-xs font-bold text-amber-700 hover:bg-amber-50">အဝယ် (Purchase)</button>
+          </div>
+          <span id="salesVouchersSummaryBadge" class="text-xs font-semibold text-slate-500 bg-white border border-slate-200 px-3 py-1.5 rounded-xl">0 vouchers</span>
+        </div>
+
+        <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+          <div class="overflow-x-auto custom-scrollbar">
+            <table class="w-full text-left border-collapse text-sm">
+              <thead>
+                <tr class="bg-slate-50/75 text-slate-500 font-semibold border-b border-slate-200/80 text-xs uppercase tracking-wider">
+                  <th class="py-3.5 px-4 pl-6">ဘောက်ချာအမှတ် (Receipt No)</th>
+                  <th class="py-3.5 px-4">ဆိုင်နှင့် အကောင့်</th>
+                  <th class="py-3.5 px-4">အမျိုးအစား</th>
+                  <th class="py-3.5 px-4">ကျသင့်ငွေ</th>
+                  <th class="py-3.5 px-4">Customer / Supplier</th>
+                  <th class="py-3.5 px-4">ငွေပေးချေမှု</th>
+                  <th class="py-3.5 px-4 pr-6 text-right">အချိန်</th>
+                </tr>
+              </thead>
+              <tbody id="vouchersTableBody" class="divide-y divide-slate-100">
+                <tr>
+                  <td colspan="7" class="py-12 text-center text-slate-400">ဘောက်ချာစာရင်း ရယူနေပါသည်...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Panel B: Customers & Suppliers (CRM) -->
+      <div id="salesCrmPanel" class="hidden space-y-4">
+        <div id="salesCrmContent" class="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-6 text-center text-xs text-slate-400">
+          ဆိုင်တစ်ခု ရွေးချယ်၍ Customer နှင့် Supplier စာရင်း ကြည့်ရှုပါ
+        </div>
+      </div>
+
+      <!-- Panel C: Expenses, Payments & Stock Logs -->
+      <div id="salesFinancePanel" class="hidden space-y-4">
+        <div id="salesFinanceContent" class="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-6 text-center text-xs text-slate-400">
+          ဆိုင်တစ်ခု ရွေးချယ်၍ အသုံးစရိတ်နှင့် ငွေစာရင်း ကြည့်ရှုပါ
+        </div>
+      </div>
+    </div>
+    <!-- END MODULE 3: SALES, VOUCHERS & CRM -->
+
+    <!-- MODULE 4: DATABASE & BACKUPS -->
+    <div id="viewDatabase" class="space-y-6 hidden">
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+        <!-- Card 1: Full PostgreSQL Database Backup & Restore -->
+        <div class="lg:col-span-2 bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm space-y-5">
+          <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <h2 class="text-lg font-bold text-slate-900">Full PostgreSQL Database Backup &amp; Restore</h2>
+              <p class="text-xs text-slate-500 mt-1 leading-relaxed">
+                PostgreSQL Server ပေါ်ရှိ အကောင့်များအားလုံး (Main Admin + Manager + Cashier) နှင့် Cloud Data Table (၁၂) ခုလုံးကို JSON ဖိုင်အဖြစ် Backup သိမ်းဆည်းခြင်း / Restore ပြုလုပ်ခြင်း။
+              </p>
+            </div>
+            <span class="shrink-0 inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+              Format: UN_POS_FULL_BACKUP_V1
+            </span>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="rounded-2xl border border-indigo-200 bg-indigo-50/50 p-5 space-y-3">
+              <div class="flex items-center space-x-2.5">
+                <div class="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0">
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                </div>
+                <div>
+                  <h3 class="text-sm font-bold text-slate-900">Full Database Backup Download</h3>
+                  <p class="text-[11px] text-slate-600">အကောင့်များနှင့် Cloud Data အားလုံးကို .json ဖိုင်အဖြစ် သိမ်းမည်</p>
+                </div>
+              </div>
+              <button type="button" id="fullBackupBtn" onclick="downloadFullBackup()" class="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-600/20 transition flex items-center justify-center space-x-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                <span>Database တစ်ခုလုံး Backup Download လုပ်မည်</span>
+              </button>
+            </div>
+
+            <div class="rounded-2xl border border-amber-200 bg-amber-50/50 p-5 space-y-3">
+              <div class="flex items-center space-x-2.5">
+                <div class="w-9 h-9 rounded-xl bg-amber-600 text-white flex items-center justify-center shrink-0">
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                </div>
+                <div>
+                  <h3 class="text-sm font-bold text-slate-900">Full Database Restore from File</h3>
+                  <p class="text-[11px] text-slate-600">သိမ်းထားသော Full Backup (.json) ဖိုင်ကို ရွေးချယ်၍ Restore တင်မည်</p>
+                </div>
+              </div>
+              <input type="file" id="fullBackupFileInput" accept=".json,application/json" onchange="handleFullBackupFileSelect(event)" class="hidden">
+              <button type="button" onclick="document.getElementById('fullBackupFileInput').click()" class="w-full py-2.5 px-4 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold shadow-md shadow-amber-600/20 transition flex items-center justify-center space-x-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                <span>Full Backup ဖိုင် ရွေး၍ Restore လုပ်မည်</span>
+              </button>
+            </div>
+          </div>
+          <p class="text-[11px] text-slate-500">
+            * Backup ဖိုင်ထဲတွင် User Password Hash များ ပါဝင်သောကြောင့် လုံခြုံသော နေရာတွင် သိမ်းဆည်းပါ။ Admin Password ကိုမူ Restore လုပ်သည့်အခါ မပြောင်းလဲဘဲ ထိန်းသိမ်းပေးထားပါသည်။
+          </p>
+        </div>
+
+        <!-- Card 2: Per-Account Backup & Restore -->
+        <div class="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm space-y-5">
+          <div>
+            <h2 class="text-base font-bold text-slate-900">ဆိုင်တစ်ဆိုင်ချင်း Backup &amp; Restore</h2>
+            <p class="text-xs text-slate-500 mt-1">သက်ဆိုင်ရာ Main Admin အကောင့်တစ်ခုတည်း၏ Cloud Data များကို သီးသန့် Backup ထုတ်ခြင်း / Restore တင်ခြင်း (<span class="font-mono">UN_POS_ACCOUNT_BACKUP_V1</span>)</p>
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-600 uppercase mb-1.5">ဆိုင်အကောင့် ရွေးချယ်ရန်</label>
+            <select id="dbAccountSelect" class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <option value="">Main Admin အကောင့် ရွေးပါ...</option>
+            </select>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <button type="button" onclick="downloadSelectedAccountBackup()" class="py-2.5 px-4 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center justify-center space-x-1.5">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+              <span>Account Backup (.json)</span>
+            </button>
+            <button type="button" onclick="triggerSelectedAccountRestore()" class="py-2.5 px-4 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1.5">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+              <span>Account Restore တင်မည်</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Card 3: Cleanup Orphaned Cloud Data -->
+        <div class="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm space-y-5">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <h2 class="text-base font-bold text-slate-900">အကောင့်မရှိတော့သော Cloud Data များ ရှင်းလင်းခြင်း</h2>
+              <p class="text-xs text-slate-500 mt-1 leading-relaxed">
+                Owner Account မရှိတော့သည့် Orphan Cloud Data များကိုသာ ရှာဖွေ Remove လုပ်ပေးပါသည်။ <span class="font-semibold text-emerald-700">လက်ရှိ Account Data များကို လုံးဝ မဖျက်ပါ။</span>
+              </p>
+            </div>
+            <button type="button" onclick="loadOrphanSummary()" id="scanOrphansBtn" class="shrink-0 inline-flex items-center space-x-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+              <span>စစ်ဆေးမည်</span>
+            </button>
+          </div>
+
+          <div id="orphanScanBanner" class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
+            Database ကို စစ်ဆေးနေပါသည်...
+          </div>
+
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            <div class="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+              <p class="text-[11px] font-semibold text-slate-500">Vouchers</p>
+              <p id="orphanVouchersCount" class="text-lg font-bold text-slate-900 mt-0.5">-</p>
+            </div>
+            <div class="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+              <p class="text-[11px] font-semibold text-slate-500">ကုန်ပစ္စည်း</p>
+              <p id="orphanProductsCount" class="text-lg font-bold text-slate-900 mt-0.5">-</p>
+            </div>
+            <div class="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+              <p class="text-[11px] font-semibold text-slate-500">အခြား Data</p>
+              <p id="orphanOthersCount" class="text-lg font-bold text-slate-900 mt-0.5">-</p>
+            </div>
+            <div class="rounded-xl border border-rose-200 bg-rose-50/70 p-3">
+              <p class="text-[11px] font-semibold text-rose-600">စုစုပေါင်း ကျန်</p>
+              <p id="orphanTotalCount" class="text-lg font-bold text-rose-700 mt-0.5">-</p>
+            </div>
+          </div>
+
+          <div id="protectedValidSummary" class="flex items-center space-x-2 rounded-xl border border-emerald-200 bg-emerald-50/80 px-3.5 py-2.5 text-xs text-emerald-800">
+            <svg class="w-4 h-4 shrink-0 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+            <span>Account ရှိသော Data များကို စစ်ဆေးနေပါသည်...</span>
+          </div>
+
+          <div id="orphanPhonesContainer" class="hidden space-y-2">
+            <p class="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Account မရှိဘဲ ကျန်နေသော ဖုန်းနံပါတ်များ</p>
+            <div id="orphanPhonesList" class="max-h-48 overflow-y-auto space-y-1.5 pr-1"></div>
+          </div>
+
+          <button type="button" id="cleanupOrphansBtn" onclick="openOrphanCleanupModal()" disabled class="w-full py-2.5 px-4 bg-rose-600 hover:bg-rose-500 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white rounded-xl text-sm font-bold shadow-md shadow-rose-600/20 disabled:shadow-none transition flex items-center justify-center space-x-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+            <span>အကောင့်မရှိသော Cloud Data များ Remove လုပ်မည်</span>
+          </button>
+        </div>
+      </div>
+    </div>
+    <!-- END MODULE 4: DATABASE & BACKUPS -->
+
+    <!-- MODULE 5: SYSTEM SETTINGS -->
     <div id="viewSettings" class="space-y-6 hidden">
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-        <!-- Card 0: System Settings - Free Trial Toggle -->
+        <!-- Card 0: Free Trial Toggle -->
         <div class="lg:col-span-2 bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm">
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div class="space-y-1">
@@ -588,121 +985,33 @@
           </form>
         </div>
 
-        <!-- Card 2: Cleanup Orphaned Cloud Data (Account မရှိဘဲ ကျန်နေသော Data များ ရှင်းလင်းခြင်း) -->
-        <div class="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm space-y-5">
-          <div class="flex items-start justify-between gap-3">
-            <div>
-              <div class="flex items-center space-x-2">
-                <h2 class="text-lg font-bold text-slate-900">အကောင့်မရှိတော့သော Cloud Data များ ရှင်းလင်းခြင်း</h2>
-              </div>
-              <p class="text-xs text-slate-500 mt-1 leading-relaxed">
-                အကောင့်ဖျက်ထားပြီးနောက် Database ထဲတွင် ကျန်နေခဲ့သော (Owner Account မရှိတော့သည့်) Cloud Voucher များ၊ ကုန်ပစ္စည်းများနှင့် အခြား Data များကိုသာ ရှာဖွေ Remove လုပ်ပေးပါသည်။ <span class="font-semibold text-emerald-700">လက်ရှိ Account ရှိနေသော Data များကို လုံးဝ မဖျက်ပါ။</span>
-              </p>
-            </div>
-            <button type="button" onclick="loadOrphanSummary()" id="scanOrphansBtn" class="shrink-0 inline-flex items-center space-x-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition">
-              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-              <span>စစ်ဆေးမည်</span>
-            </button>
+        <!-- Card 2: Server & Session Security Info -->
+        <div class="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm space-y-4">
+          <div>
+            <h2 class="text-lg font-bold text-slate-900">Control Plane Server Status</h2>
+            <p class="text-xs text-slate-500 mt-1">API ချိတ်ဆက်မှုနှင့် Admin Session လုံခြုံရေး အခြေအနေ</p>
           </div>
-
-          <!-- Scan Banner -->
-          <div id="orphanScanBanner" class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
-            Database ကို စစ်ဆေးနေပါသည်...
-          </div>
-
-          <!-- Counts Grid -->
-          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-            <div class="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
-              <p class="text-[11px] font-semibold text-slate-500">Vouchers</p>
-              <p id="orphanVouchersCount" class="text-lg font-bold text-slate-900 mt-0.5">-</p>
+          <div class="space-y-2.5 text-xs">
+            <div class="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200/80">
+              <span class="font-semibold text-slate-600">API Backend Host</span>
+              <span id="settingsApiHost" class="font-mono font-bold text-indigo-700">api.unmobileposmm.top</span>
             </div>
-            <div class="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
-              <p class="text-[11px] font-semibold text-slate-500">ကုန်ပစ္စည်း</p>
-              <p id="orphanProductsCount" class="text-lg font-bold text-slate-900 mt-0.5">-</p>
+            <div class="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200/80">
+              <span class="font-semibold text-slate-600">Signed-in Admin</span>
+              <span id="settingsAdminUser" class="font-mono font-bold text-slate-900">admin</span>
             </div>
-            <div class="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
-              <p class="text-[11px] font-semibold text-slate-500">အခြား Data</p>
-              <p id="orphanOthersCount" class="text-lg font-bold text-slate-900 mt-0.5">-</p>
-            </div>
-            <div class="rounded-xl border border-rose-200 bg-rose-50/70 p-3">
-              <p class="text-[11px] font-semibold text-rose-600">စုစုပေါင်း ကျန်</p>
-              <p id="orphanTotalCount" class="text-lg font-bold text-rose-700 mt-0.5">-</p>
+            <div class="flex items-center justify-between p-3 rounded-xl bg-emerald-50/70 border border-emerald-200">
+              <span class="font-semibold text-emerald-800">Auth &amp; Encryption</span>
+              <span class="font-bold text-emerald-700">Bearer Token + Scrypt</span>
             </div>
           </div>
-
-          <!-- Protected Account Data Info -->
-          <div id="protectedValidSummary" class="flex items-center space-x-2 rounded-xl border border-emerald-200 bg-emerald-50/80 px-3.5 py-2.5 text-xs text-emerald-800">
-            <svg class="w-4 h-4 shrink-0 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
-            <span>Account ရှိသော Data များကို စစ်ဆေးနေပါသည်...</span>
-          </div>
-
-          <!-- Orphaned Phone List -->
-          <div id="orphanPhonesContainer" class="hidden space-y-2">
-            <p class="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Account မရှိဘဲ ကျန်နေသော ဖုန်းနံပါတ်များ</p>
-            <div id="orphanPhonesList" class="max-h-48 overflow-y-auto space-y-1.5 pr-1"></div>
-          </div>
-
-          <!-- Remove Action Button -->
-          <button type="button" id="cleanupOrphansBtn" onclick="openOrphanCleanupModal()" disabled class="w-full py-2.5 px-4 bg-rose-600 hover:bg-rose-500 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white rounded-xl text-sm font-bold shadow-md shadow-rose-600/20 disabled:shadow-none transition flex items-center justify-center space-x-2">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-            <span>အကောင့်မရှိသော Cloud Data များ Remove လုပ်မည်</span>
+          <button type="button" onclick="handleAdminLogout()" class="w-full py-2.5 px-4 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition">
+            လက်ရှိ Admin Session မှ Sign Out ထွက်မည်
           </button>
-        </div>
-
-        <!-- Card 3: Full PostgreSQL Database Backup & Restore -->
-        <div class="lg:col-span-2 bg-white rounded-2xl p-6 border border-slate-200/80 shadow-sm space-y-5">
-          <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div>
-              <h2 class="text-lg font-bold text-slate-900">Database တစ်ခုလုံး Backup နှင့် Restore ပြုလုပ်ခြင်း (Full DB Backup & Restore)</h2>
-              <p class="text-xs text-slate-500 mt-1 leading-relaxed">
-                PostgreSQL Server ပေါ်ရှိ အကောင့်များအားလုံး (Main Admin + Cashier) နှင့် Cloud Data Table (၁၂) ခုလုံးကို JSON ဖိုင်အဖြစ် Backup သိမ်းဆည်းခြင်း သို့မဟုတ် Backup ဖိုင်မှ ပြန်လည် Restore လုပ်နိုင်ပါသည်။
-              </p>
-            </div>
-            <span class="shrink-0 inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
-              Format: UN_POS_FULL_BACKUP_V1
-            </span>
-          </div>
-
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div class="rounded-2xl border border-indigo-200 bg-indigo-50/50 p-5 space-y-3">
-              <div class="flex items-center space-x-2.5">
-                <div class="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0">
-                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                </div>
-                <div>
-                  <h3 class="text-sm font-bold text-slate-900">Full Database Backup Download</h3>
-                  <p class="text-[11px] text-slate-600">အကောင့်များနှင့် Cloud Data အားလုံးကို .json ဖိုင်အဖြစ် သိမ်းမည်</p>
-                </div>
-              </div>
-              <button type="button" id="fullBackupBtn" onclick="downloadFullBackup()" class="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-600/20 transition flex items-center justify-center space-x-2">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                <span>Database တစ်ခုလုံး Backup Download လုပ်မည်</span>
-              </button>
-            </div>
-
-            <div class="rounded-2xl border border-amber-200 bg-amber-50/50 p-5 space-y-3">
-              <div class="flex items-center space-x-2.5">
-                <div class="w-9 h-9 rounded-xl bg-amber-600 text-white flex items-center justify-center shrink-0">
-                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
-                </div>
-                <div>
-                  <h3 class="text-sm font-bold text-slate-900">Full Database Restore from File</h3>
-                  <p class="text-[11px] text-slate-600">သိမ်းထားသော Full Backup (.json) ဖိုင်ကို ရွေးချယ်၍ Restore တင်မည်</p>
-                </div>
-              </div>
-              <input type="file" id="fullBackupFileInput" accept=".json,application/json" onchange="handleFullBackupFileSelect(event)" class="hidden">
-              <button type="button" onclick="document.getElementById('fullBackupFileInput').click()" class="w-full py-2.5 px-4 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold shadow-md shadow-amber-600/20 transition flex items-center justify-center space-x-2">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
-                <span>Full Backup ဖိုင် ရွေး၍ Restore လုပ်မည်</span>
-              </button>
-            </div>
-          </div>
-          <p class="text-[11px] text-slate-500">
-            * Backup ဖိုင်ထဲတွင် User Password Hash များ ပါဝင်သောကြောင့် Backup ဖိုင်ကို လုံခြုံသော နေရာတွင် သိမ်းဆည်းပါ။ Admin Password ကိုမူ Restore လုပ်သည့်အခါ အပြောင်းအလဲမရှိ ဆက်လက်ထိန်းသိမ်းပေးထားပါသည်။
-          </p>
         </div>
       </div>
     </div>
+    <!-- END MODULE 5: SYSTEM SETTINGS -->
 
     <input type="file" id="accountBackupFileInput" accept=".json,application/json" onchange="handleAccountBackupFileSelect(event)" class="hidden">
 
@@ -1071,7 +1380,11 @@
     })();
     let allUsers = [];
     let currentFilter = 'all';
-    let currentView = 'users';
+    let currentView = 'overview';
+    let accountsSubTab = 'list';
+    let salesSubTab = 'vouchers';
+    let globalVoucherTypeFilter = 'all';
+    let productStockFilter = 'all';
     let currentDetailAdminPhone = null;
     let currentAdminDetail = null;
     let currentDetailTab = 'cashiers';
@@ -1080,15 +1393,25 @@
     let latestOrphanReport = null;
     let pendingRestoreAction = null;
     let cloudProductsCache = [];
+    let cloudVouchersCache = [];
+    let salesDetailCache = {};
     let editingUnitProductCtx = null;
     let editingUnitTiersState = [];
     let editingImageProductCtx = null;
     let pendingCompressedImagePayload = null;
 
     const resolvedApiHost = (() => { try { return new URL(API_BASE).host; } catch (_) { return window.location.host || 'api.unmobileposmm.top'; } })();
-    document.getElementById('serverHostDisplay').textContent = resolvedApiHost;
-    const drawerHostEl = document.getElementById('drawerServerHost');
-    if (drawerHostEl) drawerHostEl.textContent = resolvedApiHost;
+    function syncAdminSessionMeta() {
+      const hostDisplay = document.getElementById('serverHostDisplay');
+      if (hostDisplay) hostDisplay.textContent = resolvedApiHost;
+      const drawerHostEl = document.getElementById('drawerServerHost');
+      if (drawerHostEl) drawerHostEl.textContent = resolvedApiHost;
+      const settingsHostEl = document.getElementById('settingsApiHost');
+      if (settingsHostEl) settingsHostEl.textContent = resolvedApiHost;
+      const settingsAdminEl = document.getElementById('settingsAdminUser');
+      if (settingsAdminEl) settingsAdminEl.textContent = localStorage.getItem('unpos_admin_user') || 'admin';
+    }
+    syncAdminSessionMeta();
 
     function resolveCloudImageUrl(rawUri) {
       const s = String(rawUri || '').trim();
@@ -1300,7 +1623,8 @@
           document.getElementById('loginOverlay').classList.add('hidden');
           document.getElementById('loginOverlay').classList.remove('flex');
           showToast('Admin Login အောင်မြင်ပါသည်');
-          fetchUsersAndStats();
+          syncAdminSessionMeta();
+          await Promise.all([fetchUsersAndStats(), loadAdminSettings()]);
         } else if (data.success && !data.token) {
           errBox.textContent = 'VPS ပေါ်ရှိ server.js ကို အသစ်တင်ပြီး pm2 restart လုပ်ရန် လိုအပ်နေပါသည် (Session Token API မပါသေးပါ)။';
           errBox.classList.remove('hidden');
@@ -1344,31 +1668,190 @@
       }
     }
 
-    // Switch Views in Admin Portal
+    // Switch Views in Admin Portal (Light SaaS Control Plane)
     function switchView(viewName) {
       currentView = viewName;
-      const views = ['users', 'adminDetail', 'devices', 'vouchers', 'stock', 'settings'];
+      const views = ['overview', 'accounts', 'adminDetail', 'products', 'sales', 'database', 'settings'];
       views.forEach(v => {
         const el = document.getElementById(`view${v.charAt(0).toUpperCase() + v.slice(1)}`);
         if (el) el.classList.toggle('hidden', v !== viewName);
       });
 
-      const activeNav = viewName === 'adminDetail' ? 'users' : viewName;
+      const titleMap = {
+        overview: 'Overview (ပင်မစာမျက်နှာ)',
+        accounts: 'Accounts & Subscriptions',
+        adminDetail: 'Account Details',
+        products: 'Products & Inventory',
+        sales: 'Sales, Vouchers & CRM',
+        database: 'Database & Backups',
+        settings: 'System Settings'
+      };
+      const titleEl = document.getElementById('headerViewTitle');
+      if (titleEl && titleMap[viewName]) titleEl.textContent = titleMap[viewName];
+
+      const activeNav = viewName === 'adminDetail' ? 'accounts' : viewName;
       document.querySelectorAll('.drawer-link').forEach(btn => {
         const isActive = btn.getAttribute('data-view') === activeNav;
+        const svg = btn.querySelector('svg');
         if (isActive) {
-          btn.className = 'drawer-link active w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-sm font-semibold transition bg-indigo-600 text-white';
+          btn.className = 'drawer-link active w-full flex items-center space-x-3 px-4 py-3 rounded-2xl text-sm font-semibold transition bg-indigo-600 text-white shadow-md shadow-indigo-500/25';
+          if (svg) svg.classList.remove('text-slate-400');
         } else {
-          btn.className = 'drawer-link w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-sm font-semibold transition text-slate-300 hover:bg-slate-800 hover:text-white';
+          btn.className = 'drawer-link w-full flex items-center space-x-3 px-4 py-3 rounded-2xl text-sm font-semibold transition text-slate-600 hover:bg-slate-100 hover:text-slate-900';
+          if (svg) svg.classList.add('text-slate-400');
         }
       });
 
-      if (viewName === 'devices') renderDevicesView();
-      if (viewName === 'vouchers') fetchCloudVouchers();
-      if (viewName === 'stock') fetchCloudProducts();
-      if (viewName === 'settings') {
+      if (viewName === 'overview') {
+        renderOverviewSnapshots();
         loadAdminSettings();
+      }
+      if (viewName === 'accounts' && accountsSubTab === 'devices') renderDevicesView();
+      if (viewName === 'products') fetchCloudProducts();
+      if (viewName === 'sales') refreshActiveSalesPanel();
+      if (viewName === 'database') {
+        populateShopSelectors();
         loadOrphanSummary();
+      }
+      if (viewName === 'settings') {
+        syncAdminSessionMeta();
+        loadAdminSettings();
+      }
+    }
+
+    async function refreshActiveWorkspace() {
+      await fetchUsersAndStats();
+      if (currentView === 'overview') {
+        await loadAdminSettings();
+      } else if (currentView === 'adminDetail' && currentDetailAdminPhone) {
+        await loadAdminDetail(currentDetailAdminPhone, false);
+      } else if (currentView === 'products') {
+        await fetchCloudProducts();
+      } else if (currentView === 'sales') {
+        salesDetailCache = {};
+        await refreshActiveSalesPanel();
+      } else if (currentView === 'database') {
+        await loadOrphanSummary();
+      } else if (currentView === 'settings') {
+        await loadAdminSettings();
+      }
+      showToast('Data များ Refresh ပြုလုပ်ပြီးပါပြီ');
+    }
+
+    function setAccountsSubTab(tab) {
+      accountsSubTab = tab === 'devices' ? 'devices' : 'list';
+      const listPanel = document.getElementById('accountsListPanel');
+      const devicesPanel = document.getElementById('accountsDevicesPanel');
+      const listBtn = document.getElementById('accSubTabListBtn');
+      const devicesBtn = document.getElementById('accSubTabDevicesBtn');
+
+      if (listPanel) listPanel.classList.toggle('hidden', accountsSubTab !== 'list');
+      if (devicesPanel) devicesPanel.classList.toggle('hidden', accountsSubTab !== 'devices');
+
+      const activeCls = 'px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 text-white shadow-sm transition';
+      const inactiveCls = 'px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition';
+      if (listBtn) listBtn.className = accountsSubTab === 'list' ? activeCls : inactiveCls;
+      if (devicesBtn) devicesBtn.className = accountsSubTab === 'devices' ? activeCls : inactiveCls;
+
+      if (accountsSubTab === 'devices') renderDevicesView();
+    }
+
+    function populateShopSelectors() {
+      const owners = (allUsers || []).filter(u => {
+        const r = (u.role || 'ADMIN').toUpperCase();
+        return r === 'ADMIN' || r === 'MANAGER';
+      });
+      const mainAdmins = getMainAdminUsers();
+
+      const prodSel = document.getElementById('productShopFilter');
+      if (prodSel) {
+        const prev = prodSel.value;
+        prodSel.innerHTML = `<option value="">ဆိုင်အားလုံး (All Shops)</option>` +
+          owners.map(u => `<option value="${escapeHtml(u.phone_no)}">${escapeHtml(u.business_name || 'UN POS Store')} (${escapeHtml(u.phone_no)})</option>`).join('');
+        if (prev && owners.some(u => u.phone_no === prev)) prodSel.value = prev;
+      }
+
+      const salesSel = document.getElementById('salesShopFilter');
+      if (salesSel) {
+        const prev = salesSel.value;
+        const defaultLabel = salesSubTab === 'vouchers' ? 'ဆိုင်အားလုံး (Recent Vouchers)' : 'ဆိုင်အကောင့် ရွေးပါ...';
+        salesSel.innerHTML = `<option value="">${defaultLabel}</option>` +
+          owners.map(u => `<option value="${escapeHtml(u.phone_no)}">${escapeHtml(u.business_name || 'UN POS Store')} (${escapeHtml(u.phone_no)})</option>`).join('');
+        if (prev && owners.some(u => u.phone_no === prev)) salesSel.value = prev;
+      }
+
+      const dbSel = document.getElementById('dbAccountSelect');
+      if (dbSel) {
+        const prev = dbSel.value;
+        dbSel.innerHTML = `<option value="">Main Admin အကောင့် ရွေးပါ...</option>` +
+          mainAdmins.map(u => `<option value="${escapeHtml(u.phone_no)}">${escapeHtml(u.business_name || 'UN POS Store')} (${escapeHtml(u.phone_no)})</option>`).join('');
+        if (prev && mainAdmins.some(u => u.phone_no === prev)) dbSel.value = prev;
+      }
+    }
+
+    function renderOverviewSnapshots() {
+      const attentionEl = document.getElementById('overviewAttentionList');
+      const activeEl = document.getElementById('overviewActiveList');
+      if (!attentionEl || !activeEl) return;
+
+      const now = Date.now();
+      const mainAdmins = getMainAdminUsers();
+
+      const attention = mainAdmins.filter(u =>
+        u.status === 'expired' ||
+        u.status === 'off' ||
+        u.status === 'pending' ||
+        (u.expires_at && now > u.expires_at) ||
+        (u.daysLeft !== undefined && u.daysLeft <= 7 && u.status === 'on')
+      ).slice(0, 8);
+
+      const active = mainAdmins
+        .filter(u => u.status === 'on' && (!u.expires_at || u.expires_at > now))
+        .sort((a, b) => (Number(b.lastLoginAt) || 0) - (Number(a.lastLoginAt) || 0))
+        .slice(0, 8);
+
+      if (attention.length === 0) {
+        attentionEl.innerHTML = `<div class="py-10 text-center text-xs text-emerald-600 font-semibold">သက်တမ်းကုန် / စောင့်ဆိုင်း အကောင့် မရှိပါ ✓</div>`;
+      } else {
+        attentionEl.innerHTML = attention.map(u => {
+          const isExp = u.status === 'expired' || (u.expires_at && now > u.expires_at);
+          const isOff = u.status === 'off' || u.status === 'pending';
+          const badge = isOff
+            ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700">${escapeHtml((u.status || 'OFF').toUpperCase())}</span>`
+            : isExp
+              ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700">Expired</span>`
+              : `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">${u.daysLeft}d left</span>`;
+          return `
+            <div onclick="openAdminDetail('${escapeJs(u.phone_no)}')" class="px-5 py-3 flex items-center justify-between hover:bg-slate-50 cursor-pointer transition">
+              <div class="min-w-0 pr-3">
+                <p class="text-xs font-bold text-slate-900 truncate">${escapeHtml(u.business_name || 'UN POS Store')}</p>
+                <p class="text-[11px] font-mono text-slate-400">${escapeHtml(u.phone_no)} · ${escapeHtml(u.username || '-')}</p>
+              </div>
+              <div class="flex items-center space-x-2 shrink-0">${badge}</div>
+            </div>
+          `;
+        }).join('');
+      }
+
+      if (active.length === 0) {
+        activeEl.innerHTML = `<div class="py-10 text-center text-xs text-slate-400">Active အကောင့် မရှိသေးပါ</div>`;
+      } else {
+        activeEl.innerHTML = active.map(u => {
+          const devCount = Number(u.deviceCount) || (Array.isArray(u.devices) ? u.devices.length : 0);
+          const maxDevs = u.maxDevices || 5;
+          return `
+            <div onclick="openAdminDetail('${escapeJs(u.phone_no)}')" class="px-5 py-3 flex items-center justify-between hover:bg-slate-50 cursor-pointer transition">
+              <div class="min-w-0 pr-3">
+                <p class="text-xs font-bold text-slate-900 truncate">${escapeHtml(u.business_name || 'UN POS Store')}</p>
+                <p class="text-[11px] text-slate-400 font-mono">${escapeHtml(u.phone_no)} · Vouchers: ${Number(u.vouchersCount || 0).toLocaleString()}</p>
+              </div>
+              <div class="text-right shrink-0">
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700">${devCount}/${maxDevs} Dev</span>
+                <p class="text-[10px] text-slate-400 mt-0.5">${u.lastLoginAt > 0 ? formatDate(u.lastLoginAt) : 'Sync မရှိသေး'}</p>
+              </div>
+            </div>
+          `;
+        }).join('');
       }
     }
 
@@ -1430,7 +1913,16 @@
           allUsers = Array.isArray(data.users) ? data.users : [];
           renderUsers();
           updateCounts();
-          if (currentView === 'devices') renderDevicesView();
+          populateShopSelectors();
+          renderOverviewSnapshots();
+          const totalDevs = allUsers.reduce((sum, u) => {
+            const devs = Array.isArray(u.devices) ? u.devices.length : (u.device_id ? 1 : 0);
+            const dets = Array.isArray(u.deviceDetails) ? u.deviceDetails.length : 0;
+            return sum + Math.max(devs, dets, Number(u.deviceCount) || 0);
+          }, 0);
+          const accDevEl = document.getElementById('accTotalDevicesCount');
+          if (accDevEl) accDevEl.textContent = totalDevs;
+          if (currentView === 'accounts' && accountsSubTab === 'devices') renderDevicesView();
         } else {
           const errJson = await usersRes.json().catch(() => ({}));
           const errMsg = usersRes.status === 404
@@ -1452,11 +1944,31 @@
             ? stats.totalCashiers
             : allUsers.filter(u => (u.role || 'ADMIN').toUpperCase() === 'CASHIER').length;
 
-          document.getElementById('statTotalUsers').textContent = stats.totalMainAdmins !== undefined ? stats.totalMainAdmins : mainAdmins.length;
+          const totalMainAdminsVal = stats.totalMainAdmins !== undefined ? stats.totalMainAdmins : mainAdmins.length;
+          const activeVal = stats.activeUsers || 0;
+          const expiredVal = stats.expiredUsers || 0;
+          const offVal = stats.offUsers || 0;
+          const vouchersVal = stats.totalVouchers || 0;
+          const productsVal = stats.totalProducts || 0;
+
+          document.getElementById('statTotalUsers').textContent = totalMainAdminsVal;
           document.getElementById('statTotalUsersSub').textContent = `Branch Manager ${managersTotal} · Cashier ${cashiersTotal} ခု ချိတ်ဆက်ထားသည်`;
-          document.getElementById('statActiveUsers').textContent = stats.activeUsers || 0;
-          document.getElementById('statExpiredUsers').textContent = stats.expiredUsers || 0;
-          document.getElementById('statTotalVouchers').textContent = stats.totalVouchers || 0;
+          document.getElementById('statActiveUsers').textContent = activeVal;
+          document.getElementById('statExpiredUsers').textContent = expiredVal;
+          document.getElementById('statTotalVouchers').textContent = vouchersVal;
+
+          const ovUsers = document.getElementById('ovStatTotalUsers');
+          const ovSub = document.getElementById('ovStatTotalUsersSub');
+          const ovActive = document.getElementById('ovStatActiveUsers');
+          const ovExpSub = document.getElementById('ovStatExpiredSub');
+          const ovProds = document.getElementById('ovStatTotalProducts');
+          const ovVouchers = document.getElementById('ovStatTotalVouchers');
+          if (ovUsers) ovUsers.textContent = totalMainAdminsVal;
+          if (ovSub) ovSub.textContent = `Manager ${managersTotal} · Cashier ${cashiersTotal}`;
+          if (ovActive) ovActive.textContent = activeVal;
+          if (ovExpSub) ovExpSub.textContent = `သက်တမ်းကုန် ${expiredVal} · OFF ${offVal}`;
+          if (ovProds) ovProds.textContent = Number(productsVal).toLocaleString();
+          if (ovVouchers) ovVouchers.textContent = Number(vouchersVal).toLocaleString();
         }
       } catch (err) {
         console.error('Fetch error:', err);
@@ -2078,7 +2590,7 @@
     function closeAdminDetailView() {
       currentDetailAdminPhone = null;
       currentAdminDetail = null;
-      switchView('users');
+      switchView('accounts');
     }
 
     async function refreshCurrentAdminDetail() {
@@ -2842,12 +3354,21 @@
     // Render 5-Device Monitor View
     function renderDevicesView() {
       const container = document.getElementById('devicesContainer');
-      if (!allUsers || allUsers.length === 0) {
-        container.innerHTML = `<div class="col-span-full py-12 text-center text-slate-400">အကောင့်များ မရှိသေးပါ</div>`;
+      if (!container) return;
+      const q = (document.getElementById('deviceSearchInput')?.value || '').trim().toLowerCase();
+      const filtered = (allUsers || []).filter(u => {
+        if (!q) return true;
+        const devs = Array.isArray(u.devices) ? u.devices.join(' ') : (u.device_id || '');
+        const detailsStr = Array.isArray(u.deviceDetails) ? u.deviceDetails.map(d => `${d.model || ''} ${d.deviceId || ''}`).join(' ') : '';
+        return `${u.business_name || ''} ${u.phone_no || ''} ${u.username || ''} ${u.lastLoginModel || ''} ${devs} ${detailsStr}`.toLowerCase().includes(q);
+      });
+
+      if (filtered.length === 0) {
+        container.innerHTML = `<div class="col-span-full py-12 text-center text-slate-400">ကိုက်ညီသော အကောင့် / စက် မတွေ့ပါ</div>`;
         return;
       }
 
-      container.innerHTML = allUsers.map(u => {
+      container.innerHTML = filtered.map(u => {
         const devs = Array.isArray(u.devices) ? u.devices : (u.device_id ? [u.device_id] : []);
         const details = Array.isArray(u.deviceDetails) && u.deviceDetails.length > 0
           ? u.deviceDetails
@@ -2910,52 +3431,346 @@
       }).join('');
     }
 
+    // Sales, Vouchers & CRM Module Controls
+    function setSalesSubTab(tab) {
+      salesSubTab = ['vouchers', 'crm', 'finance'].includes(tab) ? tab : 'vouchers';
+      document.getElementById('salesVouchersPanel')?.classList.toggle('hidden', salesSubTab !== 'vouchers');
+      document.getElementById('salesCrmPanel')?.classList.toggle('hidden', salesSubTab !== 'crm');
+      document.getElementById('salesFinancePanel')?.classList.toggle('hidden', salesSubTab !== 'finance');
+
+      const activeCls = 'px-3.5 py-2 rounded-xl text-xs font-bold bg-indigo-600 text-white shadow-sm whitespace-nowrap transition';
+      const inactiveCls = 'px-3.5 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 whitespace-nowrap transition';
+      const vBtn = document.getElementById('salesSubTabVouchersBtn');
+      const cBtn = document.getElementById('salesSubTabCrmBtn');
+      const fBtn = document.getElementById('salesSubTabFinanceBtn');
+      if (vBtn) vBtn.className = salesSubTab === 'vouchers' ? activeCls : inactiveCls;
+      if (cBtn) cBtn.className = salesSubTab === 'crm' ? activeCls : inactiveCls;
+      if (fBtn) fBtn.className = salesSubTab === 'finance' ? activeCls : inactiveCls;
+
+      populateShopSelectors();
+      refreshActiveSalesPanel();
+    }
+
+    function setGlobalVoucherType(type) {
+      globalVoucherTypeFilter = ['all', 'sale', 'purchase'].includes(type) ? type : 'all';
+      const base = 'px-3 py-1 rounded-lg text-xs font-bold';
+      const allBtn = document.getElementById('vTypeAllBtn');
+      const saleBtn = document.getElementById('vTypeSaleBtn');
+      const purBtn = document.getElementById('vTypePurchaseBtn');
+      if (allBtn) allBtn.className = globalVoucherTypeFilter === 'all' ? `${base} bg-slate-900 text-white` : `${base} text-slate-600 hover:bg-slate-100`;
+      if (saleBtn) saleBtn.className = globalVoucherTypeFilter === 'sale' ? `${base} bg-emerald-600 text-white` : `${base} text-emerald-700 hover:bg-emerald-50`;
+      if (purBtn) purBtn.className = globalVoucherTypeFilter === 'purchase' ? `${base} bg-amber-600 text-white` : `${base} text-amber-700 hover:bg-amber-50`;
+      renderCloudVouchersTable();
+    }
+
+    function onSalesShopChange() {
+      refreshActiveSalesPanel();
+    }
+
+    function renderActiveSalesPanel() {
+      if (salesSubTab === 'vouchers') {
+        renderCloudVouchersTable();
+      } else {
+        const shopPhone = document.getElementById('salesShopFilter')?.value || '';
+        if (shopPhone && salesDetailCache[shopPhone]) {
+          renderSalesCrmAndFinance(salesDetailCache[shopPhone], shopPhone);
+        }
+      }
+    }
+
+    async function refreshActiveSalesPanel() {
+      const shopPhone = document.getElementById('salesShopFilter')?.value || '';
+      if (salesSubTab === 'vouchers') {
+        await fetchCloudVouchers();
+      } else {
+        await loadAndRenderSalesAccountData(shopPhone);
+      }
+    }
+
     // Fetch and display Cloud Vouchers
     async function fetchCloudVouchers() {
       const tbody = document.getElementById('vouchersTableBody');
+      if (!tbody) return;
       tbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-slate-400">ဘောက်ချာများ ရယူနေပါသည်...</td></tr>`;
 
       try {
-        const res = await adminFetch(`${API_BASE}/api/admin/vouchers`);
+        const shopPhone = document.getElementById('salesShopFilter')?.value || '';
+        const url = shopPhone
+          ? `${API_BASE}/api/admin/vouchers?phoneNo=${encodeURIComponent(shopPhone)}`
+          : `${API_BASE}/api/admin/vouchers`;
+        const res = await adminFetch(url);
         if (res.status === 401) return;
         const data = await res.json();
-        const list = data.vouchers || [];
-        if (list.length === 0) {
-          tbody.innerHTML = `<tr><td colspan="7" class="py-12 text-center text-slate-400">Server ပေါ်တွင် ဘောက်ချာ မရှိသေးပါ</td></tr>`;
-          return;
-        }
-
-        tbody.innerHTML = list.map(v => {
-          const rNo = v.receiptNo || v.receipt_no || '';
-          const ownerPhoneJs = escapeJs(v.ownerPhone || '');
-          const rNoJs = escapeJs(rNo);
-          return `
-            <tr onclick="openVoucherDetailModal('${ownerPhoneJs}', '${rNoJs}')" class="hover:bg-indigo-50/50 cursor-pointer transition ${v.hasAccount === false ? 'bg-rose-50/40' : ''}">
-              <td class="py-3 px-4 pl-6 font-mono font-bold text-xs text-indigo-600">
-                <button type="button" onclick="event.stopPropagation(); openVoucherDetailModal('${ownerPhoneJs}', '${rNoJs}')" class="hover:underline font-mono font-bold text-indigo-600">
-                  ${escapeHtml(rNo || '-')} →
-                </button>
-              </td>
-              <td class="py-3 px-4 text-xs">
-                ${v.hasAccount === false
-                  ? `<div class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-200 mb-0.5">အကောင့်မရှိတော့ပါ</div>`
-                  : `<div class="font-bold text-slate-800">${escapeHtml(v.ownerShop || '-')}</div>`}
-                <div class="text-slate-400 font-mono">${escapeHtml(v.ownerPhone || '')}</div>
-              </td>
-              <td class="py-3 px-4 text-xs font-semibold">
-                <span class="px-2 py-0.5 rounded text-[11px] ${v.isPurchase ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}">
-                  ${v.isPurchase ? 'အဝယ် (Purchase)' : 'အရောင်း (Sale)'}
-                </span>
-              </td>
-              <td class="py-3 px-4 text-xs font-bold text-slate-900">${(Number(v.totalAmount || v.total_amount) || 0).toLocaleString()} Ks</td>
-              <td class="py-3 px-4 text-xs text-slate-600">${escapeHtml(v.customerName || v.customer_name || 'General')}</td>
-              <td class="py-3 px-4 text-xs font-mono text-slate-600">${escapeHtml(v.paymentMethod || v.payment_method || 'CASH')}</td>
-              <td class="py-3 px-4 pr-6 text-right text-xs text-slate-500">${formatDate(v.timestamp)}</td>
-            </tr>
-          `;
-        }).join('');
+        cloudVouchersCache = data.vouchers || [];
+        renderCloudVouchersTable();
       } catch (err) {
         tbody.innerHTML = `<tr><td colspan="7" class="py-6 text-center text-rose-500">Error: ${escapeHtml(err.message)}</td></tr>`;
+      }
+    }
+
+    function renderCloudVouchersTable() {
+      const tbody = document.getElementById('vouchersTableBody');
+      const badge = document.getElementById('salesVouchersSummaryBadge');
+      if (!tbody) return;
+
+      const q = (document.getElementById('salesSearchInput')?.value || '').trim().toLowerCase();
+      const shopPhone = document.getElementById('salesShopFilter')?.value || '';
+      const filtered = (cloudVouchersCache || []).filter(v => {
+        if (shopPhone && v.ownerPhone !== shopPhone) return false;
+        if (globalVoucherTypeFilter === 'sale' && v.isPurchase) return false;
+        if (globalVoucherTypeFilter === 'purchase' && !v.isPurchase) return false;
+        if (!q) return true;
+        const text = `${v.receiptNo || v.receipt_no || ''} ${v.ownerShop || ''} ${v.ownerPhone || ''} ${v.customerName || v.customer_name || ''} ${v.paymentMethod || v.payment_method || ''}`.toLowerCase();
+        return text.includes(q);
+      });
+
+      const totalAmt = filtered.reduce((s, v) => s + (Number(v.totalAmount || v.total_amount) || 0), 0);
+      if (badge) badge.textContent = `${filtered.length} vouchers · ${totalAmt.toLocaleString()} Ks`;
+
+      if (filtered.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" class="py-12 text-center text-slate-400">ကိုက်ညီသော ဘောက်ချာ မရှိသေးပါ</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = filtered.map(v => {
+        const rNo = v.receiptNo || v.receipt_no || '';
+        const ownerPhoneJs = escapeJs(v.ownerPhone || '');
+        const rNoJs = escapeJs(rNo);
+        return `
+          <tr onclick="openVoucherDetailModal('${ownerPhoneJs}', '${rNoJs}')" class="hover:bg-indigo-50/50 cursor-pointer transition ${v.hasAccount === false ? 'bg-rose-50/40' : ''}">
+            <td class="py-3 px-4 pl-6 font-mono font-bold text-xs text-indigo-600">
+              <button type="button" onclick="event.stopPropagation(); openVoucherDetailModal('${ownerPhoneJs}', '${rNoJs}')" class="hover:underline font-mono font-bold text-indigo-600">
+                ${escapeHtml(rNo || '-')} →
+              </button>
+            </td>
+            <td class="py-3 px-4 text-xs">
+              ${v.hasAccount === false
+                ? `<div class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-200 mb-0.5">အကောင့်မရှိတော့ပါ</div>`
+                : `<div class="font-bold text-slate-800">${escapeHtml(v.ownerShop || '-')}</div>`}
+              <div class="text-slate-400 font-mono">${escapeHtml(v.ownerPhone || '')}</div>
+            </td>
+            <td class="py-3 px-4 text-xs font-semibold">
+              <span class="px-2 py-0.5 rounded text-[11px] ${v.isPurchase ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}">
+                ${v.isPurchase ? 'အဝယ် (Purchase)' : 'အရောင်း (Sale)'}
+              </span>
+            </td>
+            <td class="py-3 px-4 text-xs font-bold text-slate-900">${(Number(v.totalAmount || v.total_amount) || 0).toLocaleString()} Ks</td>
+            <td class="py-3 px-4 text-xs text-slate-600">${escapeHtml(v.customerName || v.customer_name || 'General')}</td>
+            <td class="py-3 px-4 text-xs font-mono text-slate-600">${escapeHtml(v.paymentMethod || v.payment_method || 'CASH')}</td>
+            <td class="py-3 px-4 pr-6 text-right text-xs text-slate-500">${formatDate(v.timestamp)}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    async function loadAndRenderSalesAccountData(phoneNo) {
+      const crmEl = document.getElementById('salesCrmContent');
+      const finEl = document.getElementById('salesFinanceContent');
+      let targetPhone = phoneNo;
+      if (!targetPhone) {
+        const firstOwner = getMainAdminUsers()[0] || (allUsers || [])[0];
+        if (firstOwner) {
+          targetPhone = firstOwner.phone_no;
+          const sel = document.getElementById('salesShopFilter');
+          if (sel) sel.value = targetPhone;
+        }
+      }
+      if (!targetPhone) {
+        const emptyMsg = `<div class="py-10 text-center text-xs text-slate-400">ဆိုင်အကောင့် မရှိသေးပါ</div>`;
+        if (crmEl) crmEl.innerHTML = emptyMsg;
+        if (finEl) finEl.innerHTML = emptyMsg;
+        return;
+      }
+
+      const loadingMsg = `<div class="py-10 text-center text-xs text-slate-400">${escapeHtml(targetPhone)} အချက်အလက်များ ရယူနေပါသည်...</div>`;
+      if (salesSubTab === 'crm' && crmEl) crmEl.innerHTML = loadingMsg;
+      if (salesSubTab === 'finance' && finEl) finEl.innerHTML = loadingMsg;
+
+      try {
+        const res = await adminFetch(`${API_BASE}/api/admin/user/details?phoneNo=${encodeURIComponent(targetPhone)}`);
+        if (res.status === 401) return;
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          const errHtml = `<div class="py-8 text-center text-xs text-rose-600 font-semibold">${escapeHtml(data.message || 'အချက်အလက် ရယူ၍ မရပါ')}</div>`;
+          if (crmEl) crmEl.innerHTML = errHtml;
+          if (finEl) finEl.innerHTML = errHtml;
+          return;
+        }
+        salesDetailCache[targetPhone] = data;
+        renderSalesCrmAndFinance(data, targetPhone);
+      } catch (err) {
+        const errHtml = `<div class="py-8 text-center text-xs text-rose-600">Error: ${escapeHtml(err.message)}</div>`;
+        if (crmEl) crmEl.innerHTML = errHtml;
+        if (finEl) finEl.innerHTML = errHtml;
+      }
+    }
+
+    function renderSalesCrmAndFinance(detail, phoneNo) {
+      const q = (document.getElementById('salesSearchInput')?.value || '').trim().toLowerCase();
+      const d = detail?.data || {};
+      const ownerName = detail?.user?.businessName || detail?.user?.business_name || phoneNo;
+      const customers = (d.customers || []).filter(c => !q || `${c.name || ''} ${c.phone || ''} ${c.address || ''}`.toLowerCase().includes(q));
+      const suppliers = (d.suppliers || []).filter(s => !q || `${s.name || ''} ${s.phone || ''} ${s.address || ''}`.toLowerCase().includes(q));
+      const expenses = (d.expenses || []).filter(ex => !q || `${ex.title || ex.category || ''} ${ex.note || ''}`.toLowerCase().includes(q));
+      const payments = (d.payments || []).filter(pm => !q || `${pm.name || pm.bankName || ''} ${pm.accountNumber || ''}`.toLowerCase().includes(q));
+      const adjustments = (d.stockAdjustments || []).filter(adj => !q || `${adj.productName || ''} ${adj.reason || ''}`.toLowerCase().includes(q));
+
+      const crmEl = document.getElementById('salesCrmContent');
+      if (crmEl) {
+        crmEl.innerHTML = `
+          <div class="text-left space-y-6">
+            <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-100">
+              <div>
+                <h3 class="text-sm font-extrabold text-slate-900">${escapeHtml(ownerName)} — CRM (Customers &amp; Suppliers)</h3>
+                <p class="text-[11px] font-mono text-slate-400">${escapeHtml(phoneNo)}</p>
+              </div>
+              <div class="flex items-center space-x-2 text-xs font-bold">
+                <span class="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700">Customers: ${customers.length}</span>
+                <span class="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800">Suppliers: ${suppliers.length}</span>
+              </div>
+            </div>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div>
+                <h4 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2.5">Customers (${customers.length})</h4>
+                ${customers.length === 0 ? `<div class="py-8 text-center text-xs text-slate-400 bg-slate-50 rounded-xl">Customer မရှိပါ</div>` : `
+                  <div class="border border-slate-200 rounded-xl overflow-hidden max-h-96 overflow-y-auto custom-scrollbar">
+                    <table class="w-full text-left text-xs border-collapse">
+                      <thead class="bg-slate-50 text-slate-500 border-b border-slate-200">
+                        <tr><th class="py-2.5 px-3">အမည် / ဖုန်း</th><th class="py-2.5 px-3 text-right">ကြွေးကျန် (Credit)</th></tr>
+                      </thead>
+                      <tbody class="divide-y divide-slate-100">
+                        ${customers.map(c => `
+                          <tr class="hover:bg-slate-50">
+                            <td class="py-2.5 px-3">
+                              <div class="font-bold text-slate-900">${escapeHtml(c.name || '-')}</div>
+                              <div class="font-mono text-slate-400 text-[11px]">${escapeHtml(c.phone || '-')}</div>
+                            </td>
+                            <td class="py-2.5 px-3 text-right font-mono font-bold ${(Number(c.creditBalance || c.credit_balance) || 0) > 0 ? 'text-rose-600' : 'text-slate-600'}">
+                              ${(Number(c.creditBalance || c.credit_balance) || 0).toLocaleString()} Ks
+                            </td>
+                          </tr>
+                        `).join('')}
+                      </tbody>
+                    </table>
+                  </div>
+                `}
+              </div>
+              <div>
+                <h4 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2.5">Suppliers (${suppliers.length})</h4>
+                ${suppliers.length === 0 ? `<div class="py-8 text-center text-xs text-slate-400 bg-slate-50 rounded-xl">Supplier မရှိပါ</div>` : `
+                  <div class="border border-slate-200 rounded-xl overflow-hidden max-h-96 overflow-y-auto custom-scrollbar">
+                    <table class="w-full text-left text-xs border-collapse">
+                      <thead class="bg-slate-50 text-slate-500 border-b border-slate-200">
+                        <tr><th class="py-2.5 px-3">အမည် / ဖုန်း</th><th class="py-2.5 px-3 text-right">ပေးရန်ကျန် (Payable)</th></tr>
+                      </thead>
+                      <tbody class="divide-y divide-slate-100">
+                        ${suppliers.map(s => `
+                          <tr class="hover:bg-slate-50">
+                            <td class="py-2.5 px-3">
+                              <div class="font-bold text-slate-900">${escapeHtml(s.name || '-')}</div>
+                              <div class="font-mono text-slate-400 text-[11px]">${escapeHtml(s.phone || '-')}</div>
+                            </td>
+                            <td class="py-2.5 px-3 text-right font-mono font-bold ${(Number(s.balance || s.payableBalance) || 0) > 0 ? 'text-amber-700' : 'text-slate-600'}">
+                              ${(Number(s.balance || s.payableBalance) || 0).toLocaleString()} Ks
+                            </td>
+                          </tr>
+                        `).join('')}
+                      </tbody>
+                    </table>
+                  </div>
+                `}
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      const finEl = document.getElementById('salesFinanceContent');
+      if (finEl) {
+        const totalExpense = expenses.reduce((s, ex) => s + (Number(ex.amount) || 0), 0);
+        finEl.innerHTML = `
+          <div class="text-left space-y-6">
+            <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-100">
+              <div>
+                <h3 class="text-sm font-extrabold text-slate-900">${escapeHtml(ownerName)} — အသုံးစရိတ် &amp; ငွေစာရင်း</h3>
+                <p class="text-[11px] font-mono text-slate-400">${escapeHtml(phoneNo)}</p>
+              </div>
+              <div class="flex flex-wrap items-center gap-2 text-xs font-bold">
+                <span class="px-2.5 py-1 rounded-lg bg-rose-50 text-rose-700">Expenses: ${totalExpense.toLocaleString()} Ks</span>
+                <span class="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700">Payments: ${payments.length}</span>
+                <span class="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700">Stock Logs: ${adjustments.length}</span>
+              </div>
+            </div>
+
+            <div>
+              <h4 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2.5">ငွေပေးချေမှု နည်းလမ်းများ (Payment Methods · ${payments.length})</h4>
+              ${payments.length === 0 ? `<div class="py-6 text-center text-xs text-slate-400 bg-slate-50 rounded-xl">Payment Method မရှိပါ</div>` : `
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  ${payments.map(pm => `
+                    <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs">
+                      <div class="font-bold text-slate-900">${escapeHtml(pm.name || pm.bankName || 'Payment')}</div>
+                      <div class="font-mono text-slate-500 mt-0.5">${escapeHtml(pm.accountNumber || '-')}</div>
+                    </div>
+                  `).join('')}
+                </div>
+              `}
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div>
+                <h4 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2.5">အသုံးစရိတ်များ (${expenses.length})</h4>
+                ${expenses.length === 0 ? `<div class="py-8 text-center text-xs text-slate-400 bg-slate-50 rounded-xl">အသုံးစရိတ် မှတ်တမ်းမရှိပါ</div>` : `
+                  <div class="border border-slate-200 rounded-xl overflow-hidden max-h-80 overflow-y-auto custom-scrollbar">
+                    <table class="w-full text-left text-xs border-collapse">
+                      <thead class="bg-slate-50 text-slate-500 border-b border-slate-200">
+                        <tr><th class="py-2.5 px-3">ခေါင်းစဉ် / နေ့စွဲ</th><th class="py-2.5 px-3 text-right">ပမာဏ</th></tr>
+                      </thead>
+                      <tbody class="divide-y divide-slate-100">
+                        ${expenses.map(ex => `
+                          <tr class="hover:bg-slate-50">
+                            <td class="py-2.5 px-3">
+                              <div class="font-bold text-slate-900">${escapeHtml(ex.title || ex.category || 'Expense')}</div>
+                              <div class="text-[11px] text-slate-400">${formatDate(ex.timestamp)}${ex.note ? ` · ${escapeHtml(ex.note)}` : ''}</div>
+                            </td>
+                            <td class="py-2.5 px-3 text-right font-mono font-bold text-rose-600">${(Number(ex.amount) || 0).toLocaleString()} Ks</td>
+                          </tr>
+                        `).join('')}
+                      </tbody>
+                    </table>
+                  </div>
+                `}
+              </div>
+              <div>
+                <h4 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2.5">Stock Adjustments (${adjustments.length})</h4>
+                ${adjustments.length === 0 ? `<div class="py-8 text-center text-xs text-slate-400 bg-slate-50 rounded-xl">Stock ပြင်ဆင်မှု မှတ်တမ်းမရှိပါ</div>` : `
+                  <div class="border border-slate-200 rounded-xl overflow-hidden max-h-80 overflow-y-auto custom-scrollbar">
+                    <table class="w-full text-left text-xs border-collapse">
+                      <thead class="bg-slate-50 text-slate-500 border-b border-slate-200">
+                        <tr><th class="py-2.5 px-3">ကုန်ပစ္စည်း / အကြောင်းအရာ</th><th class="py-2.5 px-3 text-right">Delta</th></tr>
+                      </thead>
+                      <tbody class="divide-y divide-slate-100">
+                        ${adjustments.map(adj => {
+                          const delta = Number(adj.quantityChange ?? adj.quantity_change ?? adj.delta ?? 0);
+                          return `
+                            <tr class="hover:bg-slate-50">
+                              <td class="py-2.5 px-3">
+                                <div class="font-bold text-slate-900">${escapeHtml(adj.productName || '-')}</div>
+                                <div class="text-[11px] text-slate-400">${escapeHtml(adj.reason || '-')} · ${formatDate(adj.timestamp)}</div>
+                              </td>
+                              <td class="py-2.5 px-3 text-right font-mono font-bold ${delta >= 0 ? 'text-emerald-700' : 'text-rose-600'}">
+                                ${delta > 0 ? '+' : ''}${delta.toLocaleString()}
+                              </td>
+                            </tr>
+                          `;
+                        }).join('')}
+                      </tbody>
+                    </table>
+                  </div>
+                `}
+              </div>
+            </div>
+          </div>
+        `;
       }
     }
 
@@ -3082,66 +3897,118 @@
     }
 
     // Fetch and display Cloud Products (Stock Reconciliation)
+    function setProductStockFilter(mode) {
+      productStockFilter = mode === 'low' ? 'low' : 'all';
+      const allBtn = document.getElementById('prodFilterAllBtn');
+      const lowBtn = document.getElementById('prodFilterLowBtn');
+      if (allBtn) {
+        allBtn.className = productStockFilter === 'all'
+          ? 'px-3 py-1 rounded-lg text-xs font-bold bg-white text-slate-900 shadow-sm'
+          : 'px-3 py-1 rounded-lg text-xs font-bold text-slate-600 hover:text-slate-900';
+      }
+      if (lowBtn) {
+        lowBtn.className = productStockFilter === 'low'
+          ? 'px-3 py-1 rounded-lg text-xs font-bold bg-rose-600 text-white shadow-sm'
+          : 'px-3 py-1 rounded-lg text-xs font-bold text-slate-600 hover:text-rose-600';
+      }
+      renderCloudProductsTable();
+    }
+
     async function fetchCloudProducts() {
       const tbody = document.getElementById('stockTableBody');
+      if (!tbody) return;
       tbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-slate-400">Stock ပစ္စည်းများ ရယူနေပါသည်...</td></tr>`;
 
       try {
         const res = await adminFetch(`${API_BASE}/api/admin/products`);
         if (res.status === 401) return;
         const data = await res.json();
-        const list = data.products || [];
-        cloudProductsCache = list;
-        if (list.length === 0) {
-          tbody.innerHTML = `<tr><td colspan="7" class="py-12 text-center text-slate-400">Server ပေါ်တွင် ကုန်ပစ္စည်း မရှိသေးပါ</td></tr>`;
-          return;
-        }
-
-        tbody.innerHTML = list.map((p, idx) => {
-          const qty = Number(p.quantity) || 0;
-          const tiers = normalizeProductUnitPrices(p);
-          const baseUnit = p.unit || p.unitName || p.unit_name || '';
-          const imgClick = `openProductImageModalFromStock(${idx})`;
-          const unitEditClick = `openProductUnitModalFromStock(${idx})`;
-          const expandId = `stockMuRow_${idx}`;
-          return `
-            <tr class="hover:bg-slate-50/80 transition ${p.hasAccount === false ? 'bg-rose-50/40' : ''}">
-              <td class="py-3 px-4 pl-6">
-                <div class="flex items-center space-x-2.5">
-                  ${renderProductThumbHtml(p, imgClick)}
-                  <span class="font-bold text-xs text-slate-900">${escapeHtml(p.name || '-')}</span>
-                </div>
-              </td>
-              <td class="py-3 px-4 text-xs">
-                ${p.hasAccount === false
-                  ? `<div class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-200 mb-0.5">အကောင့်မရှိတော့ပါ</div>`
-                  : `<div class="font-medium text-slate-800">${escapeHtml(p.ownerShop || '-')}</div>`}
-                <div class="text-slate-400 font-mono">${escapeHtml(p.ownerPhone || '')}</div>
-              </td>
-              <td class="py-3 px-4 text-xs text-slate-600">${escapeHtml(p.groupName || p.group_name || 'Default')}</td>
-              <td class="py-3 px-4 text-xs font-bold ${qty <= (p.alertQuantity || 0) ? 'text-rose-600' : 'text-emerald-700'}">
-                ${formatMultiUnitStockHtml(qty, baseUnit, tiers)}
-              </td>
-              <td class="py-3 px-4 text-xs">${renderMultiUnitToggleButtonHtml(tiers, expandId)}</td>
-              <td class="py-3 px-4 text-xs font-mono">
-                <div class="text-slate-500">${(Number(p.purchasePrice || p.purchase_price) || 0).toLocaleString()} Ks</div>
-                <div class="font-bold text-slate-900">${(Number(p.sellingPrice || p.selling_price) || 0).toLocaleString()} Ks</div>
-              </td>
-              <td class="py-3 px-4 pr-6 text-right">
-                <div class="inline-flex items-center gap-1.5">
-                  <button type="button" onclick="${imgClick}" class="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-bold whitespace-nowrap">ပုံ</button>
-                  <button type="button" onclick="${unitEditClick}" class="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold whitespace-nowrap">
-                    ယူနစ်ပြင်/ထည့်
-                  </button>
-                </div>
-              </td>
-            </tr>
-            ${renderMultiUnitExpandRowHtml(expandId, p.name, tiers, baseUnit, unitEditClick, 7)}
-          `;
-        }).join('');
+        cloudProductsCache = data.products || [];
+        populateShopSelectors();
+        renderCloudProductsTable();
       } catch (err) {
         tbody.innerHTML = `<tr><td colspan="7" class="py-6 text-center text-rose-500">Error: ${escapeHtml(err.message)}</td></tr>`;
       }
+    }
+
+    function renderCloudProductsTable() {
+      const tbody = document.getElementById('stockTableBody');
+      if (!tbody) return;
+
+      const list = cloudProductsCache || [];
+      const lowCount = list.filter(p => (Number(p.quantity) || 0) <= (Number(p.alertQuantity) || 0)).length;
+      const multiCount = list.filter(p => normalizeProductUnitPrices(p).length > 0).length;
+      const imgCount = list.filter(p => Boolean(resolveCloudImageUrl(p.imageUri || p.image_uri))).length;
+
+      const kpiT = document.getElementById('prodKpiTotal');
+      const kpiL = document.getElementById('prodKpiLow');
+      const kpiM = document.getElementById('prodKpiMulti');
+      const kpiI = document.getElementById('prodKpiImages');
+      if (kpiT) kpiT.textContent = list.length.toLocaleString();
+      if (kpiL) kpiL.textContent = lowCount.toLocaleString();
+      if (kpiM) kpiM.textContent = multiCount.toLocaleString();
+      if (kpiI) kpiI.textContent = imgCount.toLocaleString();
+
+      const q = (document.getElementById('productSearchInput')?.value || '').trim().toLowerCase();
+      const shopPhone = document.getElementById('productShopFilter')?.value || '';
+
+      const filtered = list.filter(p => {
+        if (shopPhone && p.ownerPhone !== shopPhone) return false;
+        const qty = Number(p.quantity) || 0;
+        if (productStockFilter === 'low' && qty > (Number(p.alertQuantity) || 0)) return false;
+        if (!q) return true;
+        const text = `${p.name || ''} ${p.groupName || p.group_name || ''} ${p.barcode || ''} ${p.ownerShop || ''} ${p.ownerPhone || ''}`.toLowerCase();
+        return text.includes(q);
+      });
+
+      if (filtered.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" class="py-12 text-center text-slate-400">ကိုက်ညီသော ကုန်ပစ္စည်း မရှိသေးပါ</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = filtered.map(p => {
+        const idx = list.indexOf(p);
+        const qty = Number(p.quantity) || 0;
+        const tiers = normalizeProductUnitPrices(p);
+        const baseUnit = p.unit || p.unitName || p.unit_name || '';
+        const imgClick = `openProductImageModalFromStock(${idx})`;
+        const unitEditClick = `openProductUnitModalFromStock(${idx})`;
+        const expandId = `stockMuRow_${idx}`;
+        return `
+          <tr class="hover:bg-slate-50/80 transition ${p.hasAccount === false ? 'bg-rose-50/40' : ''}">
+            <td class="py-3 px-4 pl-6">
+              <div class="flex items-center space-x-2.5">
+                ${renderProductThumbHtml(p, imgClick)}
+                <span class="font-bold text-xs text-slate-900">${escapeHtml(p.name || '-')}</span>
+              </div>
+            </td>
+            <td class="py-3 px-4 text-xs">
+              ${p.hasAccount === false
+                ? `<div class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-200 mb-0.5">အကောင့်မရှိတော့ပါ</div>`
+                : `<div class="font-medium text-slate-800">${escapeHtml(p.ownerShop || '-')}</div>`}
+              <div class="text-slate-400 font-mono">${escapeHtml(p.ownerPhone || '')}</div>
+            </td>
+            <td class="py-3 px-4 text-xs text-slate-600">${escapeHtml(p.groupName || p.group_name || 'Default')}</td>
+            <td class="py-3 px-4 text-xs font-bold ${qty <= (p.alertQuantity || 0) ? 'text-rose-600' : 'text-emerald-700'}">
+              ${formatMultiUnitStockHtml(qty, baseUnit, tiers)}
+            </td>
+            <td class="py-3 px-4 text-xs">${renderMultiUnitToggleButtonHtml(tiers, expandId)}</td>
+            <td class="py-3 px-4 text-xs font-mono">
+              <div class="text-slate-500">${(Number(p.purchasePrice || p.purchase_price) || 0).toLocaleString()} Ks</div>
+              <div class="font-bold text-slate-900">${(Number(p.sellingPrice || p.selling_price) || 0).toLocaleString()} Ks</div>
+            </td>
+            <td class="py-3 px-4 pr-6 text-right">
+              <div class="inline-flex items-center gap-1.5">
+                <button type="button" onclick="${imgClick}" class="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-bold whitespace-nowrap">ပုံ</button>
+                <button type="button" onclick="${unitEditClick}" class="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold whitespace-nowrap">
+                  ယူနစ်ပြင်/ထည့်
+                </button>
+              </div>
+            </td>
+          </tr>
+          ${renderMultiUnitExpandRowHtml(expandId, p.name, tiers, baseUnit, unitEditClick, 7)}
+        `;
+      }).join('');
     }
 
     // ====================================================
@@ -3319,7 +4186,7 @@
         const savedPhone = editingUnitProductCtx.userPhone;
         closeProductUnitModal();
         showToast(data.message || 'ယူနစ်ခွဲများ သိမ်းဆည်းပြီးပါပြီ');
-        if (currentView === 'stock') {
+        if (currentView === 'products') {
           await fetchCloudProducts();
         }
         if (currentDetailAdminPhone && (currentDetailAdminPhone === savedPhone || currentView === 'adminDetail')) {
@@ -3494,7 +4361,7 @@
         const savedPhone = editingImageProductCtx.userPhone;
         closeProductImageModal();
         showToast(data.message || 'ကုန်စည်ဓာတ်ပုံ တင်ပြီးပါပြီ');
-        if (currentView === 'stock') await fetchCloudProducts();
+        if (currentView === 'products') await fetchCloudProducts();
         if (currentDetailAdminPhone && (currentDetailAdminPhone === savedPhone || currentView === 'adminDetail')) {
           await openAdminDetail(currentDetailAdminPhone);
         }
@@ -3529,7 +4396,7 @@
         const savedPhone = editingImageProductCtx.userPhone;
         closeProductImageModal();
         showToast(data.message || 'ဓာတ်ပုံကို ဖျက်ပြီးပါပြီ');
-        if (currentView === 'stock') await fetchCloudProducts();
+        if (currentView === 'products') await fetchCloudProducts();
         if (currentDetailAdminPhone && (currentDetailAdminPhone === savedPhone || currentView === 'adminDetail')) {
           await openAdminDetail(currentDetailAdminPhone);
         }
@@ -3588,6 +4455,24 @@
       } catch (err) {
         showToast('Error: ' + err.message, true);
       }
+    }
+
+    function downloadSelectedAccountBackup() {
+      const phone = document.getElementById('dbAccountSelect')?.value || '';
+      if (!phone) {
+        showToast('ကျေးဇူးပြု၍ ဆိုင်အကောင့်တစ်ခု ရွေးချယ်ပါ', true);
+        return;
+      }
+      downloadAccountBackup(phone);
+    }
+
+    function triggerSelectedAccountRestore() {
+      const phone = document.getElementById('dbAccountSelect')?.value || '';
+      if (!phone) {
+        showToast('ကျေးဇူးပြု၍ ဆိုင်အကောင့်တစ်ခု ရွေးချယ်ပါ', true);
+        return;
+      }
+      triggerAccountRestore(phone);
     }
 
     function handleFullBackupFileSelect(event) {
@@ -3701,7 +4586,7 @@
           await fetchUsersAndStats();
           if (modeWasAccount && currentView === 'adminDetail' && restoredPhone) {
             await loadAdminDetail(restoredPhone, false);
-          } else if (isFull && currentView === 'settings') {
+          } else if (isFull && currentView === 'database') {
             await loadOrphanSummary();
           }
         } else {
@@ -3873,6 +4758,7 @@
     function updateTrialSettingUi(trialEnabled) {
       const toggle = document.getElementById('trialEnabledToggle');
       const badge = document.getElementById('trialStatusBadge');
+      const ovBadge = document.getElementById('ovTrialBadge');
       if (toggle) toggle.checked = Boolean(trialEnabled);
       if (badge) {
         if (trialEnabled) {
@@ -3881,6 +4767,15 @@
         } else {
           badge.className = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-700 border border-rose-200';
           badge.textContent = 'OFF · Free Trial ပိတ်ထားသည်';
+        }
+      }
+      if (ovBadge) {
+        if (trialEnabled) {
+          ovBadge.className = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200';
+          ovBadge.textContent = '7-Day Trial: ON';
+        } else {
+          ovBadge.className = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200';
+          ovBadge.textContent = '7-Day Trial: OFF';
         }
       }
     }
@@ -3977,19 +4872,20 @@
     // Verify existing session and load initial data
     async function initDashboard() {
       try {
-        switchView('users');
+        syncAdminSessionMeta();
+        switchView('overview');
         const hasToken = checkAuth();
         if (!hasToken) return;
         const verifyRes = await adminFetch(`${API_BASE}/api/admin/verify`);
         if (verifyRes.ok) {
-          await fetchUsersAndStats();
+          await Promise.all([fetchUsersAndStats(), loadAdminSettings()]);
         } else if (verifyRes.status === 404) {
           forceShowLoginOverlay('VPS ပေါ်ရှိ server.js ကို အသစ်တင်ပြီး pm2 restart လုပ်ရန် လိုအပ်နေပါသည် (/api/admin/verify မတွေ့ပါ)။');
         } else if (verifyRes.status !== 401) {
           const errData = await verifyRes.json().catch(() => ({}));
           const msg = errData.message || `Server error (HTTP ${verifyRes.status})`;
           showToast(msg, true);
-          await fetchUsersAndStats();
+          await Promise.all([fetchUsersAndStats(), loadAdminSettings()]);
         }
       } catch (e) {
         console.error('Init view error:', e);
